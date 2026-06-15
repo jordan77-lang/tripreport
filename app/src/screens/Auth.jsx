@@ -38,7 +38,7 @@ export function AuthScreen() {
       <div style={{ flex: 1, padding: '32px 20px 24px', maxWidth: 420, margin: '0 auto', width: '100%' }}>
         <div style={{ fontSize: 28, fontWeight: 900, color: T.text, letterSpacing: -0.6, marginBottom: 6 }}>TripReport</div>
         <div style={{ fontSize: 13, color: T.textSub, marginBottom: 28, lineHeight: 1.5 }}>
-          Sign in to plan your Salmon River trip, join your crew, and sync when you have service.
+          Sign in to plan trips with your crew and sync when you have service.
         </div>
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>

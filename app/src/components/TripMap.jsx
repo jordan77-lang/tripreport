@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { OfflineTripMap } from './OfflineTripMap';
+import { resolveOfflineMapForTrip } from '../lib/offlineMaps';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -16,10 +18,88 @@ const webglSupported = (() => {
 // style options: 'outdoors-v12' | 'satellite-streets-v12' | 'streets-v12'
 export function TripMap({
   style = 'outdoors-v12',
-  position,          // {lng, lat} — live GPS dot
-  track = [],        // [{lng, lat}] — recorded path
-  entries = [],      // [{lng, lat, type, title, col}] — pin markers
-  center,            // {lng, lat} override
+  position,
+  track = [],
+  entries = [],
+  center,
+  zoom = 13,
+  interactive = true,
+  onMapClick,
+  onEntrySelect,
+  selectedEntryId,
+  showHoverPopup = false,
+  offlineRegionIds = [],
+  trip = null,
+}) {
+  const [offlinePack, setOfflinePack] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let blobUrl = null;
+
+    async function load() {
+      const ids = offlineRegionIds.length ? offlineRegionIds : (trip?.offlineRegions || []);
+      if (!ids.length) {
+        setOfflinePack(null);
+        return;
+      }
+      const resolved = await resolveOfflineMapForTrip({ offlineRegions: ids });
+      if (cancelled) return;
+      if (resolved?.blobUrl) {
+        blobUrl = resolved.blobUrl;
+        setOfflinePack(resolved);
+      } else {
+        setOfflinePack(null);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [offlineRegionIds, trip?.offlineRegions]);
+
+  if (offlinePack?.blobUrl) {
+    return (
+      <OfflineTripMap
+        pmtilesUrl={offlinePack.blobUrl}
+        position={position}
+        track={track}
+        entries={entries}
+        center={center || offlinePack.region?.center}
+        zoom={zoom}
+        interactive={interactive}
+        onMapClick={onMapClick}
+        onEntrySelect={onEntrySelect}
+        selectedEntryId={selectedEntryId}
+      />
+    );
+  }
+
+  return (
+    <MapboxTripMap
+      style={style}
+      position={position}
+      track={track}
+      entries={entries}
+      center={center}
+      zoom={zoom}
+      interactive={interactive}
+      onMapClick={onMapClick}
+      onEntrySelect={onEntrySelect}
+      selectedEntryId={selectedEntryId}
+      showHoverPopup={showHoverPopup}
+    />
+  );
+}
+
+function MapboxTripMap({
+  style = 'outdoors-v12',
+  position,
+  track = [],
+  entries = [],
+  center,
   zoom = 13,
   interactive = true,
   onMapClick,

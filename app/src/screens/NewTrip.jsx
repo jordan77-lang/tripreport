@@ -6,7 +6,8 @@ import { createTrip, getContacts, saveContact } from '../lib/storage';
 import { createCoverPhotoFromFile } from '../lib/media';
 import { pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
-import { MAIN_SALMON_RIVER } from '../lib/mapRegions';
+import { listMapRegions, regionMatchesTripTypes } from '../lib/mapRegions';
+import { preloadMapRegions } from '../lib/offlineMaps';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -37,6 +38,7 @@ export function NewTrip({ onDone, onBack }) {
   const [mapZoom, setMapZoom]         = useState(7);
   const [mapBounds, setMapBounds]     = useState(null);
   const [maxZoom, setMaxZoom]         = useState(12);
+  const [selectedOfflineRegions, setSelectedOfflineRegions] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching]     = useState(false);
   const mapContainerRef = useRef(null);
@@ -153,9 +155,17 @@ export function NewTrip({ onDone, onBack }) {
     return planAhead || isFutureStartDate(startDate) ? 'planning' : 'active';
   }
 
+  function toggleOfflineRegion(id) {
+    setSelectedOfflineRegions((prev) => (
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    ));
+  }
+
   async function handleLaunch() {
     const status = resolveTripStatus();
-    const salmonLaunch = startDate === '2026-07-20' || name.toLowerCase().includes('salmon');
+    const offlineRegions = selectedOfflineRegions;
+    const catalogRegion = offlineRegions.length === 1 ? listMapRegions().find((r) => r.id === offlineRegions[0]) : null;
+
     const trip = createTrip({
       name: name || 'My Trip',
       types,
@@ -164,7 +174,7 @@ export function NewTrip({ onDone, onBack }) {
       endDate: endDate || null,
       status,
       collaborators: invites,
-      offlineRegions: salmonLaunch ? [MAIN_SALMON_RIVER.id] : [],
+      offlineRegions,
       gpsTrackingEnabled: false,
       gpsBackgroundTracking: false,
       gpsIntervalMs: 15000,
@@ -174,14 +184,18 @@ export function NewTrip({ onDone, onBack }) {
         ne: { lng: mapBounds.getEast(), lat: mapBounds.getNorth() },
         center: mapCenter,
         maxZoom,
-      } : (salmonLaunch ? {
-        sw: MAIN_SALMON_RIVER.bounds.sw,
-        ne: MAIN_SALMON_RIVER.bounds.ne,
-        center: MAIN_SALMON_RIVER.center,
-        maxZoom: 12,
+      } : (catalogRegion ? {
+        sw: catalogRegion.bounds.sw,
+        ne: catalogRegion.bounds.ne,
+        center: catalogRegion.center,
+        maxZoom: catalogRegion.defaultZoom || 12,
       } : null),
-      location: salmonLaunch ? 'Main Salmon River, Idaho' : undefined,
+      location: catalogRegion ? catalogRegion.area : undefined,
     });
+
+    if (offlineRegions.length) {
+      void preloadMapRegions(offlineRegions);
+    }
 
     if (supabaseConfigured) {
       try {
@@ -439,7 +453,53 @@ export function NewTrip({ onDone, onBack }) {
                 ))}
               </div>
               <div style={{ fontSize: 10, color: T.textFaint, marginTop: 6 }}>
-                Tiles load on demand as you use the map — no manual download required. Higher detail = more data usage on first view.
+                Tiles load on demand when online. For no-service areas, add an offline map pack below.
+              </div>
+
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>
+                  Offline map packs (optional)
+                </div>
+                <div style={{ fontSize: 10.5, color: T.textFaint, marginBottom: 8 }}>
+                  Download on Wi‑Fi before your trip. More regions will appear here over time.
+                </div>
+                {listMapRegions().map((region) => {
+                  const suggested = regionMatchesTripTypes(region, types);
+                  const checked = selectedOfflineRegions.includes(region.id);
+                  return (
+                    <div
+                      key={region.id}
+                      onClick={() => toggleOfflineRegion(region.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '9px 10px',
+                        marginBottom: 6,
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        border: `1.5px solid ${checked ? T.accent : T.border}`,
+                        background: checked ? T.accentLight : T.bg,
+                      }}
+                    >
+                      <div style={{
+                        width: 18, height: 18, borderRadius: 5, marginTop: 1, flexShrink: 0,
+                        border: `2px solid ${checked ? T.accent : T.border}`,
+                        background: checked ? T.accent : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {checked && <Ic d="M20 6L9 17l-5-5" size={10} color="white" sw={3} />}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{region.name}</div>
+                        <div style={{ fontSize: 10.5, color: T.textFaint }}>{region.description}</div>
+                        {suggested && !checked && (
+                          <div style={{ fontSize: 10, color: T.accentMid, marginTop: 3, fontWeight: 600 }}>Suggested for your activity types</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

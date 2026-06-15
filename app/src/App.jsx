@@ -12,6 +12,7 @@ import { JoinTrip }     from './screens/JoinTrip';
 import { useAuth } from './context/AuthContext';
 import { getActiveTrip, getTrips, setActiveTrip, startTrip, updateEntry } from './lib/storage';
 import { useGPS } from './hooks/useGPS';
+import { useOfflineMapPreload } from './hooks/useOfflineMapPreload';
 import { fetchGauge, fetchNearbyGaugesByGps, findNearbyKnownGauges } from './lib/usgs';
 import { fetchWeatherAtTime } from './lib/weather';
 
@@ -21,6 +22,10 @@ export default function App() {
   const [trip, setTrip]     = useState(() => getActiveTrip());
   const [allTrips, setAllTrips] = useState(() => getTrips());
   const enrichmentRunningRef = useRef(false);
+
+  useOfflineMapPreload({
+    enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
+  });
 
   const refreshTrip = useCallback(() => {
     setTrip(getActiveTrip());

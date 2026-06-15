@@ -10,12 +10,14 @@ import {
   generateShoppingList,
 } from '../lib/storage';
 import { TripExpenses } from '../components/TripExpenses';
+import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
 
 const TABS = [
   { id: 'gear', label: 'Gear' },
   { id: 'meals', label: 'Meals' },
   { id: 'shopping', label: 'Shopping' },
   { id: 'expenses', label: 'Expenses' },
+  { id: 'maps', label: 'Maps' },
 ];
 
 const GEAR_CATEGORIES = ['group', 'shelter', 'cooking', 'safety', 'personal'];
@@ -76,6 +78,7 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
         {tab === 'meals' && <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
         {tab === 'shopping' && <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />}
         {tab === 'expenses' && <TripExpenses trip={trip} onTripUpdate={onTripUpdate} scope="trip" />}
+        {tab === 'maps' && <OfflineMapsPanel trip={trip} onTripUpdate={onTripUpdate} />}
         <div style={{ height: 16 }} />
       </div>
 

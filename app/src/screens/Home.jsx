@@ -5,8 +5,6 @@ import { SyncChip } from '../components/SyncChip';
 import { T, F, ICONS } from '../tokens';
 import { fetchGauge, fetchNearbyGaugesByGps } from '../lib/usgs';
 import { fetchCurrentWeather } from '../lib/weather';
-import { MAIN_SALMON_RIVER } from '../lib/mapRegions';
-import { supabaseConfigured } from '../lib/supabase';
 
 export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTrip, onSelectTrip, onStartTrip, onOpenPlan, onJoinTrip, auth }) {
   const fieldTrip = trip?.status === 'active' ? trip : null;
@@ -155,18 +153,6 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
-
-        {auth?.configured && auth?.profile?.display_name && (
-          <div style={{ margin: '12px 16px 0', background: '#E4EFF8', border: '1px solid #C7DDEF', borderRadius: 12, padding: '12px 14px' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#2A5C8E', marginBottom: 4 }}>Main Salmon · July 20 launch</div>
-            <div style={{ fontSize: 11, color: T.textSub, lineHeight: 1.45, marginBottom: 10 }}>
-              Plan your trip from Corn Creek through the wilderness corridor. Offline map preload for this section is coming next — bounds are already configured.
-            </div>
-            <div style={{ fontSize: 10.5, color: '#2A5C8E', fontWeight: 700 }}>
-              Region: {MAIN_SALMON_RIVER.name} · zoom {MAIN_SALMON_RIVER.default_zoom}
-            </div>
-          </div>
-        )}
 
         {/* Active trip banner */}
         {fieldTrip ? (

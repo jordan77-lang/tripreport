@@ -32,6 +32,8 @@ export function Navigator({ trip, onNav, onFab, gps }) {
           entries={locations.length ? locations : legacyEntries}
           zoom={13}
           showHoverPopup
+          trip={trip}
+          offlineRegionIds={trip?.offlineRegions}
         />
 
         {/* Top pill */}

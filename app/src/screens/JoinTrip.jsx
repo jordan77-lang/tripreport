@@ -27,7 +27,7 @@ export function JoinTrip({ onJoined, onBack }) {
         <button type="button" onClick={onBack} style={backBtn}>← Back</button>
         <div style={{ fontSize: 22, fontWeight: 900, color: T.text, marginBottom: 8 }}>Join a trip</div>
         <div style={{ fontSize: 13, color: T.textSub, marginBottom: 20, lineHeight: 1.5 }}>
-          Enter the invite code from your trip lead (e.g. for the Main Salmon launch on July 20).
+          Enter the invite code from your trip lead.
         </div>
 
         <form onSubmit={handleJoin}>
