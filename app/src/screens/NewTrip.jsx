@@ -4,6 +4,9 @@ import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { createTrip, getContacts, saveContact } from '../lib/storage';
 import { createCoverPhotoFromFile } from '../lib/media';
+import { pushTripToCloud } from '../lib/tripCloud';
+import { supabaseConfigured } from '../lib/supabase';
+import { MAIN_SALMON_RIVER } from '../lib/mapRegions';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -150,8 +153,9 @@ export function NewTrip({ onDone, onBack }) {
     return planAhead || isFutureStartDate(startDate) ? 'planning' : 'active';
   }
 
-  function handleLaunch() {
+  async function handleLaunch() {
     const status = resolveTripStatus();
+    const salmonLaunch = startDate === '2026-07-20' || name.toLowerCase().includes('salmon');
     const trip = createTrip({
       name: name || 'My Trip',
       types,
@@ -160,7 +164,7 @@ export function NewTrip({ onDone, onBack }) {
       endDate: endDate || null,
       status,
       collaborators: invites,
-      offlineRegions: [],
+      offlineRegions: salmonLaunch ? [MAIN_SALMON_RIVER.id] : [],
       gpsTrackingEnabled: false,
       gpsBackgroundTracking: false,
       gpsIntervalMs: 15000,
@@ -170,8 +174,23 @@ export function NewTrip({ onDone, onBack }) {
         ne: { lng: mapBounds.getEast(), lat: mapBounds.getNorth() },
         center: mapCenter,
         maxZoom,
-      } : null,
+      } : (salmonLaunch ? {
+        sw: MAIN_SALMON_RIVER.bounds.sw,
+        ne: MAIN_SALMON_RIVER.bounds.ne,
+        center: MAIN_SALMON_RIVER.center,
+        maxZoom: 12,
+      } : null),
+      location: salmonLaunch ? 'Main Salmon River, Idaho' : undefined,
     });
+
+    if (supabaseConfigured) {
+      try {
+        await pushTripToCloud(trip);
+      } catch (e) {
+        console.error('Cloud sync failed — trip saved locally', e);
+      }
+    }
+
     onDone(trip);
   }
 

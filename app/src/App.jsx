@@ -6,12 +6,17 @@ import { FieldJournal } from './screens/FieldJournal';
 import { TripPlan }     from './screens/TripPlan';
 import { NewTrip }      from './screens/NewTrip';
 import { RiverIntel }   from './screens/RiverIntel';
+import { AuthScreen }   from './screens/Auth';
+import { ProfileSetup } from './screens/ProfileSetup';
+import { JoinTrip }     from './screens/JoinTrip';
+import { useAuth } from './context/AuthContext';
 import { getActiveTrip, getTrips, setActiveTrip, startTrip, updateEntry } from './lib/storage';
 import { useGPS } from './hooks/useGPS';
 import { fetchGauge, fetchNearbyGaugesByGps, findNearbyKnownGauges } from './lib/usgs';
 import { fetchWeatherAtTime } from './lib/weather';
 
 export default function App() {
+  const auth = useAuth();
   const [screen, setScreen] = useState('home');
   const [trip, setTrip]     = useState(() => getActiveTrip());
   const [allTrips, setAllTrips] = useState(() => getTrips());
@@ -151,8 +156,20 @@ export default function App() {
 
   const common = { trip, onNav, onFab };
 
+  if (auth.configured) {
+    if (auth.loading) {
+      return (
+        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B6560', fontFamily: 'system-ui' }}>
+          Loading…
+        </div>
+      );
+    }
+    if (!auth.isSignedIn) return <AuthScreen />;
+    if (auth.needsProfile) return <ProfileSetup />;
+  }
+
   switch (screen) {
-    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onRiverIntel={() => setScreen('river')} onOpenTrip={() => setScreen('trip')} onStartTrip={handleStartTrip} onOpenPlan={() => setScreen('plan')} />;
+    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onRiverIntel={() => setScreen('river')} onOpenTrip={() => setScreen('trip')} onStartTrip={handleStartTrip} onOpenPlan={() => setScreen('plan')} onJoinTrip={() => setScreen('join')} auth={auth} />;
     case 'trip':    return <Trip {...common} onTripUpdate={refreshTrip} />;
     case 'map':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} /> : <Navigator {...common} gps={gps} />;
     case 'log':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} />;
@@ -161,7 +178,16 @@ export default function App() {
     case 'new-trip':
       return <NewTrip
         onBack={() => setScreen('home')}
-        onDone={(t) => { setTrip(t); setScreen('trip'); }}
+        onDone={(t) => { setTrip(t); refreshTrip(); setScreen('trip'); }}
+      />;
+    case 'join':
+      return <JoinTrip
+        onBack={() => setScreen('home')}
+        onJoined={(tripId) => {
+          setActiveTrip(tripId);
+          refreshTrip();
+          setScreen('trip');
+        }}
       />;
     default:        return <Home {...common} />;
   }

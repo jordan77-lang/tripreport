@@ -22,6 +22,10 @@ From the repo root you can also run `npm run dev`, `npm run build`, and `npm run
 3. Add environment variables in Netlify → Site settings → Environment variables:
    - `VITE_MAPBOX_TOKEN`
    - `VITE_USGS_KEY` (optional)
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+
+See [app/docs/supabase-setup.md](app/docs/supabase-setup.md) for Supabase project setup.
 
 Push to `main` to trigger a deploy.
 

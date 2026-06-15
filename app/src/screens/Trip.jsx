@@ -10,7 +10,10 @@ import { createCoverPhotoFromFile } from '../lib/media';
 import { shareEntity } from '../lib/share';
 import { exportGpx, exportHtmlReport } from '../lib/export';
 import { exportTripUpdateFile, formatMergeSummary, mergeTripUpdate, readTripUpdateFile } from '../lib/offlineExchange';
+import { pushTripToCloud } from '../lib/tripCloud';
+import { supabaseConfigured } from '../lib/supabase';
 import { LocationPage } from './LocationPage';
+import { InviteCodePanel } from './JoinTrip';
 
 export function Trip({ trip, onNav, onFab, onTripUpdate }) {
   const currentUserId = getCurrentUserId();
@@ -49,6 +52,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
   const [tripCoverBusy, setTripCoverBusy] = useState(false);
   const [locCoverPhoto, setLocCoverPhoto] = useState(null);
   const [exchangeStatus, setExchangeStatus] = useState(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState(null);
   const importUpdateRef = useRef(null);
   const entries = useMemo(() => trip?.entries ?? [], [trip?.entries]);
   const locations = useMemo(() => trip?.locations ?? [], [trip?.locations]);
@@ -163,6 +167,17 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
       title: `Trip: ${trip.name}`,
       text: `${trip.name}\n${trip.location || 'Unknown location'}\n${(trip.types || []).join(', ')}`,
     });
+  }
+
+  async function syncToCloud() {
+    if (!trip) return;
+    try {
+      await pushTripToCloud(trip);
+      setCloudSyncStatus({ kind: 'success', message: 'Trip synced to cloud.' });
+      onTripUpdate?.();
+    } catch (e) {
+      setCloudSyncStatus({ kind: 'error', message: e?.message || 'Cloud sync failed.' });
+    }
   }
 
   async function exportOfflineUpdate() {
@@ -442,6 +457,12 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
                  style={{ background: '#EAF3FB', border: '1px solid #C7DDEF', borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
               Report
             </div>
+            {supabaseConfigured && (
+              <div onClick={() => void syncToCloud()}
+                   style={{ background: '#E8F2EA', border: '1px solid #A8CFB2', borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: '#2E6D3A', cursor: 'pointer' }}>
+                Cloud sync
+              </div>
+            )}
             <div onClick={exportOfflineUpdate}
                  style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: T.accent, cursor: 'pointer' }}>
               Export Update
@@ -484,6 +505,20 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+        {!!cloudSyncStatus && (
+          <div style={{
+            background: cloudSyncStatus.kind === 'error' ? '#FBE4E4' : '#E8F2EA',
+            border: `1px solid ${cloudSyncStatus.kind === 'error' ? '#E7B5B5' : '#A8CFB2'}`,
+            borderRadius: 12,
+            padding: '10px 12px',
+            marginBottom: 12,
+            fontSize: 11.5,
+            fontWeight: 700,
+            color: cloudSyncStatus.kind === 'error' ? '#8A1414' : '#2E6D3A',
+          }}>
+            {cloudSyncStatus.message}
+          </div>
+        )}
         {!!exchangeStatus && (
           <div style={{
             background: exchangeStatus.kind === 'error' ? '#FBE4E4' : T.accentLight,
@@ -559,6 +594,10 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
             <div style={{ fontSize: 11.5, fontWeight: 700, color: T.textSub, marginBottom: 4 }}>Field tools locked until start</div>
             <div style={{ fontSize: 10.5, color: T.textFaint }}>Live Map and Field Journal unlock when you start this trip.</div>
           </div>
+        )}
+
+        {supabaseConfigured && trip?.ownerId === currentUserId && (
+          <InviteCodePanel tripId={trip.id} />
         )}
 
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 12 }}>

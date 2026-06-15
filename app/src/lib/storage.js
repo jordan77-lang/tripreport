@@ -5,6 +5,8 @@ const ACTIVE_KEY = 'tr_active_trip_id';
 const USER_KEY = 'tr_user_id';
 const CONTACTS_KEY = 'tr_contacts';
 
+import { getSignedInUserId } from './authUser';
+
 export function getContacts() {
   try {
     const parsed = JSON.parse(localStorage.getItem(CONTACTS_KEY) || '[]');
@@ -27,6 +29,9 @@ export function deleteContact(id) {
 }
 
 export function getCurrentUserId() {
+  const authId = getSignedInUserId();
+  if (authId) return authId;
+
   let id = localStorage.getItem(USER_KEY);
   if (!id) {
     id = crypto.randomUUID();

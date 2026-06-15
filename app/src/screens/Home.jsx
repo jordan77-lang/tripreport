@@ -5,8 +5,10 @@ import { SyncChip } from '../components/SyncChip';
 import { T, F, ICONS } from '../tokens';
 import { fetchGauge, fetchNearbyGaugesByGps } from '../lib/usgs';
 import { fetchCurrentWeather } from '../lib/weather';
+import { MAIN_SALMON_RIVER } from '../lib/mapRegions';
+import { supabaseConfigured } from '../lib/supabase';
 
-export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTrip, onSelectTrip, onStartTrip, onOpenPlan }) {
+export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTrip, onSelectTrip, onStartTrip, onOpenPlan, onJoinTrip, auth }) {
   const fieldTrip = trip?.status === 'active' ? trip : null;
   const selectedPlanningTrip = trip?.status === 'planning' ? trip : null;
   const [nowMs] = useState(() => Date.now());
@@ -112,6 +114,8 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
     }
   }
 
+  const profileInitial = (auth?.profile?.display_name || auth?.user?.email || '?').charAt(0).toUpperCase();
+
   return (
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
 
@@ -128,13 +132,41 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
                   : 'Ready to explore'}
             </div>
           </div>
-          <div style={{ width: 38, height: 38, borderRadius: 19, background: T.accent,
-                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                         fontSize: 14, fontWeight: 800, color: 'white' }}>J</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {auth?.configured && onJoinTrip && (
+              <div onClick={onJoinTrip}
+                   style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: T.accent, cursor: 'pointer' }}>
+                Join trip
+              </div>
+            )}
+            {auth?.configured && (
+              <div onClick={() => auth.signOut()}
+                   style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: T.textSub, cursor: 'pointer' }}>
+                Sign out
+              </div>
+            )}
+            <div style={{ width: 38, height: 38, borderRadius: 19, background: T.accent,
+                           display: 'flex', alignItems: 'center', justifyContent: 'center',
+                           fontSize: 14, fontWeight: 800, color: 'white' }} title={auth?.profile?.display_name || ''}>
+              {profileInitial}
+            </div>
+          </div>
         </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
+
+        {auth?.configured && auth?.profile?.display_name && (
+          <div style={{ margin: '12px 16px 0', background: '#E4EFF8', border: '1px solid #C7DDEF', borderRadius: 12, padding: '12px 14px' }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#2A5C8E', marginBottom: 4 }}>Main Salmon · July 20 launch</div>
+            <div style={{ fontSize: 11, color: T.textSub, lineHeight: 1.45, marginBottom: 10 }}>
+              Plan your trip from Corn Creek through the wilderness corridor. Offline map preload for this section is coming next — bounds are already configured.
+            </div>
+            <div style={{ fontSize: 10.5, color: '#2A5C8E', fontWeight: 700 }}>
+              Region: {MAIN_SALMON_RIVER.name} · zoom {MAIN_SALMON_RIVER.default_zoom}
+            </div>
+          </div>
+        )}
 
         {/* Active trip banner */}
         {fieldTrip ? (
