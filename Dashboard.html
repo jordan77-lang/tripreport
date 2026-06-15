@@ -1,0 +1,2769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TripReport — Home Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="android-frame.jsx"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #F0EEE9; }
+    ::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.9)} }
+    @keyframes ripple { 0%{opacity:.4;transform:scale(1)} 100%{opacity:0;transform:scale(2.8)} }
+    @keyframes trackin { from{stroke-dashoffset:800} to{stroke-dashoffset:0} }
+    @keyframes trackFill { from{width:0%} to{width:100%} }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ── Design Tokens ──────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "#2C5F3E",
+  "accentLight": "#EBF3ED",
+  "accentMid": "#4A8B61",
+  "amber": "#B8702E",
+  "amberLight": "#FBF0E4",
+  "track": "#5DBE7E",
+  "bg": "#F5F4F0",
+  "card": "#FFFFFF",
+  "text": "#1A1917",
+  "textSub": "#6B6763",
+  "textFaint": "#A09D99",
+  "border": "#E8E5E0",
+  "tripName": "Lost Coast Trail"
+}/*EDITMODE-END*/;
+
+const F = "'Plus Jakarta Sans', system-ui, sans-serif";
+
+// ── Icon ──────────────────────────────────────────────────────
+const Ic = ({ d, d2, size=20, color, sw=1.8, fill="none" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={color}
+    strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>
+    <path d={d} />
+    {d2 && <path d={d2} />}
+  </svg>
+);
+
+const ICONS = {
+  home:     "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z",
+  home2:    "M9 22V12h6v10",
+  map:      "M1 6l7-3 8 3 7-3v16l-7 3-8-3-7 3V6z",
+  map2:     "M8 3v16 M16 6v16",
+  plus:     "M12 5v14M5 12h14",
+  journal:  "M4 19.5A2.5 2.5 0 016.5 17H20",
+  journal2: "M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z",
+  share:    "M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8",
+  share2:   "M16 6l-4-4-4 4 M12 2v13",
+  camera:   "M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z M12 8a4 4 0 100 8 4 4 0 000-8z",
+  mic:      "M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z M19 10v2a7 7 0 01-14 0v-2 M12 19v4 M8 23h8",
+  video:    "M23 7l-7 5 7 5V7z M1 5h14a2 2 0 012 2v10a2 2 0 01-2 2H1",
+  tent:     "M3 17l9-14 9 14H3z M12 3v14",
+  leaf:     "M17 8C8 10 5.9 16.17 3.82 19h3.45C9 17 12 14 17 8z M21 3L3 21",
+  drop:     "M12 2.69l5.66 5.66a8 8 0 11-11.31 0z",
+  fork:     "M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2 M7 2v20 M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3z M21 15v7",
+  compass:  "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z",
+  users:    "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75 M9 7a4 4 0 100 8 4 4 0 000-8z",
+  chevR:    "M9 18l6-6-6-6",
+  note:     "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7 M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
+};
+
+// ── Topo Map SVG ─────────────────────────────────────────────
+const MapSVG = ({ w, h, compact=false, trackAnim=false }) => {
+  const vH = compact ? 165 : 220;
+  return (
+    <svg width={w} height={h} viewBox={`0 0 430 ${vH}`} preserveAspectRatio="xMidYMid slice"
+         style={{display:'block', width:'100%', height:'100%'}}>
+      {/* Base */}
+      <rect width="430" height={vH} fill="#EEF2E4"/>
+      {/* Forest patches */}
+      <ellipse cx="75" cy="95" rx="62" ry="48" fill="#D0E4B4" opacity=".65"/>
+      <ellipse cx="330" cy="72" rx="58" ry="42" fill="#D0E4B4" opacity=".55"/>
+      <ellipse cx="195" cy="148" rx="48" ry="32" fill="#D0E4B4" opacity=".45"/>
+      {/* Road/path grid subtle */}
+      <line x1="0" y1="120" x2="430" y2="120" stroke="#D4D8C0" strokeWidth=".5" opacity=".5"/>
+      {/* Stream */}
+      <path d="M295 165 Q310 140 318 114 Q326 88 330 62" fill="none" stroke="#A8C8E0" strokeWidth="3.5" opacity=".75"/>
+      <path d="M295 165 Q310 140 318 114 Q326 88 330 62" fill="none" stroke="#C8E0F0" strokeWidth="1.5" opacity=".5"/>
+      {/* Topo contours */}
+      {[
+        ["M5,78 Q60,58 112,72 Q168,86 215,65 Q260,44 308,60 Q355,76 425,57", .9],
+        ["M0,93 Q55,73 108,88 Q162,102 208,80 Q253,58 300,75 Q348,92 425,72", .75],
+        ["M8,108 Q62,88 115,103 Q168,118 214,96 Q258,74 305,91 Q352,108 425,88", .75],
+        ["M15,58 Q68,38 120,53 Q172,68 218,47 Q263,26 308,42 Q355,58 415,42", .85],
+        ["M25,42 Q78,24 132,38 Q182,52 228,32 Q272,12 316,28 Q360,45 408,30", .7],
+        ["M0,124 Q55,108 108,122 Q160,136 206,116 Q250,96 298,112 Q344,128 425,110", .7],
+        ["M4,140 Q58,124 110,138 Q162,152 208,132 Q252,112 300,128 Q348,144 422,126", .65],
+        ["M10,156 Q62,140 114,155 Q164,169 210,148 Q254,128 300,144 Q348,160 418,142", .55],
+      ].map(([d,op],i) => (
+        <path key={i} d={d} fill="none" stroke="#B0C48C"
+              strokeWidth={i%3===0?1.4:.7} opacity={op}/>
+      ))}
+      {/* Elevation label on ridge */}
+      <text x="270" y="38" fontSize="9" fill="#7A8B5C" fontFamily="system-ui" opacity=".85" fontWeight="600">2,847 ft</text>
+      {/* Trail (dashed) */}
+      <path d="M22,152 Q48,136 78,124 Q108,112 140,116 Q170,120 196,106 Q220,92 248,78 Q275,64 302,56 Q330,48 358,40"
+            fill="none" stroke="#C8A870" strokeWidth="2" strokeDasharray="5,3.5" opacity=".65"/>
+      {/* GPS track */}
+      <path d="M22,152 Q48,136 78,124 Q108,112 140,116 Q170,120 196,106 Q220,92 248,78"
+            fill="none" stroke="#5DBE7E" strokeWidth="4" strokeLinecap="round"
+            style={trackAnim ? {animation:'trackin 2s ease-out forwards', strokeDasharray:800, strokeDashoffset:800} : {}}
+            opacity=".95"/>
+      {/* Entry dots */}
+      <circle cx="78" cy="124" r="5" fill="#2C5F3E" opacity=".9"/>
+      <circle cx="140" cy="116" r="5" fill="#2C5F3E" opacity=".9"/>
+      <circle cx="196" cy="106" r="5.5" fill="#B8702E" opacity=".95"/>
+      {/* Start */}
+      <circle cx="22" cy="152" r="5.5" fill="#2C5F3E"/>
+      <circle cx="22" cy="152" r="11" fill="#2C5F3E" opacity=".18"/>
+      {/* Current pos */}
+      <circle cx="248" cy="78" r="7.5" fill="#5DBE7E"/>
+      <circle cx="248" cy="78" r="15" fill="#5DBE7E" opacity=".22"/>
+      <circle cx="248" cy="78" r="23" fill="#5DBE7E" opacity=".09"/>
+      {/* Campsite pin */}
+      <circle cx="140" cy="110" r="9" fill="#B8702E" opacity=".9"/>
+      <text x="140" y="114" fontSize="9" fill="white" textAnchor="middle" fontFamily="system-ui">⛺</text>
+      {/* Scale */}
+      {!compact && <>
+        <line x1="355" y1="205" x2="415" y2="205" stroke="#8A9478" strokeWidth="1.5"/>
+        <line x1="355" y1="200" x2="355" y2="210" stroke="#8A9478" strokeWidth="1.5"/>
+        <line x1="415" y1="200" x2="415" y2="210" stroke="#8A9478" strokeWidth="1.5"/>
+        <text x="385" y="198" fontSize="8.5" fill="#8A9478" textAnchor="middle" fontFamily="system-ui">1 mi</text>
+      </>}
+    </svg>
+  );
+};
+
+// ── Avatar strip ─────────────────────────────────────────────
+const AvatarStrip = ({ names=['J','M','K'], extra=1, T }) => (
+  <div style={{display:'flex', alignItems:'center'}}>
+    {names.map((n,i) => (
+      <div key={i} style={{
+        width:28, height:28, borderRadius:14,
+        background:[T.accent,'#7A5C3E','#4A6B8A'][i],
+        border:'2px solid white', marginLeft:i>0?-7:0,
+        display:'flex', alignItems:'center', justifyContent:'center',
+        fontSize:11, fontWeight:700, color:'white', zIndex:names.length-i,
+        fontFamily:F,
+      }}>{n}</div>
+    ))}
+    {extra>0 && (
+      <div style={{
+        width:28, height:28, borderRadius:14, background:T.accentLight,
+        border:`2px solid white`, marginLeft:-7,
+        display:'flex', alignItems:'center', justifyContent:'center',
+        fontSize:9, fontWeight:700, color:T.accent, fontFamily:F,
+      }}>+{extra}</div>
+    )}
+  </div>
+);
+
+// ── Bottom Nav ────────────────────────────────────────────────
+const BottomNav = ({ active='home', T, onNav, onFab }) => {
+  const tabs = [
+    { id:'home',  label:'Home',    d:ICONS.home,    d2:ICONS.home2 },
+    { id:'map',   label:'Map',     d:ICONS.map,     d2:ICONS.map2 },
+    { id:'fab',   label:'',        d:ICONS.plus,    isFab:true },
+    { id:'log',   label:'Journal', d:ICONS.journal, d2:ICONS.journal2 },
+    { id:'share', label:'Share',   d:ICONS.share,   d2:ICONS.share2 },
+  ];
+  return (
+    <div style={{height:64, background:T.card, borderTop:`1px solid ${T.border}`,
+                 display:'flex', alignItems:'center', paddingBottom:2, flexShrink:0}}>
+      {tabs.map(t => (
+        <div key={t.id} onClick={() => t.isFab ? onFab?.() : onNav?.(t.id)}
+             style={{flex:1, display:'flex', flexDirection:'column', cursor:'pointer',
+                     alignItems:'center', justifyContent:'center', gap:2, position:'relative'}}>
+          {t.isFab ? (
+            <div style={{width:50, height:50, borderRadius:25, background:T.accent,
+                         display:'flex', alignItems:'center', justifyContent:'center',
+                         marginTop:-24, boxShadow:`0 4px 16px ${T.accent}60`}}>
+              <Ic d={t.d} size={22} color="white" sw={2.5}/>
+            </div>
+          ) : (
+            <>
+              {active===t.id && <div style={{position:'absolute', top:-1, width:26, height:3,
+                background:T.accent, borderRadius:2}}/>}
+              <Ic d={t.d} d2={t.d2} size={21}
+                  color={active===t.id ? T.accent : T.textFaint}
+                  sw={active===t.id ? 2.2 : 1.6}/>
+              <span style={{fontSize:9.5, color:active===t.id ? T.accent : T.textFaint,
+                             fontWeight:active===t.id?700:400, fontFamily:F, letterSpacing:.1}}>{t.label}</span>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// SCREEN A — NAVIGATOR  (map-first, field-use)
+// ════════════════════════════════════════════════════════════
+const ScreenNavigator = ({ T, onNav, onFab }) => (
+  <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+    {/* Full-bleed map */}
+    <div style={{flex:1, position:'relative', overflow:'hidden', minHeight:0}}>
+      <div style={{position:'absolute', inset:0}}>
+        <MapSVG w={390} h={500} trackAnim={true}/>
+      </div>
+
+      {/* Floating top pill: trip name */}
+      <div style={{position:'absolute', top:10, left:12, right:12, display:'flex', gap:8}}>
+        <div style={{flex:1, background:'rgba(255,255,255,0.93)', backdropFilter:'blur(10px)',
+                     borderRadius:14, padding:'9px 14px',
+                     boxShadow:'0 2px 14px rgba(0,0,0,0.14)'}}>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+            <div>
+              <div style={{fontSize:15, fontWeight:800, color:T.text, letterSpacing:-.3}}>{T.tripName}</div>
+              <div style={{fontSize:11, color:T.textSub, marginTop:1}}>Day 3 of 5 · 3 collaborators</div>
+            </div>
+            <div style={{display:'flex', alignItems:'center', gap:5,
+                         background:T.accent, borderRadius:10, padding:'4px 9px'}}>
+              <div style={{width:6, height:6, borderRadius:3, background:'#5DBE7E',
+                           animation:'pulse 2s infinite'}}/>
+              <span style={{fontSize:10, fontWeight:700, color:'white', letterSpacing:.8}}>LIVE</span>
+            </div>
+          </div>
+        </div>
+        <div style={{width:44, height:44, borderRadius:22, background:'rgba(255,255,255,0.93)',
+                     backdropFilter:'blur(10px)', display:'flex', alignItems:'center', justifyContent:'center',
+                     boxShadow:'0 2px 10px rgba(0,0,0,0.12)'}}>
+          <Ic d={ICONS.compass} size={20} color={T.accent} sw={1.8}/>
+        </div>
+      </div>
+
+      {/* Map attribution + layer toggle */}
+      <div style={{position:'absolute', bottom:120, right:12}}>
+        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+          {[
+            {icon:'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a1 1 0 100 2 1 1 0 000-2z', label:''},
+            {icon:'M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z', label:''},
+          ].map((btn,i) => (
+            <div key={i} style={{width:38, height:38, borderRadius:10, background:'rgba(255,255,255,0.93)',
+                                  backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center',
+                                  boxShadow:'0 1px 8px rgba(0,0,0,0.1)'}}>
+              <Ic d={btn.icon} size={17} color={T.textSub} sw={1.6}/>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats pill row over map bottom */}
+      <div style={{position:'absolute', bottom:14, left:12, right:12}}>
+        <div style={{background:'rgba(255,255,255,0.95)', backdropFilter:'blur(10px)',
+                     borderRadius:16, padding:'12px 6px', boxShadow:'0 4px 22px rgba(0,0,0,0.16)',
+                     display:'flex'}}>
+          {[
+            {val:'12.4', unit:'mi', label:'Distance'},
+            {val:'2,847', unit:'ft', label:'Elevation'},
+            {val:'4h 32m', unit:'', label:'Moving'},
+            {val:'68°', unit:'F', label:'Temp'},
+          ].map((s,i,arr) => (
+            <div key={i} style={{flex:1, textAlign:'center',
+                                  borderRight: i<arr.length-1 ? `1px solid ${T.border}` : 'none'}}>
+              <div style={{fontSize:16, fontWeight:800, color:T.text, letterSpacing:-.5, lineHeight:1}}>
+                {s.val}<span style={{fontSize:10, fontWeight:500, color:T.textSub}}>{s.unit}</span>
+              </div>
+              <div style={{fontSize:9.5, color:T.textFaint, marginTop:3, fontWeight:500}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    {/* Bottom drawer: entries */}
+    <div style={{background:T.card, borderRadius:'20px 20px 0 0', padding:'6px 16px 0',
+                 boxShadow:'0 -2px 20px rgba(0,0,0,0.08)', flexShrink:0}}>
+      <div style={{width:36, height:4, background:T.border, borderRadius:2, margin:'0 auto 12px'}}/>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12}}>
+        <span style={{fontSize:13, fontWeight:700, color:T.text}}>Today's Entries · 3</span>
+        <span style={{fontSize:12, color:T.accent, fontWeight:700}}>View all</span>
+      </div>
+      <div style={{display:'flex', gap:10, paddingBottom:16, overflowX:'auto'}}>
+        {[
+          {type:'Photos', icon:ICONS.camera, label:'18 photos', sub:'Big Sur coast', time:'2h ago', col:T.amber},
+          {type:'Campsite', icon:ICONS.tent, label:'Shelter Cove', sub:'★★★★  Exposed', time:'5h ago', col:T.accent},
+          {type:'Wildlife', icon:ICONS.leaf, label:'Roosevelt Elk', sub:'12 spotted', time:'7h ago', col:'#4A7A34'},
+        ].map((e,i) => (
+          <div key={i} style={{flexShrink:0, width:118, background:T.bg, borderRadius:12, padding:'10px',
+                                border:`1px solid ${T.border}`}}>
+            <div style={{width:34, height:34, borderRadius:8, background:e.col+'22',
+                         display:'flex', alignItems:'center', justifyContent:'center', marginBottom:8}}>
+              <Ic d={e.icon} size={16} color={e.col} sw={1.8}/>
+            </div>
+            <div style={{fontSize:11.5, fontWeight:700, color:T.text, lineHeight:1.2}}>{e.label}</div>
+            <div style={{fontSize:10, color:T.textSub, marginTop:2, lineHeight:1.3}}>{e.sub}</div>
+            <div style={{fontSize:10, color:T.textFaint, marginTop:4}}>{e.time}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <BottomNav active="map" T={T} onNav={onNav} onFab={onFab}/>
+  </div>
+);
+
+// ════════════════════════════════════════════════════════════
+// SCREEN B — FIELD JOURNAL  (card dashboard, camp-use)
+// ════════════════════════════════════════════════════════════
+const CAPTURE_MODES = {
+  camping: [
+    {icon:ICONS.mic,   label:'Voice',   col:'#5B8DD9'},
+    {icon:ICONS.video, label:'Video',   col:'#C05050'},
+    {icon:ICONS.note,  label:'Note',    col:'#6B6763'},
+    {icon:ICONS.tent,  label:'Camp',    col:'#B8702E'},
+    {icon:ICONS.drop,  label:'Water',   col:'#4A8BC4'},
+    {icon:ICONS.fork,  label:'Food',    col:'#B06030'},
+    {icon:ICONS.leaf,  label:'Wild',    col:'#4A7A34'},
+  ],
+  river: [
+    {icon:ICONS.mic,   label:'Voice',   col:'#5B8DD9'},
+    {icon:ICONS.video, label:'Video',   col:'#C05050'},
+    {icon:ICONS.drop,  label:'Rapid',   col:'#3A72A8'},
+    {icon:'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+                        label:'Gauge',   col:'#2A5C8E'},
+    {icon:ICONS.tent,  label:'Camp',    col:'#B8702E'},
+    {icon:ICONS.leaf,  label:'Wild',    col:'#4A7A34'},
+    {icon:ICONS.note,  label:'Note',    col:'#6B6763'},
+  ],
+};
+
+const ScreenFieldJournal = ({ T, onNav, onFab }) => {
+  const [captureMode, setCaptureMode] = React.useState('camping');
+  const captureItems = CAPTURE_MODES[captureMode];
+  return (
+  <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+    {/* Header */}
+    <div style={{background:T.card, padding:'10px 16px 14px',
+                 borderBottom:`1px solid ${T.border}`, flexShrink:0}}>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+        <div>
+          <div style={{fontSize:19, fontWeight:800, color:T.text, letterSpacing:-.5}}>{T.tripName}</div>
+          <div style={{fontSize:11, color:T.textSub, marginTop:2}}>Apr 19 – 24 · Day 3 of 5</div>
+        </div>
+        <AvatarStrip T={T}/>
+      </div>
+    </div>
+
+    <div style={{flex:1, overflowY:'auto', padding:'12px 16px'}}>
+
+      {/* Map card */}
+      <div style={{borderRadius:14, overflow:'hidden', marginBottom:12,
+                   boxShadow:'0 2px 14px rgba(0,0,0,0.09)', height:134, position:'relative'}}>
+        <MapSVG w={358} h={134} compact={true}/>
+        <div style={{position:'absolute', top:8, left:10, background:'rgba(255,255,255,0.9)',
+                     borderRadius:8, padding:'3px 9px', fontSize:10.5, fontWeight:700, color:T.accent}}>
+          Topo · 5-day route
+        </div>
+        <div style={{position:'absolute', top:8, right:10, background:T.accent,
+                     borderRadius:8, padding:'3px 9px', fontSize:10, fontWeight:700, color:'white'}}>
+          Expand
+        </div>
+      </div>
+
+      {/* Stats grid */}
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:8, marginBottom:14}}>
+        {[
+          {val:'12.4', label:'Miles', sub:'today', icon:'M17 8C8 10 5.9 16.17 3.82 19h3.45C9 17 12 14 17 8z M21 3L3 21'},
+          {val:'2,847', label:'Feet', sub:'gain', icon:'M22 17.5l-10-15-10 15'},
+          {val:'★ 4.2', label:'Site', sub:'avg', icon:ICONS.tent},
+          {val:'68°F', label:'Temp', sub:'now', icon:ICONS.drop},
+        ].map((s,i) => (
+          <div key={i} style={{background:T.card, borderRadius:10, padding:'10px 8px',
+                                textAlign:'center', border:`1px solid ${T.border}`}}>
+            <div style={{fontSize:15, fontWeight:800, color:T.text, letterSpacing:-.4, lineHeight:1}}>{s.val}</div>
+            <div style={{fontSize:9.5, fontWeight:600, color:T.textSub, marginTop:3}}>{s.label}</div>
+            <div style={{fontSize:9, color:T.textFaint}}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick Capture row — activity-aware */}
+      <div style={{background:T.card, borderRadius:14, padding:'12px 14px',
+                   border:`1px solid ${T.border}`, marginBottom:14}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10}}>
+          <div style={{fontSize:10.5, fontWeight:700, color:T.textSub,
+                       textTransform:'uppercase', letterSpacing:.8}}>Quick Capture</div>
+          {/* Activity mode toggle */}
+          <div style={{display:'flex', background:T.bg, borderRadius:8, padding:2, gap:1,
+                       border:`1px solid ${T.border}`}}>
+            {['camping','river'].map(mode => (
+              <div key={mode} onClick={() => setCaptureMode(mode)}
+                   style={{padding:'3px 9px', borderRadius:6, fontSize:10, fontWeight:700,
+                           cursor:'pointer', transition:'all .15s',
+                           background: captureMode===mode ? (mode==='river' ? '#3A72A8' : T.accent) : 'transparent',
+                           color: captureMode===mode ? 'white' : T.textFaint}}>
+                {mode==='camping' ? '⛺' : '🌊'}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:6}}>
+          {captureItems.map((item,i) => (
+            <div key={i} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:4}}>
+              <div style={{width:36, height:36, borderRadius:10, background:item.col+'1A',
+                           display:'flex', alignItems:'center', justifyContent:'center'}}>
+                <Ic d={item.icon} size={16} color={item.col} sw={1.9}/>
+              </div>
+              <span style={{fontSize:8.5, color:T.textSub, fontWeight:600, textAlign:'center'}}>{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent entries */}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+        <span style={{fontSize:13, fontWeight:700, color:T.text}}>Recent</span>
+        <span style={{fontSize:12, color:T.accent, fontWeight:700}}>All →</span>
+      </div>
+      {[
+        {icon:ICONS.tent, name:'Shelter Cove', meta:'★★★★  ·  2h ago', col:T.amber,
+         desc:'Exposed coastal bluff, 180° Pacific views. Strong SW winds.'},
+        {icon:ICONS.leaf, name:'Roosevelt Elk', meta:'12 spotted  ·  5h ago', col:'#4A7A34',
+         desc:'Large herd in the meadow near mile marker 8.2.'},
+        {icon:ICONS.drop, name:'Sinkyone Creek', meta:'Moderate  ·  Yesterday', col:'#3A72A8',
+         desc:'Knee-deep crossing. Rocky bottom, trekking poles recommended.'},
+      ].map((e,i) => (
+        <div key={i} style={{background:T.card, borderRadius:12, padding:'11px 12px',
+                              marginBottom:8, border:`1px solid ${T.border}`,
+                              display:'flex', gap:10, alignItems:'flex-start'}}>
+          <div style={{width:36, height:36, borderRadius:9, background:e.col+'1C',
+                       display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+            <Ic d={e.icon} size={16} color={e.col} sw={1.8}/>
+          </div>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:1}}>
+              <span style={{fontSize:12.5, fontWeight:700, color:T.text}}>{e.name}</span>
+            </div>
+            <div style={{fontSize:10.5, color:T.textFaint, marginBottom:4}}>{e.meta}</div>
+            <div style={{fontSize:11.5, color:T.textSub, lineHeight:1.4}}>{e.desc}</div>
+          </div>
+          <Ic d={ICONS.chevR} size={14} color={T.textFaint} sw={2}/>
+        </div>
+      ))}
+      <div style={{height:4}}/>
+    </div>
+    <BottomNav active="home" T={T} onNav={onNav} onFab={onFab}/>
+  </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// SCREEN C — STORYTELLER  (timeline feed, share-focused)
+// ════════════════════════════════════════════════════════════
+const ScreenStoryteller = ({ T, onNav, onFab }) => {
+  const [filter, setFilter] = React.useState('All');
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Dark header */}
+      <div style={{background:T.accent, padding:'10px 16px 16px', flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8}}>
+          <div style={{display:'flex', alignItems:'center', gap:7}}>
+            <div style={{width:7, height:7, borderRadius:4, background:'#5DBE7E',
+                         animation:'pulse 2s infinite'}}/>
+            <span style={{fontSize:10.5, fontWeight:700, color:'rgba(255,255,255,.65)', letterSpacing:.9}}>ACTIVE TRIP</span>
+          </div>
+          <div style={{display:'flex', gap:7}}>
+            <div style={{background:'rgba(255,255,255,.15)', borderRadius:8, padding:'5px 10px',
+                         fontSize:11, fontWeight:600, color:'white', display:'flex', alignItems:'center', gap:4}}>
+              <Ic d={ICONS.users} size={12} color="rgba(255,255,255,.8)" sw={1.8}/>
+              Filter
+            </div>
+            <div style={{background:T.track, borderRadius:8, padding:'5px 12px',
+                         fontSize:11, fontWeight:800, color:T.accent}}>Share →</div>
+          </div>
+        </div>
+        <div style={{fontSize:21, fontWeight:800, color:'white', letterSpacing:-.5, marginBottom:8}}>{T.tripName}</div>
+        <div style={{display:'flex', gap:7}}>
+          {['12.4 mi', '2,847 ft ↑', 'Day 3/5', '3 people'].map(tag => (
+            <div key={tag} style={{background:'rgba(255,255,255,.13)', borderRadius:20, padding:'4px 9px',
+                                    fontSize:10.5, color:'rgba(255,255,255,.85)', fontWeight:500}}>{tag}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* People filter chips */}
+      <div style={{background:T.card, borderBottom:`1px solid ${T.border}`,
+                   padding:'10px 16px', flexShrink:0}}>
+        <div style={{display:'flex', gap:7, overflowX:'auto'}}>
+          {['All','Jordan','Maya','Kai'].map(name => (
+            <div key={name} onClick={() => setFilter(name)}
+                 style={{flexShrink:0, padding:'5px 13px', borderRadius:20, fontSize:11.5, fontWeight:600,
+                         background: filter===name ? T.accent : T.bg,
+                         color: filter===name ? 'white' : T.textSub,
+                         border: filter===name ? 'none' : `1px solid ${T.border}`,
+                         cursor:'pointer', transition:'all .15s'}}>
+              {name}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Timeline feed */}
+      <div style={{flex:1, overflowY:'auto'}}>
+
+        {/* Day chapter heading */}
+        <div style={{display:'flex', alignItems:'center', gap:10, padding:'14px 16px 8px'}}>
+          <div style={{flex:1, height:1, background:T.border}}/>
+          <span style={{fontSize:10.5, fontWeight:700, color:T.textSub, letterSpacing:.9, textTransform:'uppercase', whiteSpace:'nowrap'}}>Day 3 · Apr 21</span>
+          <div style={{flex:1, height:1, background:T.border}}/>
+        </div>
+
+        {/* Entry: Campsite + photos */}
+        <div style={{margin:'0 14px 10px', background:T.card, borderRadius:14, overflow:'hidden',
+                     border:`1px solid ${T.border}`}}>
+          <div style={{padding:'11px 12px 10px', display:'flex', gap:10}}>
+            <div style={{width:36, height:36, borderRadius:9, background:T.amberLight,
+                         display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+              <Ic d={ICONS.tent} size={16} color={T.amber} sw={1.9}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline'}}>
+                <span style={{fontSize:13, fontWeight:800, color:T.text}}>Shelter Cove</span>
+                <span style={{fontSize:10, color:T.textFaint}}>2:14 PM</span>
+              </div>
+              <div style={{fontSize:10.5, color:T.amber, fontWeight:700, marginBottom:4}}>Campsite · ★★★★</div>
+              <div style={{fontSize:11.5, color:T.textSub, lineHeight:1.45}}>
+                Exposed bluff with 180° Pacific views. Epic sunset, strong SW winds.
+              </div>
+              <div style={{marginTop:5, display:'flex', gap:5, alignItems:'center'}}>
+                <div style={{width:18, height:18, borderRadius:9, background:T.accent,
+                             display:'flex', alignItems:'center', justifyContent:'center'}}>
+                  <span style={{fontSize:9, fontWeight:700, color:'white', fontFamily:F}}>J</span>
+                </div>
+                <span style={{fontSize:10.5, color:T.textFaint}}>Jordan · GPS marked</span>
+              </div>
+            </div>
+          </div>
+          {/* Photo grid */}
+          <div style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:2, margin:'0 2px 2px'}}>
+            <div style={{height:88, background:'#D8E4C8', borderRadius:'6px 0 0 6px',
+                         display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <Ic d={ICONS.camera} size={22} color="rgba(255,255,255,0.55)" sw={1.4}/>
+            </div>
+            <div style={{display:'flex', flexDirection:'column', gap:2}}>
+              {[0,1].map(i => (
+                <div key={i} style={{flex:1, background:['#C8D4B8','#B8C8A8'][i], borderRadius: i===0?'0 6px 0 0':'0 0 6px 0',
+                                      display:'flex', alignItems:'center', justifyContent:'center'}}>
+                  <Ic d={ICONS.camera} size={14} color="rgba(255,255,255,0.5)" sw={1.4}/>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{padding:'8px 12px', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <span style={{fontSize:10.5, color:T.textFaint}}>6 photos · 1 video</span>
+            <span style={{fontSize:11, color:T.accent, fontWeight:700}}>View on map →</span>
+          </div>
+        </div>
+
+        {/* Entry: Wildlife */}
+        <div style={{margin:'0 14px 10px', background:T.card, borderRadius:14, padding:'12px',
+                     border:`1px solid ${T.border}`, display:'flex', gap:10}}>
+          <div style={{width:36, height:36, borderRadius:9, background:'#EBF3E4',
+                       display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+            <Ic d={ICONS.leaf} size={16} color="#4A7A34" sw={1.9}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:1}}>
+              <span style={{fontSize:13, fontWeight:800, color:T.text}}>Roosevelt Elk · 12</span>
+              <span style={{fontSize:10, color:T.textFaint}}>11:42 AM</span>
+            </div>
+            <div style={{fontSize:10.5, color:'#4A7A34', fontWeight:700, marginBottom:5}}>Wildlife</div>
+            <div style={{fontSize:11.5, color:T.textSub, lineHeight:1.4}}>
+              Herd with two large bulls grazing the coastal meadow at mile 8.2.
+            </div>
+            <div style={{marginTop:7, display:'flex', gap:6}}>
+              {['GPS marked','1 photo','Voice note'].map(tag => (
+                <div key={tag} style={{background:'#EBF3E4', borderRadius:6, padding:'3px 7px',
+                                       fontSize:9.5, color:'#4A7A34', fontWeight:700}}>{tag}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Entry: Conditions */}
+        <div style={{margin:'0 14px 10px', background:T.card, borderRadius:14, padding:'12px',
+                     border:`1px solid ${T.border}`, display:'flex', gap:10}}>
+          <div style={{width:36, height:36, borderRadius:9, background:'#E4EFF8',
+                       display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+            <Ic d={ICONS.drop} size={16} color="#3A72A8" sw={1.9}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:1}}>
+              <span style={{fontSize:13, fontWeight:800, color:T.text}}>Sinkyone Crossing</span>
+              <span style={{fontSize:10, color:T.textFaint}}>9:05 AM</span>
+            </div>
+            <div style={{fontSize:10.5, color:'#3A72A8', fontWeight:700, marginBottom:5}}>Water Conditions</div>
+            <div style={{display:'flex', gap:5, marginBottom:6, flexWrap:'wrap'}}>
+              {['Moderate','Knee deep','Passable'].map(tag => (
+                <div key={tag} style={{background:'#E4EFF8', borderRadius:6, padding:'3px 7px',
+                                       fontSize:9.5, color:'#3A72A8', fontWeight:700}}>{tag}</div>
+              ))}
+            </div>
+            <div style={{fontSize:11.5, color:T.textSub, lineHeight:1.4}}>
+              Rocky bottom, use poles. Voice note + coordinates logged.
+            </div>
+          </div>
+        </div>
+
+        {/* Day 2 collapsed */}
+        <div style={{display:'flex', alignItems:'center', gap:10, padding:'6px 16px 8px'}}>
+          <div style={{flex:1, height:1, background:T.border}}/>
+          <span style={{fontSize:10.5, fontWeight:700, color:T.textFaint, letterSpacing:.9, textTransform:'uppercase', whiteSpace:'nowrap'}}>Day 2 · Apr 20</span>
+          <div style={{flex:1, height:1, background:T.border}}/>
+        </div>
+        <div style={{margin:'0 14px 16px', background:T.card, borderRadius:12, padding:'12px',
+                     border:`1px solid ${T.border}`, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+          <div>
+            <div style={{fontSize:12, fontWeight:600, color:T.text, marginBottom:3}}>Mattole Beach · Bear sighting · 8.1 mi</div>
+            <div style={{fontSize:11, color:T.textFaint}}>4 entries · 12 photos</div>
+          </div>
+          <Ic d={ICONS.chevR} size={16} color={T.textFaint} sw={2}/>
+        </div>
+      </div>
+      <BottomNav active="log" T={T} onNav={onNav} onFab={onFab}/>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// TRIP REPLAY VIEWER
+// ════════════════════════════════════════════════════════════
+
+const REPLAY_LEGS = [
+  {
+    day:1, label:'Day 1', title:'Mattole Beach to Cooskie Creek',
+    date:'Apr 19', miles:'8.2', elev:'+420 ft', weather:'64°F · Clear',
+    person:'Jordan',
+    path:'M22,152 Q48,136 78,124', pathLen:180,
+    endX:78, endY:124,
+    entries:[
+      {type:'Start',     col:'#2C5F3E', title:'Put-in · Mattole Beach', sub:'9:05 AM · Calm surf, perfect start', x:5,  y:70, person:'Jordan'},
+      {type:'Campsite',  col:'#B8702E', title:'Cooskie Creek Camp ★★★★', sub:'4:30 PM · Great water source nearby', x:19, y:57, person:'Jordan'},
+    ]
+  },
+  {
+    day:2, label:'Day 2', title:'Cooskie Creek to Shelter Cove',
+    date:'Apr 20', miles:'9.4', elev:'+1,200 ft', weather:'61°F · Marine layer',
+    path:'M78,124 Q108,112 140,116 Q170,120 196,106', pathLen:280,
+    endX:196, endY:106,
+    entries:[
+      {type:'Water',    col:'#3A72A8', title:'Sinkyone Creek Crossing', sub:'9:05 AM · Knee deep, rocky bottom', x:26,  y:52, person:'Jordan'},
+      {type:'Wildlife', col:'#4A7A34', title:'Roosevelt Elk · 12 spotted', sub:'11:42 AM · Herd in coastal meadow', x:37,  y:54, person:'Maya'},
+      {type:'Campsite', col:'#B8702E', title:'Shelter Cove ★★★★', sub:'2:14 PM · 180° Pacific views', x:47,  y:49, person:'Jordan'},
+    ]
+  },
+  {
+    day:3, label:'Day 3', title:'Shelter Cove to Kings Peak',
+    date:'Apr 21', miles:'7.8', elev:'+2,847 ft', weather:'58°F · Windy',
+    path:'M196,106 Q220,92 248,78', pathLen:160,
+    endX:248, endY:78,
+    entries:[
+      {type:'Note',     col:'#6B6763', title:'Brutal switchbacks', sub:'10:00 AM · 2,000 ft gain in 3 miles', x:52,  y:43, person:'Kai'},
+      {type:'Campsite', col:'#B8702E', title:'Kings Peak ★★★★★', sub:'3:45 PM · 360° views, unforgettable', x:59,  y:36, person:'Jordan'},
+    ]
+  },
+  {
+    day:4, label:'Day 4', title:'Kings Peak to Bear Harbor',
+    date:'Apr 22', miles:'10.1', elev:'-2,600 ft', weather:'66°F · Sunny',
+    path:'M248,78 Q275,64 302,56', pathLen:160,
+    endX:302, endY:56,
+    entries:[
+      {type:'Wildlife', col:'#4A7A34', title:'Black bear spotted', sub:'8:30 AM · Crossed trail at mile 28', x:65,  y:42, person:'Maya'},
+      {type:'Campsite', col:'#B8702E', title:'Bear Harbor ★★★', sub:'1:20 PM · Rocky beach, driftwood fire', x:72,  y:39, person:'Jordan'},
+    ]
+  },
+  {
+    day:5, label:'Day 5', title:'Bear Harbor to Usal Beach',
+    date:'Apr 23', miles:'6.8', elev:'+800 ft', weather:'70°F · Perfect',
+    path:'M302,56 Q330,48 358,40', pathLen:140,
+    endX:358, endY:40,
+    entries:[
+      {type:'Note',    col:'#6B6763', title:'Final morning on trail', sub:'7:45 AM · Crystal clear skies', x:80,  y:36, person:'Jordan'},
+      {type:'Finish',  col:'#2C5F3E', title:'Trip Complete! 42.3 miles', sub:'12:30 PM · 5 days, 4 campsites, memories', x:87, y:37, person:'Jordan'},
+    ]
+  },
+];
+
+// Replay map — shows previous tracks + current animating track + entry pins
+const ReplayMap = ({ legIdx, phase, shownEntries }) => {
+  const allLegs = REPLAY_LEGS;
+  const cur = allLegs[legIdx];
+
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 420 220"
+         preserveAspectRatio="xMidYMid slice" style={{display:'block'}}>
+      {/* Base */}
+      <rect width="420" height="220" fill="#E8EEE0"/>
+      {/* Forest patches */}
+      <ellipse cx="75"  cy="95"  rx="62" ry="48" fill="#C8DCA8" opacity=".65"/>
+      <ellipse cx="330" cy="72"  rx="58" ry="42" fill="#C8DCA8" opacity=".55"/>
+      <ellipse cx="195" cy="148" rx="48" ry="32" fill="#C8DCA8" opacity=".45"/>
+      {/* Stream */}
+      <path d="M295 165 Q310 140 318 114 Q326 88 330 62"
+            fill="none" stroke="#A8C8E0" strokeWidth="3.5" opacity=".7"/>
+      {/* Topo contours */}
+      {["M5,78 Q60,58 112,72 Q168,86 215,65 Q260,44 308,60 Q355,76 425,57",
+        "M0,93 Q55,73 108,88 Q162,102 208,80 Q253,58 300,75 Q348,92 425,72",
+        "M8,108 Q62,88 115,103 Q168,118 214,96 Q258,74 305,91 Q352,108 425,88",
+        "M15,58 Q68,38 120,53 Q172,68 218,47 Q263,26 308,42 Q355,58 415,42",
+        "M0,124 Q55,108 108,122 Q160,136 206,116 Q250,96 298,112 Q344,128 425,110",
+      ].map((d,i)=>(
+        <path key={i} d={d} fill="none" stroke="#9AAA78" strokeWidth={i%3===0?1.2:.65} opacity=".8"/>
+      ))}
+      {/* Trail guide (dotted) */}
+      <path d="M22,152 Q48,136 78,124 Q108,112 140,116 Q170,120 196,106 Q220,92 248,78 Q275,64 302,56 Q330,48 358,40"
+            fill="none" stroke="#C8A870" strokeWidth="1.5" strokeDasharray="4,3" opacity=".4"/>
+      {/* Completed legs */}
+      {allLegs.slice(0, legIdx).map((lg,i) => (
+        <path key={i} d={lg.path} fill="none" stroke="#5DBE7E" strokeWidth="3.5"
+              strokeLinecap="round" opacity=".45"/>
+      ))}
+      {/* Current leg — animated */}
+      {phase !== 'ready' && (
+        <path
+          key={`track-${legIdx}-${phase}`}
+          d={cur.path}
+          fill="none" stroke="#5DBE7E" strokeWidth="4"
+          strokeLinecap="round" opacity=".98"
+          strokeDasharray={cur.pathLen}
+          style={{
+            strokeDashoffset: phase === 'playing' ? 0 : cur.pathLen,
+            transition: phase === 'playing' ? `stroke-dashoffset ${cur.pathLen * 0.011}s ease-in-out` : 'none',
+          }}
+        />
+      )}
+      {/* Start/end markers for completed legs */}
+      {allLegs.slice(0, legIdx).map((lg,i) => (
+        <circle key={i} cx={lg.endX} cy={lg.endY} r="4.5" fill="#2C5F3E" opacity=".6"/>
+      ))}
+      {/* Start pin */}
+      <circle cx="22" cy="152" r="6" fill="#2C5F3E"/>
+      <circle cx="22" cy="152" r="11" fill="#2C5F3E" opacity=".2"/>
+      {/* Current position indicator */}
+      {phase !== 'ready' && (
+        <g>
+          <circle cx={cur.endX} cy={cur.endY} r="7" fill="#5DBE7E"
+            style={{opacity: phase === 'playing' ? 0.5 : 1,
+                    transition:'opacity 0.5s'}}/>
+          <circle cx={cur.endX} cy={cur.endY} r="14" fill="#5DBE7E" opacity=".2"/>
+          <circle cx={cur.endX} cy={cur.endY} r="21" fill="#5DBE7E" opacity=".08"/>
+        </g>
+      )}
+      {/* Entry pins — appear one by one */}
+      {cur.entries.map((e,i) => {
+        const visible = shownEntries.has(i);
+        const svgX = e.x * 4.2;
+        const svgY = e.y * 2.2;
+        return (
+          <g key={i} style={{
+            transform: `scale(${visible ? 1 : 0})`,
+            transformOrigin: `${svgX}px ${svgY}px`,
+            transition: 'transform 0.35s cubic-bezier(.34,1.56,.64,1)',
+          }}>
+            <circle cx={svgX} cy={svgY} r="9" fill={e.col} opacity=".92"/>
+            <circle cx={svgX} cy={svgY} r="14" fill={e.col} opacity=".18"/>
+          </g>
+        );
+      })}
+      {/* Elevation label */}
+      <text x="268" y="38" fontSize="9" fill="#7A8B5C" fontFamily="system-ui" fontWeight="600" opacity=".85">2,847 ft</text>
+      {/* Scale */}
+      <line x1="355" y1="210" x2="410" y2="210" stroke="#8A9478" strokeWidth="1.5"/>
+      <text x="382" y="206" fontSize="8" fill="#8A9478" textAnchor="middle" fontFamily="system-ui">5 mi</text>
+    </svg>
+  );
+};
+
+const ScreenTripReplay = ({ T }) => {
+  const [legIdx, setLegIdx]             = React.useState(0);
+  const [phase, setPhase]               = React.useState('ready');   // ready|playing|done
+  const [shownEntries, setShownEntries] = React.useState(new Set());
+  const [personFilter, setPersonFilter] = React.useState('All');
+  const timers = React.useRef([]);
+
+  const leg = REPLAY_LEGS[legIdx];
+
+  const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
+
+  const startPlay = () => {
+    clearTimers();
+    setShownEntries(new Set());
+    setPhase('playing');
+    const entries = personFilter === 'All'
+      ? leg.entries
+      : leg.entries.filter(e => e.person === personFilter);
+    entries.forEach((_, i) => {
+      timers.current.push(setTimeout(() =>
+        setShownEntries(prev => new Set([...prev, leg.entries.indexOf(entries[i])])),
+        900 + i * 750
+      ));
+    });
+    timers.current.push(setTimeout(() => setPhase('done'), 900 + entries.length * 750 + 500));
+  };
+
+  const goNext = () => {
+    if (legIdx < REPLAY_LEGS.length - 1) {
+      clearTimers();
+      setLegIdx(l => l + 1);
+      setPhase('ready');
+      setShownEntries(new Set());
+    }
+  };
+
+  const goPrev = () => {
+    if (legIdx > 0) {
+      clearTimers();
+      const prev = REPLAY_LEGS[legIdx - 1];
+      setLegIdx(l => l - 1);
+      setPhase('done');
+      setShownEntries(new Set(prev.entries.map((_,i) => i)));
+    }
+  };
+
+  const jumpTo = (i) => {
+    clearTimers();
+    if (i < legIdx) {
+      setLegIdx(i);
+      setPhase('done');
+      setShownEntries(new Set(REPLAY_LEGS[i].entries.map((_,j) => j)));
+    } else if (i > legIdx) {
+      setLegIdx(i);
+      setPhase('ready');
+      setShownEntries(new Set());
+    }
+  };
+
+  React.useEffect(() => () => clearTimers(), []);
+
+  const allPeople = ['All', ...new Set(REPLAY_LEGS.flatMap(l => l.entries.map(e => e.person)))];
+  const visibleLegEntries = personFilter === 'All'
+    ? leg.entries
+    : leg.entries.filter(e => e.person === personFilter);
+  const isLast = legIdx === REPLAY_LEGS.length - 1;
+
+  return (
+    <div style={{height:'100%', background:'#0F1A14', display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Top bar */}
+      <div style={{padding:'10px 14px 8px', flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10}}>
+          <div style={{display:'flex', alignItems:'center', gap:8}}>
+            <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color="rgba(255,255,255,.6)" sw={2}/>
+            <div>
+              <div style={{fontSize:14, fontWeight:800, color:'white', letterSpacing:-.3}}>Lost Coast Trail</div>
+              <div style={{fontSize:10, color:'rgba(255,255,255,.45)'}}>Apr 19–23 · 42.3 mi · 5 days</div>
+            </div>
+          </div>
+          <div style={{display:'flex', gap:6}}>
+            <div style={{background:'rgba(93,190,126,0.2)', borderRadius:8, padding:'5px 10px',
+                         border:'1px solid rgba(93,190,126,0.35)', fontSize:11, fontWeight:700, color:'#5DBE7E'}}>
+              Share
+            </div>
+          </div>
+        </div>
+
+        {/* Day progress dots */}
+        <div style={{display:'flex', gap:6, alignItems:'center', marginBottom:8}}>
+          {REPLAY_LEGS.map((lg, i) => (
+            <div key={i} onClick={() => jumpTo(i)}
+                 style={{cursor:'pointer', display:'flex', alignItems:'center', flex: i===legIdx ? 3 : 1,
+                         transition:'flex .3s ease'}}>
+              <div style={{height:3, width:'100%', borderRadius:2,
+                           background: i < legIdx ? '#5DBE7E'
+                                      : i === legIdx ? '#5DBE7E'
+                                      : 'rgba(255,255,255,0.15)',
+                           opacity: i < legIdx ? .55 : 1}}>
+                {i === legIdx && phase === 'playing' && (
+                  <div style={{height:'100%', background:'#5DBE7E', borderRadius:2,
+                               animation:'trackFill 2s linear forwards'}}/>
+                )}
+              </div>
+            </div>
+          ))}
+          <span style={{fontSize:10, color:'rgba(255,255,255,.4)', marginLeft:4, whiteSpace:'nowrap'}}>
+            {legIdx+1} / {REPLAY_LEGS.length}
+          </span>
+        </div>
+
+        {/* Person filter pills */}
+        <div style={{display:'flex', gap:6, overflowX:'auto'}}>
+          {allPeople.map(p => (
+            <div key={p} onClick={() => setPersonFilter(p)}
+                 style={{flexShrink:0, padding:'4px 10px', borderRadius:14, fontSize:10.5, fontWeight:700,
+                         background: personFilter===p ? '#5DBE7E' : 'rgba(255,255,255,.08)',
+                         color: personFilter===p ? '#0F1A14' : 'rgba(255,255,255,.55)',
+                         cursor:'pointer', transition:'all .15s'}}>
+              {p}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Map hero */}
+      <div style={{flex:'0 0 230px', position:'relative', overflow:'hidden'}}>
+        <ReplayMap legIdx={legIdx} phase={phase} shownEntries={shownEntries}/>
+
+        {/* Day label overlay */}
+        <div style={{position:'absolute', top:10, right:10, background:'rgba(15,26,20,0.8)',
+                     backdropFilter:'blur(6px)', borderRadius:10, padding:'6px 10px'}}>
+          <div style={{fontSize:10, fontWeight:700, color:'rgba(255,255,255,.5)', letterSpacing:.7}}>{leg.date.toUpperCase()}</div>
+          <div style={{fontSize:13, fontWeight:800, color:'white', letterSpacing:-.2}}>{leg.label}</div>
+        </div>
+
+        {/* Playing indicator */}
+        {phase === 'playing' && (
+          <div style={{position:'absolute', bottom:10, left:'50%', transform:'translateX(-50%)',
+                       background:'rgba(15,26,20,0.85)', backdropFilter:'blur(6px)',
+                       borderRadius:20, padding:'5px 14px',
+                       display:'flex', alignItems:'center', gap:7}}>
+            <div style={{display:'flex', gap:3}}>
+              {[0,1,2].map(i => (
+                <div key={i} style={{width:4, height:4, borderRadius:2, background:'#5DBE7E',
+                                     animation:`pulse 1.2s ${i*0.2}s infinite`}}/>
+              ))}
+            </div>
+            <span style={{fontSize:11, fontWeight:600, color:'rgba(255,255,255,.8)'}}>Recording route…</span>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom panel */}
+      <div style={{flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minHeight:0}}>
+
+        {/* Leg header */}
+        <div style={{padding:'12px 14px 10px', borderBottom:'1px solid rgba(255,255,255,0.07)', flexShrink:0}}>
+          <div style={{fontSize:15, fontWeight:800, color:'white', letterSpacing:-.3, marginBottom:4,
+                       opacity: phase==='ready' ? .6 : 1, transition:'opacity .3s'}}>{leg.title}</div>
+          <div style={{display:'flex', gap:14}}>
+            {[{v:leg.miles,l:'miles'},{v:leg.elev,l:'elev'},{v:leg.weather,l:''}].map((s,i) => (
+              <div key={i}>
+                <span style={{fontSize:12, fontWeight:800, color: i===0 ? '#5DBE7E' : 'rgba(255,255,255,.75)',
+                              letterSpacing:-.2}}>{s.v}</span>
+                {s.l && <span style={{fontSize:10, color:'rgba(255,255,255,.35)', marginLeft:3}}>{s.l}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Entry cards — scroll horizontally */}
+        <div style={{flex:1, overflowY:'auto', padding:'10px 14px', minHeight:0}}>
+          {phase === 'ready' && (
+            <div style={{height:'100%', display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:12, color:'rgba(255,255,255,.35)', marginBottom:16}}>
+                  {visibleLegEntries.length} entries on this leg
+                </div>
+                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                  {leg.entries.map((e,i) => (
+                    <div key={i} style={{width:10, height:10, borderRadius:5, background:e.col, opacity:.5}}/>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {(phase === 'playing' || phase === 'done') && (
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              {leg.entries.map((e,i) => {
+                const visible = shownEntries.has(i);
+                const filtered = personFilter !== 'All' && e.person !== personFilter;
+                return (
+                  <div key={i} style={{
+                    display:'flex', gap:10, alignItems:'flex-start',
+                    padding:'10px 11px',
+                    background:'rgba(255,255,255,0.06)',
+                    borderRadius:12,
+                    border:'1px solid rgba(255,255,255,0.08)',
+                    opacity: visible && !filtered ? 1 : filtered ? .25 : 0,
+                    transform: visible ? 'translateY(0)' : 'translateY(12px)',
+                    transition:'opacity .4s ease, transform .4s ease',
+                  }}>
+                    <div style={{width:34, height:34, borderRadius:9, background:e.col+'30',
+                                 border:`1.5px solid ${e.col}50`,
+                                 display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                      <Ic d={
+                        e.type==='Campsite' ? ICONS.tent :
+                        e.type==='Wildlife' ? ICONS.leaf :
+                        e.type==='Water'    ? ICONS.drop :
+                        e.type==='Start' || e.type==='Finish' ? "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a1 1 0 100 2 1 1 0 000-2z" :
+                        ICONS.note
+                      } size={15} color={e.col} sw={1.9}/>
+                    </div>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:6}}>
+                        <span style={{fontSize:12.5, fontWeight:800, color:'white', letterSpacing:-.2}}>{e.title}</span>
+                        <span style={{fontSize:9.5, color:'rgba(255,255,255,.3)', flexShrink:0}}>{e.person}</span>
+                      </div>
+                      <div style={{fontSize:11, color:'rgba(255,255,255,.5)', marginTop:2, lineHeight:1.4}}>{e.sub}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Navigation controls */}
+        <div style={{padding:'10px 14px 14px', borderTop:'1px solid rgba(255,255,255,0.07)', flexShrink:0}}>
+          {phase === 'ready' && (
+            <div style={{display:'flex', gap:8}}>
+              {legIdx > 0 && (
+                <div onClick={goPrev}
+                     style={{width:48, height:48, borderRadius:14, background:'rgba(255,255,255,.08)',
+                             border:'1px solid rgba(255,255,255,.1)',
+                             display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer'}}>
+                  <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color="rgba(255,255,255,.6)" sw={2}/>
+                </div>
+              )}
+              <div onClick={startPlay}
+                   style={{flex:1, height:48, borderRadius:14, background:'#5DBE7E',
+                           display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                           cursor:'pointer', boxShadow:'0 4px 18px rgba(93,190,126,0.35)'}}>
+                <Ic d="M5 3l14 9-14 9V3z" size={18} color="#0F1A14" sw={2} fill="#0F1A14"/>
+                <span style={{fontSize:14, fontWeight:800, color:'#0F1A14'}}>Play {leg.label}</span>
+              </div>
+            </div>
+          )}
+
+          {phase === 'playing' && (
+            <div style={{height:48, borderRadius:14, background:'rgba(93,190,126,0.12)',
+                         border:'1px solid rgba(93,190,126,0.25)',
+                         display:'flex', alignItems:'center', justifyContent:'center', gap:10}}>
+              <div style={{display:'flex', gap:4}}>
+                {[0,1,2].map(i => (
+                  <div key={i} style={{width:5, height:5, borderRadius:3, background:'#5DBE7E',
+                                       animation:`pulse 1.4s ${i*0.18}s infinite`}}/>
+                ))}
+              </div>
+              <span style={{fontSize:13, fontWeight:700, color:'#5DBE7E'}}>Route recording…</span>
+            </div>
+          )}
+
+          {phase === 'done' && (
+            <div style={{display:'flex', gap:8}}>
+              {legIdx > 0 && (
+                <div onClick={goPrev}
+                     style={{width:48, height:48, borderRadius:14, background:'rgba(255,255,255,.08)',
+                             border:'1px solid rgba(255,255,255,.1)',
+                             display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer'}}>
+                  <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color="rgba(255,255,255,.6)" sw={2}/>
+                </div>
+              )}
+              {!isLast ? (
+                <div onClick={goNext}
+                     style={{flex:1, height:48, borderRadius:14, background:'#5DBE7E',
+                             display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                             cursor:'pointer', boxShadow:'0 4px 18px rgba(93,190,126,0.35)'}}>
+                  <span style={{fontSize:14, fontWeight:800, color:'#0F1A14'}}>
+                    Next: {REPLAY_LEGS[legIdx+1].label}
+                  </span>
+                  <Ic d="M5 12h14 M12 5l7 7-7 7" size={16} color="#0F1A14" sw={2.2}/>
+                </div>
+              ) : (
+                <div style={{flex:1, height:48, borderRadius:14,
+                             background:'linear-gradient(135deg, #2C5F3E, #5DBE7E)',
+                             display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                             boxShadow:'0 4px 18px rgba(93,190,126,0.4)'}}>
+                  <span style={{fontSize:14, fontWeight:800, color:'white'}}>Trip Complete · 42.3 mi 🎉</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// HOME / SPLASH SCREENS
+// ════════════════════════════════════════════════════════════
+
+const TripTypeBadge = ({ type, T }) => {
+  const cols = {
+    'Backpacking': T.accent, 'Car Camping': T.amber,
+    'Rafting': '#3A72A8', 'Overlanding': '#7A5C2E',
+    'Day Hike': '#5A8A3C', 'Paddling': '#3A72A8',
+  };
+  const col = cols[type] || T.accent;
+  return (
+    <div style={{display:'inline-flex', alignItems:'center', padding:'3px 8px',
+                 background:col+'18', borderRadius:6, border:`1px solid ${col}30`}}>
+      <span style={{fontSize:9.5, fontWeight:700, color:col}}>{type}</span>
+    </div>
+  );
+};
+
+// Completed trip mini-card
+const TripCard = ({ name, dates, type, miles, days, T }) => (
+  <div style={{flexShrink:0, width:155, background:T.card, borderRadius:14,
+               border:`1px solid ${T.border}`, overflow:'hidden'}}>
+    {/* Map thumbnail placeholder */}
+    <div style={{height:78, background:'#D8E8C4', position:'relative', overflow:'hidden'}}>
+      <MapSVG w={155} h={78} compact={true}/>
+      <div style={{position:'absolute', top:6, left:7}}>
+        <TripTypeBadge type={type} T={T}/>
+      </div>
+    </div>
+    <div style={{padding:'9px 10px'}}>
+      <div style={{fontSize:12.5, fontWeight:800, color:T.text, letterSpacing:-.2, marginBottom:2,
+                   whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{name}</div>
+      <div style={{fontSize:10, color:T.textFaint, marginBottom:6}}>{dates}</div>
+      <div style={{display:'flex', gap:8}}>
+        <span style={{fontSize:10.5, fontWeight:600, color:T.textSub}}>{miles} mi</span>
+        <span style={{fontSize:10, color:T.textFaint}}>·</span>
+        <span style={{fontSize:10.5, fontWeight:600, color:T.textSub}}>{days}d</span>
+      </div>
+    </div>
+  </div>
+);
+
+// ── A: Smart Hub (contextual, has active trip) ─────────────
+const ScreenHomeHub = ({ T, onNav, onFab, onReturnToTrip }) => {
+  const [tab, setTab] = React.useState('home');
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* App header */}
+      <div style={{background:T.card, padding:'12px 16px 14px', borderBottom:`1px solid ${T.border}`, flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div>
+            <div style={{fontSize:22, fontWeight:800, color:T.text, letterSpacing:-.6}}>TripReport</div>
+            <div style={{fontSize:12, color:T.textSub, marginTop:1}}>Good morning, Jordan ☀️</div>
+          </div>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            {/* Notification bell */}
+            <div style={{width:38, height:38, borderRadius:19, background:T.bg, border:`1px solid ${T.border}`,
+                         display:'flex', alignItems:'center', justifyContent:'center', position:'relative'}}>
+              <Ic d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0" size={18} color={T.textSub} sw={1.8}/>
+              <div style={{position:'absolute', top:8, right:8, width:8, height:8, borderRadius:4,
+                           background:T.amber, border:'1.5px solid white'}}/>
+            </div>
+            {/* Avatar */}
+            <div style={{width:38, height:38, borderRadius:19, background:T.accent,
+                         display:'flex', alignItems:'center', justifyContent:'center',
+                         fontSize:14, fontWeight:800, color:'white'}}>J</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{flex:1, overflowY:'auto'}}>
+
+        {/* Active trip banner */}
+        <div style={{margin:'14px 16px 0', background:T.accent, borderRadius:16, overflow:'hidden',
+                     position:'relative', boxShadow:`0 4px 20px ${T.accent}40`}}>
+          <div style={{position:'absolute', inset:0, overflow:'hidden', opacity:.12}}>
+            <MapSVG w={360} h={110} compact={true}/>
+          </div>
+          <div style={{position:'relative', padding:'14px 14px 12px'}}>
+            <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:8}}>
+              <div style={{width:8, height:8, borderRadius:4, background:'#5DBE7E', animation:'pulse 2s infinite'}}/>
+              <span style={{fontSize:10.5, fontWeight:700, color:'rgba(255,255,255,.7)', letterSpacing:.8}}>ACTIVE TRIP</span>
+            </div>
+            <div style={{fontSize:19, fontWeight:800, color:'white', letterSpacing:-.4, marginBottom:2}}>Lost Coast Trail</div>
+            <div style={{fontSize:11.5, color:'rgba(255,255,255,.7)', marginBottom:12}}>Day 3 of 5 · 3 collaborators</div>
+            <div style={{display:'flex', gap:12, marginBottom:14}}>
+              {[{v:'12.4 mi',l:'Distance'},{v:'2,847 ft',l:'Elevation'},{v:'4h 32m',l:'Moving'}].map((s,i) => (
+                <div key={i}>
+                  <div style={{fontSize:14, fontWeight:800, color:'white', letterSpacing:-.3}}>{s.v}</div>
+                  <div style={{fontSize:9.5, color:'rgba(255,255,255,.55)'}}>{s.l}</div>
+                </div>
+              ))}
+            </div>
+            <div onClick={() => onReturnToTrip?.()}
+                 style={{background:'rgba(255,255,255,.15)', borderRadius:10, padding:'11px 14px',
+                         display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer'}}>
+              <span style={{fontSize:13, fontWeight:700, color:'white'}}>Return to trip</span>
+              <Ic d={ICONS.chevR} size={16} color="white" sw={2.2}/>
+            </div>
+          </div>
+        </div>
+
+        {/* Primary actions grid */}
+        <div style={{padding:'14px 16px 0'}}>
+          <div style={{fontSize:10.5, fontWeight:700, color:T.textSub, letterSpacing:.7,
+                       textTransform:'uppercase', marginBottom:10}}>Quick Actions</div>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+            {[
+              {label:'Start New Trip', sub:'Plan & invite people', icon:'M12 5v14M5 12h14', col:T.accent, bg:T.accentLight, primary:true},
+              {label:'My Trips', sub:'12 completed', icon:ICONS.journal, d2:ICONS.journal2, col:T.amber, bg:T.amberLight},
+              {label:'River Conditions', sub:'12 gauges saved', icon:ICONS.drop, col:'#3A72A8', bg:'#E4EFF8'},
+              {label:'Find Campsites', sub:'Near Lost Coast', icon:ICONS.tent, col:'#5A8A3C', bg:'#EBF3E4'},
+              {label:'Offline Maps', sub:'2 areas saved', icon:'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z', col:T.textSub, bg:T.bg},
+              {label:'Discover Trips', sub:'Public routes nearby', icon:ICONS.compass, col:'#7A5C2E', bg:'#F5EEE4'},
+            ].map((a,i) => (
+              <div key={i} style={{background:a.primary ? T.accent : T.card, borderRadius:13, padding:'13px 12px',
+                                    border:`1.5px solid ${a.primary ? 'transparent' : T.border}`,
+                                    boxShadow: a.primary ? `0 4px 16px ${T.accent}40` : 'none',
+                                    display:'flex', flexDirection:'column', gap:8}}>
+                <div style={{width:36, height:36, borderRadius:10,
+                             background:a.primary ? 'rgba(255,255,255,.2)' : a.bg,
+                             display:'flex', alignItems:'center', justifyContent:'center'}}>
+                  <Ic d={a.icon} d2={a.d2} size={18} color={a.primary ? 'white' : a.col} sw={a.primary?2.2:1.9}/>
+                </div>
+                <div>
+                  <div style={{fontSize:13, fontWeight:800, color:a.primary ? 'white' : T.text,
+                               letterSpacing:-.2}}>{a.label}</div>
+                  <div style={{fontSize:10.5, color:a.primary ? 'rgba(255,255,255,.65)' : T.textFaint,
+                               marginTop:2}}>{a.sub}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent trips */}
+        <div style={{padding:'16px 16px 0'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+            <span style={{fontSize:13, fontWeight:700, color:T.text}}>Recent Trips</span>
+            <span style={{fontSize:12, color:T.accent, fontWeight:700}}>See all →</span>
+          </div>
+          <div style={{display:'flex', gap:10, overflowX:'auto', paddingBottom:16}}>
+            {[
+              {name:'Grand Canyon Rim', dates:'Mar 12–16', type:'Backpacking', miles:'48', days:'5'},
+              {name:'San Juan River', dates:'Feb 8–11', type:'Rafting', miles:'84', days:'4'},
+              {name:'Escalante Loop', dates:'Jan 3–5', type:'Day Hike', miles:'22', days:'3'},
+            ].map((t,i) => <TripCard key={i} {...t} T={T}/>)}
+          </div>
+        </div>
+      </div>
+
+      <BottomNav active="home" T={T} onNav={onNav} onFab={onFab}/>
+    </div>
+  );
+};
+
+// ── B: Adventure Menu (bold tile grid) ────────────────────
+const ScreenAdventureMenu = ({ T, onNav, onFab }) => {
+  const tiles = [
+    {label:'Start New Trip', sub:'Hiking · Rafting · Camping', icon:'M12 5v14M5 12h14',
+     bg:T.accent, textCol:'white', subCol:'rgba(255,255,255,.65)', size:'large', mapBg:true},
+    {label:'Continue Trip', sub:'Lost Coast · Day 3', icon:'M5 12h14 M12 5l7 7-7 7',
+     bg:'#1A2832', textCol:'white', subCol:'rgba(255,255,255,.55)', size:'large', live:true},
+    {label:'My Trips', sub:'12 adventures', icon:ICONS.journal,
+     bg:T.amberLight, textCol:T.text, subCol:T.textSub, size:'small'},
+    {label:'Discover', sub:'Public routes', icon:ICONS.compass,
+     bg:'#EEF2E4', textCol:T.text, subCol:T.textSub, size:'small'},
+    {label:'River Conditions', sub:'USGS live data', icon:ICONS.drop,
+     bg:'#E4EFF8', textCol:'#1A2432', subCol:'#5A7A9A', size:'small'},
+    {label:'Find Campsites', sub:'Rated & reviewed', icon:ICONS.tent,
+     bg:T.accentLight, textCol:T.text, subCol:T.textSub, size:'small'},
+    {label:'Offline Maps', sub:'2 areas ready', icon:'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+     bg:T.bg, textCol:T.text, subCol:T.textSub, size:'small', border:true},
+    {label:'Friends\' Trips', sub:'4 recent shares', icon:ICONS.users,
+     bg:'#F0EAF8', textCol:'#3A2060', subCol:'#7A60A0', size:'small'},
+  ];
+
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Slim header */}
+      <div style={{background:T.card, padding:'10px 16px 12px', borderBottom:`1px solid ${T.border}`, flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div style={{fontSize:20, fontWeight:800, color:T.text, letterSpacing:-.5}}>TripReport</div>
+          <div style={{display:'flex', gap:8}}>
+            <div style={{width:36, height:36, borderRadius:18, background:T.bg, border:`1px solid ${T.border}`,
+                         display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <Ic d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" size={17} color={T.textSub} sw={1.8}/>
+            </div>
+            <div style={{width:36, height:36, borderRadius:18, background:T.accent,
+                         display:'flex', alignItems:'center', justifyContent:'center',
+                         fontSize:13, fontWeight:800, color:'white'}}>J</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{flex:1, overflowY:'auto', padding:'14px 14px 0'}}>
+
+        {/* Top row — two large tiles */}
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10}}>
+          {tiles.slice(0,2).map((t,i) => (
+            <div key={i} style={{height:140, borderRadius:16, background:t.bg, overflow:'hidden',
+                                  position:'relative', border:t.border?`1.5px solid ${T.border}`:'none',
+                                  boxShadow: i===0 ? `0 4px 18px ${T.accent}45` : '0 2px 12px rgba(0,0,0,0.15)'}}>
+              {t.mapBg && (
+                <div style={{position:'absolute', inset:0, opacity:.15}}>
+                  <MapSVG w={175} h={140} compact={true}/>
+                </div>
+              )}
+              {t.live && (
+                <div style={{position:'absolute', top:10, right:10,
+                             display:'flex', alignItems:'center', gap:4,
+                             background:'rgba(93,190,126,0.25)', borderRadius:6, padding:'3px 7px',
+                             border:'1px solid rgba(93,190,126,0.4)'}}>
+                  <div style={{width:5, height:5, borderRadius:3, background:'#5DBE7E', animation:'pulse 2s infinite'}}/>
+                  <span style={{fontSize:9, fontWeight:700, color:'#5DBE7E'}}>LIVE</span>
+                </div>
+              )}
+              <div style={{position:'relative', height:'100%', padding:'14px 12px',
+                           display:'flex', flexDirection:'column', justifyContent:'flex-end'}}>
+                <div style={{width:36, height:36, borderRadius:10, marginBottom:8,
+                             background: i===0 ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.1)',
+                             display:'flex', alignItems:'center', justifyContent:'center'}}>
+                  <Ic d={t.icon} size={18} color={t.textCol} sw={i===0?2.3:1.9}/>
+                </div>
+                <div style={{fontSize:14.5, fontWeight:800, color:t.textCol, letterSpacing:-.3, lineHeight:1.1}}>{t.label}</div>
+                <div style={{fontSize:10.5, color:t.subCol, marginTop:3}}>{t.sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 3-column small tiles */}
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10}}>
+          {tiles.slice(2,5).map((t,i) => (
+            <div key={i} style={{height:96, borderRadius:14, background:t.bg, padding:'11px 10px',
+                                  display:'flex', flexDirection:'column', justifyContent:'space-between',
+                                  border:t.border?`1.5px solid ${T.border}`:'none'}}>
+              <div style={{width:30, height:30, borderRadius:8, background:'rgba(0,0,0,.06)',
+                           display:'flex', alignItems:'center', justifyContent:'center'}}>
+                <Ic d={t.icon} size={15} color={t.textCol} sw={1.9}/>
+              </div>
+              <div>
+                <div style={{fontSize:11.5, fontWeight:800, color:t.textCol, letterSpacing:-.2, lineHeight:1.2}}>{t.label}</div>
+                <div style={{fontSize:9.5, color:t.subCol, marginTop:2}}>{t.sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Bottom row — 3 small tiles */}
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:14}}>
+          {tiles.slice(5,8).map((t,i) => (
+            <div key={i} style={{height:96, borderRadius:14, background:t.bg, padding:'11px 10px',
+                                  display:'flex', flexDirection:'column', justifyContent:'space-between',
+                                  border:t.border?`1.5px solid ${T.border}`:'none'}}>
+              <div style={{width:30, height:30, borderRadius:8, background:'rgba(0,0,0,.06)',
+                           display:'flex', alignItems:'center', justifyContent:'center'}}>
+                <Ic d={t.icon} size={15} color={t.textCol} sw={1.9}/>
+              </div>
+              <div>
+                <div style={{fontSize:11.5, fontWeight:800, color:t.textCol, letterSpacing:-.2, lineHeight:1.2}}>{t.label}</div>
+                <div style={{fontSize:9.5, color:t.subCol, marginTop:2}}>{t.sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Recent — compact horizontal strip */}
+        <div style={{marginBottom:16}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+            <span style={{fontSize:13, fontWeight:700, color:T.text}}>Recent</span>
+            <span style={{fontSize:12, color:T.accent, fontWeight:700}}>All →</span>
+          </div>
+          <div style={{display:'flex', flexDirection:'column', gap:8}}>
+            {[
+              {name:'Lost Coast Trail', meta:'Active · Day 3 of 5', live:true},
+              {name:'Grand Canyon Rim', meta:'Mar 12–16 · 48 mi'},
+              {name:'San Juan River Run', meta:'Feb 8–11 · 84 mi'},
+            ].map((t,i) => (
+              <div key={i} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px',
+                                    background:T.card, borderRadius:12, border:`1px solid ${T.border}`}}>
+                <div style={{width:36, height:36, borderRadius:9, background:T.accentLight,
+                             display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                  <Ic d={ICONS.map} d2={ICONS.map2} size={16} color={T.accent} sw={1.7}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12.5, fontWeight:700, color:T.text}}>{t.name}</div>
+                  <div style={{fontSize:11, color:t.live ? T.accent : T.textFaint, fontWeight:t.live?600:400}}>{t.meta}</div>
+                </div>
+                {t.live && <div style={{width:8, height:8, borderRadius:4, background:'#5DBE7E', animation:'pulse 2s infinite'}}/>}
+                <Ic d={ICONS.chevR} size={14} color={T.textFaint} sw={2}/>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <BottomNav active="home" T={T} onNav={onNav} onFab={onFab}/>
+    </div>
+  );
+};
+
+// ── C: Quick List (minimal, fast) ─────────────────────────
+const ScreenQuickList = ({ T, onNav, onFab }) => {
+  const sections = [
+    {
+      heading: null,
+      items: [
+        {label:'Start New Trip', sub:'Hiking, rafting, camping, overlanding…', icon:'M12 5v14M5 12h14', col:T.accent, bg:T.accent, textWhite:true, primary:true},
+      ]
+    },
+    {
+      heading: 'In Progress',
+      items: [
+        {label:'Lost Coast Trail', sub:'Day 3 of 5 · Active now · 3 people', icon:ICONS.map, col:T.accent, bg:T.accentLight, live:true},
+      ]
+    },
+    {
+      heading: 'My Trips',
+      items: [
+        {label:'Completed Trips', sub:'12 adventures logged', icon:ICONS.journal, d2:ICONS.journal2, col:T.amber, bg:T.amberLight},
+        {label:'Shared with Me', sub:'5 trips from friends', icon:ICONS.users, col:'#7A50A0', bg:'#F0EAF8'},
+        {label:'Discover Trips', sub:'Public routes near you', icon:ICONS.compass, col:'#7A5C2E', bg:'#F5EEE4'},
+      ]
+    },
+    {
+      heading: 'Planning',
+      items: [
+        {label:'River Conditions', sub:'USGS live gauge data', icon:ICONS.drop, col:'#3A72A8', bg:'#E4EFF8'},
+        {label:'Find Campsites', sub:'Rated by the community', icon:ICONS.tent, col:'#4A8A34', bg:'#EBF3E4'},
+        {label:'Download Offline Maps', sub:'2 areas saved · 42 MB available', icon:'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M7 10l5 5 5-5 M12 15V3', col:T.textSub, bg:T.bg, border:true},
+      ]
+    },
+    {
+      heading: 'Account',
+      items: [
+        {label:'Profile & Followers', sub:'@jordan · 248 followers', icon:'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 11a4 4 0 100-8 4 4 0 000 8z', col:T.textSub, bg:T.bg, border:true},
+        {label:'Settings', sub:'Notifications, privacy, sync', icon:'M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z', col:T.textSub, bg:T.bg, border:true},
+      ]
+    },
+  ];
+
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Header */}
+      <div style={{background:T.card, padding:'10px 16px 14px', borderBottom:`1px solid ${T.border}`, flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div>
+            <div style={{fontSize:22, fontWeight:800, color:T.text, letterSpacing:-.6}}>TripReport</div>
+            <div style={{fontSize:11.5, color:T.textSub, marginTop:1}}>Jordan · @jordan</div>
+          </div>
+          <div style={{display:'flex', gap:8}}>
+            <div style={{position:'relative'}}>
+              <div style={{width:38, height:38, borderRadius:19, background:T.bg, border:`1px solid ${T.border}`,
+                           display:'flex', alignItems:'center', justifyContent:'center'}}>
+                <Ic d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0" size={18} color={T.textSub} sw={1.8}/>
+              </div>
+              <div style={{position:'absolute', top:8, right:8, width:8, height:8, borderRadius:4,
+                           background:T.amber, border:'1.5px solid white'}}/>
+            </div>
+            <div style={{width:38, height:38, borderRadius:19, background:T.accent,
+                         display:'flex', alignItems:'center', justifyContent:'center',
+                         fontSize:14, fontWeight:800, color:'white'}}>J</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{flex:1, overflowY:'auto', padding:'10px 16px 0'}}>
+        {sections.map((sec, si) => (
+          <div key={si} style={{marginBottom: sec.heading ? 16 : 10}}>
+            {sec.heading && (
+              <div style={{fontSize:10.5, fontWeight:700, color:T.textFaint, letterSpacing:.7,
+                           textTransform:'uppercase', marginBottom:8, marginTop:si>0?4:0}}>{sec.heading}</div>
+            )}
+            {sec.items.map((item, ii) => (
+              <div key={ii} style={{display:'flex', alignItems:'center', gap:12,
+                                    padding: item.primary ? '16px 14px' : '12px 14px',
+                                    background: item.primary ? T.accent : T.card,
+                                    borderRadius:14, marginBottom:7,
+                                    border: item.border ? `1.5px solid ${T.border}` : item.primary ? 'none' : `1px solid ${T.border}`,
+                                    boxShadow: item.primary ? `0 4px 18px ${T.accent}45` : 'none'}}>
+                <div style={{width:40, height:40, borderRadius:11, flexShrink:0,
+                             background: item.primary ? 'rgba(255,255,255,.2)' : item.bg,
+                             display:'flex', alignItems:'center', justifyContent:'center'}}>
+                  <Ic d={item.icon} d2={item.d2} size={19} color={item.primary ? 'white' : item.col} sw={item.primary?2.3:1.9}/>
+                </div>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontSize:14, fontWeight:800, letterSpacing:-.2,
+                               color: item.primary ? 'white' : T.text}}>{item.label}</div>
+                  <div style={{fontSize:11, color: item.primary ? 'rgba(255,255,255,.65)' : T.textFaint,
+                               marginTop:2, lineHeight:1.3}}>{item.sub}</div>
+                </div>
+                {item.live && (
+                  <div style={{display:'flex', alignItems:'center', gap:4, background:'rgba(93,190,126,0.15)',
+                               borderRadius:6, padding:'3px 7px', border:'1px solid rgba(93,190,126,0.3)', flexShrink:0}}>
+                    <div style={{width:5, height:5, borderRadius:3, background:'#5DBE7E', animation:'pulse 2s infinite'}}/>
+                    <span style={{fontSize:9, fontWeight:700, color:'#5DBE7E'}}>LIVE</span>
+                  </div>
+                )}
+                {!item.live && <Ic d={ICONS.chevR} size={14} color={item.primary ? 'rgba(255,255,255,.5)' : T.textFaint} sw={2}/>}
+              </div>
+            ))}
+          </div>
+        ))}
+        <div style={{height:8}}/>
+      </div>
+
+      <BottomNav active="home" T={T} onNav={onNav} onFab={onFab}/>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// RIVER / RAFTING SCREENS
+// ════════════════════════════════════════════════════════════
+
+// USGS flow sparkline SVG
+const FlowChart = ({ w, h }) => {
+  // Simulated 8-day CFS values — dip then rise toward trip
+  const vals = [980, 1050, 1180, 1090, 1020, 1150, 1240, 1310];
+  const min = 800, max = 1600;
+  const pts = vals.map((v, i) => {
+    const x = 12 + (i / (vals.length - 1)) * (w - 24);
+    const y = h - 10 - ((v - min) / (max - min)) * (h - 20);
+    return [x, y];
+  });
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
+  const area = line + ` L${pts[pts.length-1][0]},${h} L${pts[0][0]},${h} Z`;
+  // Optimal range band: 900–1400 CFS
+  const optY1 = h - 10 - ((1400 - min) / (max - min)) * (h - 20);
+  const optY2 = h - 10 - ((900 - min) / (max - min)) * (h - 20);
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','Mon'];
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+      {/* Optimal band */}
+      <rect x={12} y={optY1} width={w-24} height={optY2-optY1} fill="#5DBE7E" opacity=".12"/>
+      <line x1={12} y1={optY1} x2={w-12} y2={optY1} stroke="#5DBE7E" strokeWidth=".8" strokeDasharray="3,2" opacity=".5"/>
+      <line x1={12} y1={optY2} x2={w-12} y2={optY2} stroke="#5DBE7E" strokeWidth=".8" strokeDasharray="3,2" opacity=".4"/>
+      {/* Area fill */}
+      <path d={area} fill="#3A72A8" opacity=".1"/>
+      {/* Line */}
+      <path d={line} fill="none" stroke="#3A72A8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+      {/* Current dot */}
+      <circle cx={pts[pts.length-2][0]} cy={pts[pts.length-2][1]} r="4.5" fill="#3A72A8"/>
+      <circle cx={pts[pts.length-2][0]} cy={pts[pts.length-2][1]} r="8" fill="#3A72A8" opacity=".2"/>
+      {/* Day labels */}
+      {days.map((d, i) => {
+        const x = 12 + (i / (vals.length - 1)) * (w - 24);
+        return <text key={i} x={x} y={h-1} fontSize="8" fill="#A09D99" textAnchor="middle" fontFamily="system-ui">{d}</text>;
+      })}
+      {/* Labels on band */}
+      <text x={w-10} y={optY1-3} fontSize="7.5" fill="#5DBE7E" textAnchor="end" fontFamily="system-ui" fontWeight="600">MAX OPTIMAL</text>
+      <text x={w-10} y={optY2+9} fontSize="7.5" fill="#5DBE7E" textAnchor="end" fontFamily="system-ui" fontWeight="600">MIN OPTIMAL</text>
+    </svg>
+  );
+};
+
+// River topo map — shows the river corridor
+const RiverMapSVG = ({ w, h }) => (
+  <svg width={w} height={h} viewBox="0 0 420 200" preserveAspectRatio="xMidYMid slice"
+       style={{display:'block', width:'100%', height:'100%'}}>
+    <rect width="420" height="200" fill="#EEF2E4"/>
+    {/* Terrain */}
+    <ellipse cx="60" cy="80" rx="70" ry="55" fill="#D0E4B4" opacity=".6"/>
+    <ellipse cx="360" cy="100" rx="75" ry="60" fill="#D0E4B4" opacity=".55"/>
+    <ellipse cx="200" cy="160" rx="90" ry="40" fill="#D0E4B4" opacity=".4"/>
+    {/* Topo lines */}
+    {["M0,60 Q40,45 80,58 Q120,72 160,55 Q200,38 240,52 Q280,66 320,50 Q360,34 420,48",
+      "M0,80 Q40,65 80,78 Q120,92 160,75 Q200,58 240,72 Q280,86 320,70 Q360,54 420,68",
+      "M0,98 Q38,84 78,97 Q118,111 158,94 Q198,77 238,91 Q278,105 318,88 Q360,72 420,86",
+    ].map((d,i) => <path key={i} d={d} fill="none" stroke="#B0C48C" strokeWidth=".8" opacity=".7"/>)}
+    {/* River — wide blue ribbon winding */}
+    <path d="M-5,95 Q30,88 60,98 Q90,108 120,95 Q150,82 185,90 Q220,98 255,85 Q290,72 325,82 Q360,92 425,80"
+          fill="none" stroke="#7BBFE0" strokeWidth="12" strokeLinecap="round" opacity=".55"/>
+    <path d="M-5,95 Q30,88 60,98 Q90,108 120,95 Q150,82 185,90 Q220,98 255,85 Q290,72 325,82 Q360,92 425,80"
+          fill="none" stroke="#A8D4F0" strokeWidth="6" strokeLinecap="round" opacity=".7"/>
+    <path d="M-5,95 Q30,88 60,98 Q90,108 120,95 Q150,82 185,90 Q220,98 255,85 Q290,72 325,82 Q360,92 425,80"
+          fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" opacity=".4"/>
+    {/* Rapid markers */}
+    {[[72,97,'III'],[145,88,'II'],[222,90,'IV'],[312,80,'III+']].map(([x,y,cls],i) => (
+      <g key={i}>
+        <circle cx={x} cy={y} r="10" fill={cls.includes('IV') ? '#C04040' : cls.includes('III') ? '#B8702E' : '#5DBE7E'} opacity=".9"/>
+        <text x={x} y={y+3.5} fontSize="7" fill="white" textAnchor="middle" fontFamily="system-ui" fontWeight="700">{cls}</text>
+      </g>
+    ))}
+    {/* Put-in marker */}
+    <circle cx="12" cy="95" r="7" fill="#2C5F3E"/>
+    <text x="12" y="98" fontSize="7" fill="white" textAnchor="middle" fontFamily="system-ui" fontWeight="700">P</text>
+    {/* Take-out */}
+    <circle cx="410" cy="81" r="7" fill="#2C5F3E"/>
+    <text x="410" y="84" fontSize="7" fill="white" textAnchor="middle" fontFamily="system-ui" fontWeight="700">T</text>
+    {/* Camp markers */}
+    {[[135,76],[260,74]].map(([x,y],i) => (
+      <rect key={i} x={x-7} y={y-7} width="14" height="12" rx="2" fill="#B8702E" opacity=".9"/>
+    ))}
+    <text x="21" y="109" fontSize="8" fill="#2C5F3E" fontFamily="system-ui" fontWeight="700">Put-in</text>
+    <text x="395" y="96" fontSize="8" fill="#2C5F3E" fontFamily="system-ui" fontWeight="700" textAnchor="end">Take-out</text>
+    {/* Scale */}
+    <line x1="340" y1="185" x2="400" y2="185" stroke="#8A9478" strokeWidth="1.5"/>
+    <text x="370" y="178" fontSize="8" fill="#8A9478" textAnchor="middle" fontFamily="system-ui">5 mi</text>
+  </svg>
+);
+
+// ── Screen: River Intel (pre-trip) ─────────────────────────
+const ScreenRiverIntel = ({ T }) => {
+  const WATER = '#3A72A8';
+  const WATERL = '#E4EFF8';
+  const flowStatus = 'Optimal';
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Header */}
+      <div style={{background:T.card, padding:'10px 16px 14px', borderBottom:`1px solid ${T.border}`, flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:2}}>
+          <div style={{width:34, height:34, borderRadius:17, background:WATERL,
+                       display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+            <Ic d={ICONS.drop} size={17} color={WATER} sw={2}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:17, fontWeight:800, color:T.text, letterSpacing:-.4}}>Salt River · AZ</div>
+            <div style={{fontSize:11, color:T.textSub}}>Above Canyon Lake · USGS #09498500</div>
+          </div>
+          {/* Offline badge */}
+          <div style={{display:'flex', alignItems:'center', gap:5, background:'#F5F0E8',
+                       borderRadius:8, padding:'4px 9px', border:`1px solid ${T.amber}30`}}>
+            <div style={{width:6, height:6, borderRadius:3, background:T.amber}}/>
+            <span style={{fontSize:9.5, fontWeight:700, color:T.amber}}>OFFLINE READY</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{flex:1, overflowY:'auto', padding:'14px 16px'}}>
+
+        {/* Live gauge card */}
+        <div style={{background:T.card, borderRadius:14, padding:'14px', marginBottom:12,
+                     border:`1px solid ${T.border}`, position:'relative', overflow:'hidden'}}>
+          {/* Water tint accent */}
+          <div style={{position:'absolute', top:0, right:0, width:80, height:80, borderRadius:'0 14px 0 80px',
+                       background:WATERL, opacity:.8}}/>
+          <div style={{position:'relative'}}>
+            <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:12}}>
+              <div>
+                <div style={{fontSize:10.5, fontWeight:700, color:T.textSub, letterSpacing:.6, marginBottom:4, textTransform:'uppercase'}}>Current Flow</div>
+                <div style={{display:'flex', alignItems:'baseline', gap:6}}>
+                  <span style={{fontSize:38, fontWeight:800, color:WATER, letterSpacing:-2, lineHeight:1}}>1,240</span>
+                  <span style={{fontSize:14, fontWeight:600, color:T.textSub}}>CFS</span>
+                  <div style={{display:'flex', alignItems:'center', gap:3, background:'#E8F5E8', borderRadius:6, padding:'3px 7px'}}>
+                    <span style={{fontSize:10, color:'#4A7A34'}}>↑ 90</span>
+                    <span style={{fontSize:9, color:'#6A9A54'}}>24h</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:10.5, fontWeight:700, color:T.textSub, letterSpacing:.6, marginBottom:4, textTransform:'uppercase'}}>Gauge Ht</div>
+                <div style={{fontSize:24, fontWeight:800, color:T.text, letterSpacing:-.5}}>4.2<span style={{fontSize:13, color:T.textSub}}> ft</span></div>
+              </div>
+            </div>
+
+            {/* Status badge */}
+            <div style={{display:'inline-flex', alignItems:'center', gap:6, background:'#EBF5EB',
+                         borderRadius:10, padding:'6px 12px', marginBottom:14}}>
+              <div style={{width:8, height:8, borderRadius:4, background:'#4A8A34'}}/>
+              <span style={{fontSize:12, fontWeight:800, color:'#2A6A14'}}>Optimal for Class III–IV</span>
+            </div>
+
+            {/* Chart */}
+            <div style={{marginBottom:4}}>
+              <div style={{display:'flex', justifyContent:'space-between', marginBottom:6}}>
+                <span style={{fontSize:10.5, fontWeight:600, color:T.textSub}}>7-Day Flow (CFS)</span>
+                <span style={{fontSize:10, color:T.textFaint}}>Shaded = optimal range</span>
+              </div>
+              <FlowChart w={330} h={72}/>
+            </div>
+          </div>
+        </div>
+
+        {/* Trip days forecast */}
+        <div style={{background:T.card, borderRadius:14, padding:'14px', marginBottom:12,
+                     border:`1px solid ${T.border}`}}>
+          <div style={{fontSize:12, fontWeight:700, color:T.text, marginBottom:12}}>4-Day Trip Forecast</div>
+          {[
+            {day:'Fri Apr 25', cfs:'1,240', ht:'4.2', status:'Optimal', col:'#4A8A34', bg:'#EBF5EB'},
+            {day:'Sat Apr 26', cfs:'1,180', ht:'4.0', status:'Optimal', col:'#4A8A34', bg:'#EBF5EB'},
+            {day:'Sun Apr 27', cfs:'1,420', ht:'4.7', status:'High end', col:T.amber, bg:T.amberLight},
+            {day:'Mon Apr 28', cfs:'1,350', ht:'4.5', status:'Optimal', col:'#4A8A34', bg:'#EBF5EB'},
+          ].map((d,i,arr) => (
+            <div key={i} style={{display:'flex', alignItems:'center', gap:10, paddingBottom:10,
+                                  borderBottom: i<arr.length-1 ? `1px solid ${T.border}` : 'none',
+                                  marginBottom: i<arr.length-1 ? 10 : 0}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12.5, fontWeight:700, color:T.text}}>{d.day}</div>
+                <div style={{fontSize:11, color:T.textFaint, marginTop:1}}>~{d.cfs} CFS · {d.ht} ft</div>
+              </div>
+              <div style={{background:d.bg, borderRadius:8, padding:'4px 10px',
+                           fontSize:11, fontWeight:700, color:d.col}}>{d.status}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* River map */}
+        <div style={{borderRadius:14, overflow:'hidden', marginBottom:12, height:130,
+                     boxShadow:'0 2px 10px rgba(0,0,0,0.08)'}}>
+          <RiverMapSVG w={358} h={130}/>
+        </div>
+
+        {/* Offline / sync status */}
+        <div style={{background:T.card, borderRadius:14, border:`1px solid ${T.border}`, overflow:'hidden', marginBottom:8}}>
+          <div style={{padding:'12px 14px', borderBottom:`1px solid ${T.border}`}}>
+            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8}}>
+              <span style={{fontSize:13, fontWeight:700, color:T.text}}>Offline Package</span>
+              <span style={{fontSize:11, fontWeight:600, color:T.accent}}>Download All</span>
+            </div>
+          </div>
+          {[
+            {label:'Topo maps · Salt River corridor', size:'38 MB', done:true},
+            {label:'USGS gauge data · 72h window', size:'0.1 MB', done:true},
+            {label:'Rapid guide & portage info', size:'2.4 MB', done:false},
+          ].map((item,i,arr) => (
+            <div key={i} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 14px',
+                                  borderBottom: i<arr.length-1 ? `1px solid ${T.border}` : 'none'}}>
+              <div style={{width:26, height:26, borderRadius:13,
+                           background: item.done ? T.accentLight : T.bg,
+                           display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                <Ic d={item.done ? "M20 6L9 17l-5-5" : "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M7 10l5 5 5-5 M12 15V3"}
+                    size={13} color={item.done ? T.accent : T.textFaint} sw={2.2}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12, fontWeight:600, color:T.text}}>{item.label}</div>
+                <div style={{fontSize:10.5, color:T.textFaint}}>{item.size}</div>
+              </div>
+              {!item.done && (
+                <div style={{background:T.accent, borderRadius:8, padding:'4px 10px',
+                             fontSize:11, fontWeight:700, color:'white'}}>Save</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Screen: On-Water Quick Logger ──────────────────────────
+const ScreenRapidLogger = ({ T }) => {
+  const [entryType, setEntryType] = React.useState('Rapid');
+  const [rapidClass, setRapidClass] = React.useState('III');
+  const [tagMode, setTagMode] = React.useState('later');
+  const WATER = '#3A72A8';
+
+  const types = [
+    {id:'Rapid', icon:ICONS.drop, col:WATER},
+    {id:'Portage', icon:'M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3', col:'#C05050'},
+    {id:'Camp', icon:ICONS.tent, col:T.amber},
+    {id:'Scout', icon:'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 12a3 3 0 100 6 3 3 0 000-6z', col:'#7A6A3A'},
+    {id:'Wildlife', icon:ICONS.leaf, col:'#4A7A34'},
+    {id:'Note', icon:ICONS.note, col:T.textSub},
+  ];
+
+  return (
+    <div style={{height:'100%', background:'#1A2832', display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Minimal header — dark, high-contrast */}
+      <div style={{padding:'12px 16px 10px', flexShrink:0,
+                   borderBottom:'1px solid rgba(255,255,255,0.1)'}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div>
+            <div style={{fontSize:16, fontWeight:800, color:'white', letterSpacing:-.3}}>Log Entry</div>
+            <div style={{fontSize:11, color:'rgba(255,255,255,.5)', marginTop:1}}>Salt River · Day 2</div>
+          </div>
+          {/* Offline pill */}
+          <div style={{display:'flex', alignItems:'center', gap:5, background:'rgba(184,112,46,0.25)',
+                       borderRadius:8, padding:'5px 10px', border:'1px solid rgba(184,112,46,0.4)'}}>
+            <div style={{width:6, height:6, borderRadius:3, background:T.amber}}/>
+            <span style={{fontSize:10, fontWeight:700, color:T.amber}}>OFFLINE</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{flex:1, overflowY:'auto', padding:'14px 14px'}}>
+
+        {/* Entry type — BIG targets for wet hands */}
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:16}}>
+          {types.map(t => (
+            <div key={t.id} onClick={() => setEntryType(t.id)}
+                 style={{height:64, borderRadius:14, display:'flex', flexDirection:'column',
+                         alignItems:'center', justifyContent:'center', gap:5,
+                         background: entryType===t.id ? t.col : 'rgba(255,255,255,0.06)',
+                         border: entryType===t.id ? 'none' : '1.5px solid rgba(255,255,255,0.1)',
+                         cursor:'pointer', transition:'all .15s'}}>
+              <Ic d={t.icon} size={22} color={entryType===t.id ? 'white' : 'rgba(255,255,255,0.5)'} sw={1.8}/>
+              <span style={{fontSize:10.5, fontWeight:700,
+                             color:entryType===t.id ? 'white' : 'rgba(255,255,255,0.5)'}}>{t.id}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Rapid class — only if Rapid selected */}
+        {entryType === 'Rapid' && (
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:10.5, fontWeight:700, color:'rgba(255,255,255,.5)',
+                         letterSpacing:.7, textTransform:'uppercase', marginBottom:10}}>Rapid Class</div>
+            <div style={{display:'flex', gap:8}}>
+              {['I','II','III','III+','IV','V'].map(cls => (
+                <div key={cls} onClick={() => setRapidClass(cls)}
+                     style={{flex:1, height:52, borderRadius:12, display:'flex', alignItems:'center',
+                             justifyContent:'center', cursor:'pointer', transition:'all .15s',
+                             background: rapidClass===cls
+                               ? cls==='V' ? '#C04040' : cls.startsWith('IV') ? '#B8702E' : WATER
+                               : 'rgba(255,255,255,0.06)',
+                             border: rapidClass===cls ? 'none' : '1.5px solid rgba(255,255,255,0.1)'}}>
+                  <span style={{fontSize:13, fontWeight:800, color:rapidClass===cls ? 'white' : 'rgba(255,255,255,0.45)'}}>{cls}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Auto-logged data row */}
+        <div style={{background:'rgba(255,255,255,0.06)', borderRadius:12, padding:'12px',
+                     marginBottom:16, border:'1px solid rgba(255,255,255,0.08)'}}>
+          <div style={{fontSize:10, fontWeight:700, color:'rgba(255,255,255,.4)', letterSpacing:.7,
+                       textTransform:'uppercase', marginBottom:8}}>Auto-logged</div>
+          <div style={{display:'flex', gap:0}}>
+            {[
+              {label:'Flow', val:'1,240 CFS'},
+              {label:'Time', val:'11:34 AM'},
+              {label:'Day', val:'Day 2'},
+            ].map((s,i,arr) => (
+              <div key={i} style={{flex:1, textAlign:'center',
+                                    borderRight: i<arr.length-1 ? '1px solid rgba(255,255,255,0.1)' : 'none'}}>
+                <div style={{fontSize:14, fontWeight:800, color:'white', letterSpacing:-.3}}>{s.val}</div>
+                <div style={{fontSize:9.5, color:'rgba(255,255,255,.4)', marginTop:2}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* GPS tagging mode */}
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:10.5, fontWeight:700, color:'rgba(255,255,255,.5)',
+                       letterSpacing:.7, textTransform:'uppercase', marginBottom:10}}>GPS Tag</div>
+          <div style={{display:'flex', gap:8}}>
+            {[
+              {id:'now', label:'Tag now', sub:'Use current GPS', icon:'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a1 1 0 100 2 1 1 0 000-2z'},
+              {id:'later', label:'Tag at camp', sub:'Place on map later', icon:'M12 8v4l3 3 M12 2a10 10 0 100 20A10 10 0 0012 2z'},
+            ].map(opt => (
+              <div key={opt.id} onClick={() => setTagMode(opt.id)}
+                   style={{flex:1, padding:'12px', borderRadius:12, cursor:'pointer', transition:'all .15s',
+                           background: tagMode===opt.id ? 'rgba(58,114,168,0.35)' : 'rgba(255,255,255,0.06)',
+                           border: `1.5px solid ${tagMode===opt.id ? WATER : 'rgba(255,255,255,0.1)'}`}}>
+                <Ic d={opt.icon} size={18} color={tagMode===opt.id ? '#7BBFE0' : 'rgba(255,255,255,0.4)'} sw={1.8}/>
+                <div style={{fontSize:12, fontWeight:700, color:tagMode===opt.id ? 'white' : 'rgba(255,255,255,0.5)',
+                             marginTop:6}}>{opt.label}</div>
+                <div style={{fontSize:10.5, color:'rgba(255,255,255,.35)', marginTop:2}}>{opt.sub}</div>
+              </div>
+            ))}
+          </div>
+          {tagMode==='later' && (
+            <div style={{marginTop:8, padding:'9px 12px', background:'rgba(184,112,46,0.15)',
+                         borderRadius:10, border:'1px solid rgba(184,112,46,0.3)'}}>
+              <span style={{fontSize:11, color:T.amber}}>
+                Entry saved with timestamp. Drag to position on river map at camp tonight.
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Voice note — BIG button, primary action for wet hands */}
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:10.5, fontWeight:700, color:'rgba(255,255,255,.5)',
+                       letterSpacing:.7, textTransform:'uppercase', marginBottom:10}}>Voice Note</div>
+          <div style={{height:68, borderRadius:16, background:'rgba(255,255,255,0.06)',
+                       border:'1.5px dashed rgba(255,255,255,0.15)',
+                       display:'flex', alignItems:'center', justifyContent:'center', gap:12}}>
+            <div style={{width:48, height:48, borderRadius:24, background:'rgba(58,114,168,0.4)',
+                         border:'2px solid rgba(58,114,168,0.7)',
+                         display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <Ic d={ICONS.mic} size={22} color='#7BBFE0' sw={1.8}/>
+            </div>
+            <span style={{fontSize:13, color:'rgba(255,255,255,.45)', fontWeight:600}}>Hold to record</span>
+          </div>
+        </div>
+
+        {/* Sync queue count */}
+        <div style={{padding:'10px 12px', background:'rgba(255,255,255,0.04)',
+                     borderRadius:10, border:'1px solid rgba(255,255,255,0.08)',
+                     display:'flex', alignItems:'center', gap:10}}>
+          <div style={{width:28, height:28, borderRadius:14, background:'rgba(184,112,46,0.2)',
+                       display:'flex', alignItems:'center', justifyContent:'center'}}>
+            <span style={{fontSize:12, fontWeight:800, color:T.amber}}>5</span>
+          </div>
+          <div>
+            <div style={{fontSize:12, fontWeight:600, color:'rgba(255,255,255,.65)'}}>5 entries queued to sync</div>
+            <div style={{fontSize:10.5, color:'rgba(255,255,255,.35)'}}>Will upload when signal returns</div>
+          </div>
+          <Ic d={ICONS.chevR} size={14} color='rgba(255,255,255,.25)' sw={2}/>
+        </div>
+      </div>
+
+      {/* Save CTA */}
+      <div style={{padding:'12px 14px 14px', borderTop:'1px solid rgba(255,255,255,0.08)', flexShrink:0}}>
+        <div style={{background:WATER, borderRadius:14, padding:'16px', textAlign:'center',
+                     boxShadow:'0 4px 20px rgba(58,114,168,0.5)'}}>
+          <span style={{fontSize:15, fontWeight:800, color:'white', letterSpacing:-.2}}>
+            Save Entry · Tag at Camp
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Screen: Map Tag Review (retroactive GPS placement) ─────
+const ScreenMapTag = ({ T }) => {
+  const [placing, setPlacing] = React.useState(1);
+  const WATER = '#3A72A8';
+
+  const untagged = [
+    {id:0, type:'Rapid III', time:'9:12 AM', flow:'1,240 CFS', note:'Big wave train, clean line left', icon:ICONS.drop, col:WATER},
+    {id:1, type:'Rapid IV', time:'10:48 AM', flow:'1,255 CFS', note:'Blind drop, scouted right bank', icon:ICONS.drop, col:'#B8702E'},
+    {id:2, type:'Wildlife', time:'12:03 PM', flow:'—', note:'Great blue heron nesting colony', icon:ICONS.leaf, col:'#4A7A34'},
+    {id:3, type:'Portage', time:'2:30 PM', flow:'1,260 CFS', note:'Mandatory around Upper Rat Trap', icon:'M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3', col:'#C05050'},
+  ];
+
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Header */}
+      <div style={{background:T.card, padding:'10px 16px 12px', borderBottom:`1px solid ${T.border}`, flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <div style={{width:34, height:34, borderRadius:17, background:WATER+'18',
+                       display:'flex', alignItems:'center', justifyContent:'center'}}>
+            <Ic d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a1 1 0 100 2 1 1 0 000-2z" size={17} color={WATER} sw={1.9}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:17, fontWeight:800, color:T.text, letterSpacing:-.3}}>Place on Map</div>
+            <div style={{fontSize:11, color:T.textSub}}>4 entries need GPS tags · Day 2</div>
+          </div>
+          <div style={{background:T.amber+'20', borderRadius:8, padding:'4px 9px',
+                       border:`1px solid ${T.amber}40`}}>
+            <span style={{fontSize:11, fontWeight:700, color:T.amber}}>4 left</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Map with river */}
+      <div style={{height:210, position:'relative', flexShrink:0, overflow:'hidden'}}>
+        <RiverMapSVG w={390} h={210}/>
+        {/* Placement indicator */}
+        <div style={{position:'absolute', top:0, left:0, right:0, bottom:0,
+                     display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none'}}>
+          {/* Active placement crosshair */}
+          <div style={{position:'absolute', left:'42%', top:'43%', transform:'translate(-50%,-50%)'}}>
+            <div style={{width:28, height:28, borderRadius:14, background:WATER,
+                         boxShadow:'0 0 0 4px rgba(58,114,168,0.3), 0 0 0 8px rgba(58,114,168,0.12)',
+                         display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <Ic d="M12 5v14M5 12h14" size={14} color="white" sw={2.5}/>
+            </div>
+          </div>
+        </div>
+        {/* Instruction overlay at top */}
+        <div style={{position:'absolute', top:10, left:12, right:12}}>
+          <div style={{background:'rgba(255,255,255,0.94)', backdropFilter:'blur(8px)',
+                       borderRadius:10, padding:'8px 12px',
+                       display:'flex', alignItems:'center', gap:8, boxShadow:'0 2px 10px rgba(0,0,0,0.1)'}}>
+            <Ic d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" size={15} color={WATER} sw={1.9}/>
+            <span style={{fontSize:12, fontWeight:600, color:T.text}}>
+              Tap map to place <span style={{color:WATER}}>Rapid IV</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Entry queue */}
+      <div style={{flex:1, overflowY:'auto', padding:'12px 14px'}}>
+        <div style={{fontSize:11, fontWeight:700, color:T.textSub, letterSpacing:.7,
+                     textTransform:'uppercase', marginBottom:10}}>Untagged Entries</div>
+
+        {untagged.map((e,i) => (
+          <div key={i} onClick={() => setPlacing(i)}
+               style={{display:'flex', gap:10, alignItems:'flex-start', padding:'11px 12px',
+                       background: placing===i ? WATER+'12' : T.card,
+                       borderRadius:13, marginBottom:8, cursor:'pointer',
+                       border:`1.5px solid ${placing===i ? WATER+'60' : T.border}`,
+                       boxShadow: placing===i ? `0 0 0 3px ${WATER}18` : 'none',
+                       transition:'all .15s'}}>
+            <div style={{width:36, height:36, borderRadius:9, background:e.col+'18',
+                         display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+              <Ic d={e.icon} size={16} color={e.col} sw={1.9}/>
+            </div>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:2}}>
+                <span style={{fontSize:12.5, fontWeight:800, color:T.text}}>{e.type}</span>
+                <span style={{fontSize:10, color:T.textFaint}}>{e.time}</span>
+              </div>
+              {e.flow !== '—' && <div style={{fontSize:10, color:WATER, fontWeight:600, marginBottom:3}}>{e.flow} CFS at time of entry</div>}
+              <div style={{fontSize:11.5, color:T.textSub, lineHeight:1.35}}>{e.note}</div>
+            </div>
+            {placing===i ? (
+              <div style={{width:28, height:28, borderRadius:14, background:WATER,
+                           display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                <Ic d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" size={13} color="white" sw={1.8}/>
+              </div>
+            ) : (
+              <div style={{width:28, height:28, borderRadius:14, background:T.bg,
+                           border:`1.5px solid ${T.border}`,
+                           display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                <Ic d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a1 1 0 100 2 1 1 0 000-2z"
+                    size={12} color={T.textFaint} sw={1.7}/>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* CTA */}
+      <div style={{padding:'10px 14px 14px', background:T.card,
+                   borderTop:`1px solid ${T.border}`, flexShrink:0}}>
+        <div style={{background:WATER, borderRadius:14, padding:'14px', textAlign:'center',
+                     boxShadow:'0 4px 16px rgba(58,114,168,0.4)'}}>
+          <span style={{fontSize:14, fontWeight:800, color:'white'}}>Confirm Placement · 1 of 4</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// NEW TRIP FLOW — shared sub-components
+// ════════════════════════════════════════════════════════════
+
+const FieldLabel = ({ label, T }) => (
+  <div style={{fontSize:10.5, fontWeight:700, color:T.textSub, letterSpacing:.7,
+               textTransform:'uppercase', marginBottom:7}}>{label}</div>
+);
+
+const TField = ({ placeholder, value, icon, T, focused=false }) => (
+  <div style={{display:'flex', alignItems:'center', gap:10, background:T.card,
+               border:`1.5px solid ${focused ? T.accent : T.border}`,
+               borderRadius:12, padding:'11px 14px',
+               boxShadow: focused ? `0 0 0 3px ${T.accent}18` : 'none'}}>
+    {icon && <Ic d={icon} size={17} color={focused ? T.accent : T.textFaint} sw={1.9}/>}
+    <span style={{fontSize:13.5, color: value ? T.text : T.textFaint,
+                  fontFamily:F, flex:1}}>{value || placeholder}</span>
+    {focused && <div style={{width:2, height:17, background:T.accent, borderRadius:1,
+                              animation:'pulse 1s infinite'}}/>}
+  </div>
+);
+
+// ════════════════════════════════════════════════════════════
+// NEW TRIP — Screen 1: Setup
+// ════════════════════════════════════════════════════════════
+const ScreenNewTrip = ({ T, onNext, onBack }) => {
+  const [tripType, setTripType] = React.useState('Backpacking');
+  const [privacy, setPrivacy] = React.useState('friends');
+
+  const types = ['Backpacking','Car Camping','Rafting','River Camping','Overlanding','Van Life','Day Hike','Paddling'];
+  const privacyOpts = [
+    {id:'private', icon:'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z', label:'Private', sub:'Only invited people'},
+    {id:'friends', icon:ICONS.users, label:'Followers', sub:'Your followers can view'},
+    {id:'public', icon:'M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z', label:'Public', sub:'Anyone can discover'},
+  ];
+
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+      {/* Header */}
+      <div style={{background:T.card, padding:'10px 16px 14px', borderBottom:`1px solid ${T.border}`, flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:14}}>
+          <div onClick={() => onBack?.()} style={{width:36, height:36, borderRadius:18, background:T.bg,
+                       display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer'}}>
+            <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color={T.text} sw={2}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:18, fontWeight:800, color:T.text, letterSpacing:-.4}}>New Trip</div>
+          </div>
+          <div style={{fontSize:12, color:T.textFaint}}>1 of 2</div>
+        </div>
+        {/* Step bar */}
+        <div style={{display:'flex', gap:4}}>
+          <div style={{flex:1, height:3, background:T.accent, borderRadius:2}}/>
+          <div style={{flex:1, height:3, background:T.border, borderRadius:2}}/>
+        </div>
+      </div>
+
+      <div style={{flex:1, overflowY:'auto', padding:'18px 16px'}}>
+
+        {/* Trip name */}
+        <div style={{marginBottom:18}}>
+          <FieldLabel label="Trip Name" T={T}/>
+          <TField placeholder="e.g. Lost Coast Trail" value="Lost Coast Trail"
+                  icon="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7 M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
+                  focused={true} T={T}/>
+        </div>
+
+        {/* Trip type chips */}
+        <div style={{marginBottom:18}}>
+          <FieldLabel label="Trip Type" T={T}/>
+          <div style={{display:'flex', flexWrap:'wrap', gap:7}}>
+            {types.map(t => (
+              <div key={t} onClick={() => setTripType(t)}
+                   style={{padding:'7px 13px', borderRadius:22, fontSize:12, fontWeight:600,
+                           background: tripType===t ? T.accent : T.card,
+                           color: tripType===t ? 'white' : T.textSub,
+                           border: tripType===t ? 'none' : `1.5px solid ${T.border}`,
+                           cursor:'pointer'}}>
+                {t}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Location */}
+        <div style={{marginBottom:18}}>
+          <FieldLabel label="Location / Trail" T={T}/>
+          <TField placeholder="Search trail or area…"
+                  value="Lost Coast Trail, CA"
+                  icon="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a1 1 0 100 2 1 1 0 000-2z"
+                  T={T}/>
+          {/* Mini map preview */}
+          <div style={{marginTop:8, borderRadius:10, overflow:'hidden', height:90, position:'relative'}}>
+            <MapSVG w={358} h={90} compact={true}/>
+            <div style={{position:'absolute', inset:0, background:'transparent',
+                         display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <div style={{background:T.accent, borderRadius:8, padding:'4px 10px',
+                           fontSize:11, fontWeight:700, color:'white',
+                           boxShadow:'0 2px 8px rgba(0,0,0,0.2)'}}>
+                ✓ Area selected
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Dates */}
+        <div style={{marginBottom:18}}>
+          <FieldLabel label="Dates" T={T}/>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            <div style={{flex:1, background:T.card, border:`1.5px solid ${T.border}`,
+                         borderRadius:12, padding:'11px 14px'}}>
+              <div style={{fontSize:10, color:T.textFaint, marginBottom:2, fontWeight:600}}>START</div>
+              <div style={{fontSize:13.5, fontWeight:700, color:T.text}}>Apr 19, 2026</div>
+            </div>
+            <Ic d="M5 12h14" size={16} color={T.textFaint} sw={2}/>
+            <div style={{flex:1, background:T.card, border:`1.5px solid ${T.border}`,
+                         borderRadius:12, padding:'11px 14px'}}>
+              <div style={{fontSize:10, color:T.textFaint, marginBottom:2, fontWeight:600}}>END</div>
+              <div style={{fontSize:13.5, fontWeight:700, color:T.text}}>Apr 24, 2026</div>
+            </div>
+          </div>
+          <div style={{marginTop:8, display:'flex', alignItems:'center', gap:8}}>
+            <div style={{width:18, height:18, borderRadius:4, border:`1.5px solid ${T.border}`,
+                         background:T.bg, display:'flex', alignItems:'center', justifyContent:'center'}}>
+            </div>
+            <span style={{fontSize:12, color:T.textSub}}>Open-ended trip (no end date)</span>
+          </div>
+        </div>
+
+        {/* Privacy */}
+        <div style={{marginBottom:24}}>
+          <FieldLabel label="Who Can See This Trip" T={T}/>
+          <div style={{display:'flex', flexDirection:'column', gap:7}}>
+            {privacyOpts.map(opt => (
+              <div key={opt.id} onClick={() => setPrivacy(opt.id)}
+                   style={{display:'flex', alignItems:'center', gap:12, padding:'11px 14px',
+                           background:T.card, borderRadius:12,
+                           border:`1.5px solid ${privacy===opt.id ? T.accent : T.border}`,
+                           cursor:'pointer',
+                           boxShadow: privacy===opt.id ? `0 0 0 3px ${T.accent}14` : 'none'}}>
+                <div style={{width:36, height:36, borderRadius:10,
+                             background: privacy===opt.id ? T.accent : T.bg,
+                             display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                  <Ic d={opt.icon} size={16} color={privacy===opt.id ? 'white' : T.textSub} sw={1.8}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13, fontWeight:700, color:T.text}}>{opt.label}</div>
+                  <div style={{fontSize:11, color:T.textFaint, marginTop:1}}>{opt.sub}</div>
+                </div>
+                <div style={{width:20, height:20, borderRadius:10,
+                             border:`2px solid ${privacy===opt.id ? T.accent : T.border}`,
+                             background: privacy===opt.id ? T.accent : 'transparent',
+                             display:'flex', alignItems:'center', justifyContent:'center'}}>
+                  {privacy===opt.id && <div style={{width:8, height:8, borderRadius:4, background:'white'}}/>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Offline maps nudge */}
+        <div style={{background:T.accentLight, borderRadius:12, padding:'12px 14px',
+                     display:'flex', gap:10, marginBottom:8, alignItems:'flex-start'}}>
+          <Ic d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+               size={18} color={T.accent} sw={1.8}/>
+          <div>
+            <div style={{fontSize:12, fontWeight:700, color:T.accent, marginBottom:2}}>Download offline maps?</div>
+            <div style={{fontSize:11, color:T.accentMid, lineHeight:1.4}}>
+              Save Lost Coast area for use without signal. ~42 MB.
+            </div>
+          </div>
+          <div style={{background:T.accent, borderRadius:8, padding:'5px 10px',
+                       fontSize:11, fontWeight:700, color:'white', flexShrink:0}}>Save</div>
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div style={{padding:'12px 16px 16px', background:T.card,
+                   borderTop:`1px solid ${T.border}`, flexShrink:0}}>
+        <div onClick={() => onNext?.()} style={{background:T.accent, borderRadius:14, padding:'15px',
+                     textAlign:'center', boxShadow:`0 4px 16px ${T.accent}50`, cursor:'pointer'}}>
+          <span style={{fontSize:15, fontWeight:800, color:'white', letterSpacing:-.2}}>
+            Continue → Invite People
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// NEW TRIP — Screen 2: Invite & Permissions
+// ════════════════════════════════════════════════════════════
+const ScreenInvite = ({ T, onNext, onBack }) => {
+  const [invited, setInvited] = React.useState([
+    {name:'Maya Chen', handle:'@mayac', role:'Co-author', avatar:'M', col:'#7A5C3E'},
+    {name:'Kai Nakamura', handle:'@kain', role:'Co-author', avatar:'K', col:'#4A6B8A'},
+  ]);
+  const [roleOpen, setRoleOpen] = React.useState(null);
+  const [copied, setCopied] = React.useState(false);
+
+  const suggested = [
+    {name:'Sam Rivera', handle:'@samr', avatar:'S', col:'#5A7A4A'},
+    {name:'Alex Torres', handle:'@alext', avatar:'A', col:'#8A5070'},
+    {name:'Dana Park', handle:'@dpark', avatar:'D', col:'#4A7A7A'},
+    {name:'Reece Hill', handle:'@reece', avatar:'R', col:'#7A6A3A'},
+  ];
+
+  const roles = ['Co-author', 'View only'];
+
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Header */}
+      <div style={{background:T.card, padding:'10px 16px 14px', borderBottom:`1px solid ${T.border}`, flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:14}}>
+          <div onClick={() => onBack?.()} style={{width:36, height:36, borderRadius:18, background:T.bg,
+                       display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer'}}>
+            <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color={T.text} sw={2}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:18, fontWeight:800, color:T.text, letterSpacing:-.4}}>Invite People</div>
+            <div style={{fontSize:11, color:T.textSub, marginTop:1}}>Lost Coast Trail</div>
+          </div>
+          <div style={{fontSize:12, color:T.textFaint}}>2 of 2</div>
+        </div>
+        {/* Step bar */}
+        <div style={{display:'flex', gap:4}}>
+          <div style={{flex:1, height:3, background:T.accent, borderRadius:2}}/>
+          <div style={{flex:1, height:3, background:T.accent, borderRadius:2}}/>
+        </div>
+      </div>
+
+      <div style={{flex:1, overflowY:'auto', padding:'16px 16px'}}>
+
+        {/* Search bar */}
+        <div style={{display:'flex', gap:8, marginBottom:18}}>
+          <div style={{flex:1, display:'flex', alignItems:'center', gap:10, background:T.card,
+                       border:`1.5px solid ${T.accent}`, borderRadius:12, padding:'10px 14px',
+                       boxShadow:`0 0 0 3px ${T.accent}18`}}>
+            <Ic d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" size={17} color={T.accent} sw={2}/>
+            <span style={{fontSize:13, color:T.textFaint, flex:1, fontFamily:F}}>Search by name or @handle</span>
+          </div>
+        </div>
+
+        {/* Invited list */}
+        {invited.length > 0 && (
+          <div style={{marginBottom:20}}>
+            <FieldLabel label={`Invited · ${invited.length}`} T={T}/>
+            {invited.map((p, i) => (
+              <div key={i} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px',
+                                    background:T.card, borderRadius:12, marginBottom:7,
+                                    border:`1px solid ${T.border}`}}>
+                <div style={{width:38, height:38, borderRadius:19, background:p.col,
+                             display:'flex', alignItems:'center', justifyContent:'center',
+                             fontSize:14, fontWeight:700, color:'white', flexShrink:0}}>
+                  {p.avatar}
+                </div>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontSize:13, fontWeight:700, color:T.text}}>{p.name}</div>
+                  <div style={{fontSize:11, color:T.textFaint}}>{p.handle}</div>
+                </div>
+                {/* Role selector */}
+                <div onClick={() => setRoleOpen(roleOpen===i ? null : i)}
+                     style={{display:'flex', alignItems:'center', gap:5, padding:'5px 10px',
+                             background: p.role==='Co-author' ? T.accentLight : T.bg,
+                             borderRadius:8, cursor:'pointer', position:'relative',
+                             border:`1px solid ${p.role==='Co-author' ? T.accent+'44' : T.border}`}}>
+                  <span style={{fontSize:11, fontWeight:700,
+                                color: p.role==='Co-author' ? T.accent : T.textSub}}>{p.role}</span>
+                  <Ic d="M6 9l6 6 6-6" size={12} color={p.role==='Co-author' ? T.accent : T.textSub} sw={2.2}/>
+                  {roleOpen===i && (
+                    <div style={{position:'absolute', top:'100%', right:0, marginTop:4, zIndex:10,
+                                 background:T.card, borderRadius:10, boxShadow:'0 4px 20px rgba(0,0,0,0.15)',
+                                 border:`1px solid ${T.border}`, overflow:'hidden', minWidth:130}}>
+                      {roles.map(r => (
+                        <div key={r} onClick={(e) => {
+                               e.stopPropagation();
+                               setInvited(prev => prev.map((pp,ii) => ii===i ? {...pp, role:r} : pp));
+                               setRoleOpen(null);
+                             }}
+                             style={{padding:'10px 14px', fontSize:12, fontWeight:600,
+                                     color: p.role===r ? T.accent : T.text,
+                                     background: p.role===r ? T.accentLight : 'transparent',
+                                     cursor:'pointer'}}>
+                          {r}
+                        </div>
+                      ))}
+                      <div style={{borderTop:`1px solid ${T.border}`}}/>
+                      <div onClick={(e) => {
+                             e.stopPropagation();
+                             setInvited(prev => prev.filter((_,ii) => ii!==i));
+                             setRoleOpen(null);
+                           }}
+                           style={{padding:'10px 14px', fontSize:12, fontWeight:600,
+                                   color:'#C04040', cursor:'pointer'}}>
+                        Remove
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Role legend */}
+        <div style={{background:T.accentLight, borderRadius:10, padding:'10px 12px', marginBottom:20,
+                     display:'flex', flexDirection:'column', gap:6}}>
+          {[
+            {role:'Co-author', desc:'Can add entries, photos, and edit trip details', icon:'M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7 M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z'},
+            {role:'View only', desc:'Can follow along and replay the trip', icon:'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 12a3 3 0 100 6 3 3 0 000-6z'},
+          ].map(r => (
+            <div key={r.role} style={{display:'flex', gap:8, alignItems:'flex-start'}}>
+              <Ic d={r.icon} size={14} color={T.accentMid} sw={1.8}/>
+              <div>
+                <span style={{fontSize:11, fontWeight:700, color:T.accent}}>{r.role} </span>
+                <span style={{fontSize:11, color:T.accentMid}}>{r.desc}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Suggested */}
+        <div style={{marginBottom:20}}>
+          <FieldLabel label="Frequent Trail Partners" T={T}/>
+          <div style={{display:'flex', gap:10, overflowX:'auto', paddingBottom:4}}>
+            {suggested.map((p,i) => (
+              <div key={i} style={{flexShrink:0, display:'flex', flexDirection:'column',
+                                    alignItems:'center', gap:5, width:64}}>
+                <div style={{position:'relative'}}>
+                  <div style={{width:48, height:48, borderRadius:24, background:p.col,
+                               display:'flex', alignItems:'center', justifyContent:'center',
+                               fontSize:16, fontWeight:700, color:'white'}}>{p.avatar}</div>
+                  <div style={{position:'absolute', bottom:0, right:0, width:18, height:18,
+                               borderRadius:9, background:T.accent, border:'2px solid white',
+                               display:'flex', alignItems:'center', justifyContent:'center'}}>
+                    <Ic d="M12 5v14M5 12h14" size={10} color="white" sw={2.5}/>
+                  </div>
+                </div>
+                <div style={{fontSize:10, fontWeight:600, color:T.text, textAlign:'center',
+                             lineHeight:1.2, maxWidth:60}}>{p.name.split(' ')[0]}</div>
+                <div style={{fontSize:9, color:T.textFaint}}>{p.handle}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Share link */}
+        <div style={{marginBottom:8}}>
+          <FieldLabel label="Share Link" T={T}/>
+          <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:12, overflow:'hidden'}}>
+            <div style={{display:'flex', alignItems:'center', gap:10, padding:'11px 14px',
+                         borderBottom:`1px solid ${T.border}`}}>
+              <Ic d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71 M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"
+                  size={16} color={T.textSub} sw={1.8}/>
+              <span style={{flex:1, fontSize:12, color:T.textFaint, fontFamily:'monospace'}}>tripreport.app/t/lostcoast-k8x2</span>
+              <div onClick={() => setCopied(true)}
+                   style={{background: copied ? T.accent : T.bg, borderRadius:8, padding:'5px 10px',
+                           fontSize:11, fontWeight:700, color: copied ? 'white' : T.accent,
+                           border:`1px solid ${copied ? T.accent : T.border}`, cursor:'pointer',
+                           transition:'all .2s'}}>
+                {copied ? '✓ Copied' : 'Copy'}
+              </div>
+            </div>
+            <div style={{display:'flex'}}>
+              {[
+                {label:'Message', icon:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'},
+                {label:'WhatsApp', icon:'M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.0 1.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.18 6.18l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z'},
+                {label:'QR Code', icon:'M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z M7 7h1v1H7z M18 7h1v1h-1z M7 18h1v1H7z M18 18h1v1h-1z'},
+              ].map((btn,i,arr) => (
+                <div key={i} style={{flex:1, padding:'10px 0', display:'flex', flexDirection:'column',
+                                      alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer',
+                                      borderRight: i<arr.length-1 ? `1px solid ${T.border}` : 'none'}}>
+                  <Ic d={btn.icon} size={17} color={T.textSub} sw={1.7}/>
+                  <span style={{fontSize:10, color:T.textFaint, fontWeight:600}}>{btn.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div style={{padding:'12px 16px 16px', background:T.card,
+                   borderTop:`1px solid ${T.border}`, flexShrink:0}}>
+        <div onClick={() => onNext?.()} style={{background:T.accent, borderRadius:14, padding:'15px', textAlign:'center',
+                     boxShadow:`0 4px 16px ${T.accent}50`, marginBottom:10, cursor:'pointer'}}>
+          <span style={{fontSize:15, fontWeight:800, color:'white', letterSpacing:-.2}}>
+            Start Trip →
+          </span>
+        </div>
+        <div style={{textAlign:'center', fontSize:11, color:T.textFaint}}>
+          You can invite more people after the trip starts
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// NEW TRIP — Screen 3: Ready to Launch
+// ════════════════════════════════════════════════════════════
+const ScreenReadyToLaunch = ({ T, onLaunch, onBack }) => {
+  const [gpsReady, setGpsReady] = React.useState(true);
+  const [mapsReady, setMapsReady] = React.useState(false);
+
+  return (
+    <div style={{height:'100%', background:T.bg, display:'flex', flexDirection:'column', fontFamily:F, overflow:'hidden'}}>
+
+      {/* Map hero */}
+      <div style={{height:200, position:'relative', overflow:'hidden', flexShrink:0}}>
+        <MapSVG w={390} h={200} compact={false}/>
+        {/* Dark scrim at bottom */}
+        <div style={{position:'absolute', bottom:0, left:0, right:0, height:80,
+                     background:'linear-gradient(to bottom, transparent, rgba(26,25,23,0.7))'}}/>
+        <div style={{position:'absolute', bottom:14, left:16, right:16,
+                     display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+          <div>
+            <div style={{fontSize:17, fontWeight:800, color:'white', letterSpacing:-.3}}>Lost Coast Trail</div>
+            <div style={{fontSize:11, color:'rgba(255,255,255,.7)'}}>Apr 19–24 · Backpacking · 5 days</div>
+          </div>
+          <div onClick={() => onBack?.()} style={{background:'rgba(255,255,255,.15)', borderRadius:8, padding:'5px 10px',
+                       fontSize:11, fontWeight:600, color:'white', cursor:'pointer'}}>← Back</div>
+        </div>
+      </div>
+
+      <div style={{flex:1, overflowY:'auto', padding:'16px'}}>
+
+        {/* Team summary */}
+        <div style={{background:T.card, borderRadius:14, padding:'14px', marginBottom:14,
+                     border:`1px solid ${T.border}`}}>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12}}>
+            <span style={{fontSize:13, fontWeight:700, color:T.text}}>Your Team · 3 people</span>
+            <span style={{fontSize:12, color:T.accent, fontWeight:700}}>+ Invite more</span>
+          </div>
+          {[
+            {name:'You (Jordan)', handle:'@jordan', avatar:'J', col:T.accent, role:'Trip leader'},
+            {name:'Maya Chen', handle:'@mayac', avatar:'M', col:'#7A5C3E', role:'Co-author'},
+            {name:'Kai Nakamura', handle:'@kain', avatar:'K', col:'#4A6B8A', role:'Co-author'},
+          ].map((p,i) => (
+            <div key={i} style={{display:'flex', alignItems:'center', gap:10,
+                                  paddingBottom: i<2 ? 10 : 0,
+                                  borderBottom: i<2 ? `1px solid ${T.border}` : 'none',
+                                  marginBottom: i<2 ? 10 : 0}}>
+              <div style={{width:36, height:36, borderRadius:18, background:p.col,
+                           display:'flex', alignItems:'center', justifyContent:'center',
+                           fontSize:13, fontWeight:700, color:'white', flexShrink:0}}>{p.avatar}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12.5, fontWeight:700, color:T.text}}>{p.name}</div>
+                <div style={{fontSize:10.5, color:T.textFaint}}>{p.handle}</div>
+              </div>
+              <div style={{padding:'3px 9px', borderRadius:6, fontSize:10.5, fontWeight:700,
+                           background: i===0 ? T.accent : T.accentLight,
+                           color: i===0 ? 'white' : T.accent}}>{p.role}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Pre-flight checklist */}
+        <div style={{background:T.card, borderRadius:14, padding:'14px', marginBottom:14,
+                     border:`1px solid ${T.border}`}}>
+          <div style={{fontSize:13, fontWeight:700, color:T.text, marginBottom:12}}>Pre-flight</div>
+          {[
+            {label:'GPS location', status:'Ready', ok:true},
+            {label:'Offline maps', status:'Tap to download · 42 MB', ok:false, action:true},
+            {label:'Camera access', status:'Allowed', ok:true},
+            {label:'Microphone', status:'Allowed', ok:true},
+          ].map((item,i) => (
+            <div key={i} style={{display:'flex', alignItems:'center', gap:10, paddingBottom:10,
+                                  borderBottom: i<3 ? `1px solid ${T.border}` : 'none',
+                                  marginBottom: i<3 ? 10 : 0}}>
+              <div style={{width:28, height:28, borderRadius:14,
+                           background: item.ok ? T.accentLight : T.amberLight,
+                           display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                <Ic d={item.ok
+                  ? "M20 6L9 17l-5-5"
+                  : "M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"}
+                    size={14} color={item.ok ? T.accent : T.amber} sw={2.2}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12.5, fontWeight:600, color:T.text}}>{item.label}</div>
+                <div style={{fontSize:11, color: item.ok ? T.textFaint : T.amber,
+                             fontWeight: item.ok ? 400 : 600}}>{item.status}</div>
+              </div>
+              {item.action && (
+                <div style={{background:T.amber, borderRadius:8, padding:'4px 10px',
+                             fontSize:11, fontWeight:700, color:'white'}}>Download</div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Visibility reminder */}
+        <div style={{display:'flex', gap:10, padding:'12px 14px', background:T.accentLight,
+                     borderRadius:12, marginBottom:8, alignItems:'flex-start'}}>
+          <Ic d={ICONS.users} size={16} color={T.accent} sw={1.8}/>
+          <div style={{fontSize:12, color:T.accentMid, lineHeight:1.45}}>
+            <span style={{fontWeight:700, color:T.accent}}>Followers </span>
+            can see this trip and replay it after you start.
+          </div>
+        </div>
+      </div>
+
+      {/* Launch CTA */}
+      <div style={{padding:'12px 16px 16px', background:T.card,
+                   borderTop:`1px solid ${T.border}`, flexShrink:0}}>
+        <div onClick={() => onLaunch?.()} style={{background:T.accent, borderRadius:14, padding:'16px', textAlign:'center',
+                     display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+                     boxShadow:`0 6px 22px ${T.accent}55`, cursor:'pointer'}}>
+          <div style={{width:10, height:10, borderRadius:5, background:'#5DBE7E',
+                       animation:'pulse 2s infinite'}}/>
+          <span style={{fontSize:16, fontWeight:800, color:'white', letterSpacing:-.3}}>
+            Start Recording Trip
+          </span>
+        </div>
+        <div style={{textAlign:'center', fontSize:11, color:T.textFaint, marginTop:8}}>
+          GPS tracking begins immediately
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+// TRIP APP — wired interactive prototype
+// nav: home | map | log | share | new-trip | new-invite | new-launch
+// ════════════════════════════════════════════════════════════
+const TripApp = ({ T }) => {
+  const [screen, setScreen] = React.useState('home');
+
+  const onNav = (tab) => {
+    if (tab === 'home')  setScreen('home');
+    if (tab === 'map')   setScreen('map');
+    if (tab === 'log')   setScreen('log');
+    if (tab === 'share') setScreen('share');
+  };
+  const onFab = () => setScreen('new-trip');
+
+  const navTab = screen === 'map' ? 'map'
+               : screen === 'log' ? 'log'
+               : screen === 'share' ? 'share'
+               : screen.startsWith('new') ? 'home'
+               : 'home';
+
+  const commonProps = { T, onNav, onFab };
+
+  if (screen === 'home')        return <ScreenHomeHub {...commonProps} onReturnToTrip={() => setScreen('log')}/>;
+  if (screen === 'map')         return <ScreenNavigator {...commonProps}/>;
+  if (screen === 'log')         return <ScreenFieldJournal {...commonProps}/>;
+  if (screen === 'share')       return <ScreenTripReplay T={T}/>;
+  if (screen === 'new-trip')    return <ScreenNewTrip T={T} onNext={() => setScreen('new-invite')} onBack={() => setScreen('home')}/>;
+  if (screen === 'new-invite')  return <ScreenInvite T={T} onNext={() => setScreen('new-launch')} onBack={() => setScreen('new-trip')}/>;
+  if (screen === 'new-launch')  return <ScreenReadyToLaunch T={T} onLaunch={() => setScreen('map')} onBack={() => setScreen('new-invite')}/>;
+  return null;
+};
+
+// ════════════════════════════════════════════════════════════
+// ROOT APP
+// ════════════════════════════════════════════════════════════
+function App() {
+  const [T, setT] = React.useState(TWEAK_DEFAULTS);
+  const [tweakOpen, setTweakOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    window.addEventListener('message', e => {
+      if (e.data?.type === '__activate_edit_mode') setTweakOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweakOpen(false);
+    });
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+  }, []);
+
+  const updateToken = (key, val) => {
+    setT(prev => ({...prev, [key]: val}));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*');
+  };
+
+  return (
+    <>
+      <DesignCanvas>
+        <DCSection id="prototype" title="★ Interactive Prototype"
+          subtitle="Fully wired · Bottom nav · FAB → New Trip flow · Return to trip">
+
+          <DCArtboard id="interactive" label="Live prototype — tap to navigate" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <TripApp T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+        </DCSection>
+
+        <DCSection id="replay" title="Trip Replay Viewer"
+          subtitle="Animated slideshow · tap Play per leg · entries appear as track draws">
+
+          <DCArtboard id="replay-viewer" label="Interactive · Lost Coast Trail" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenTripReplay T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+        </DCSection>
+
+        <DCSection id="home-screen" title="Home Screen — App Entry"
+          subtitle="3 directions for the hub / splash screen">
+
+          <DCArtboard id="smart-hub" label="A · Smart Hub  (contextual)" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenHomeHub T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+          <DCArtboard id="adventure-menu" label="B · Adventure Menu  (bold tiles)" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenAdventureMenu T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+          <DCArtboard id="quick-list" label="C · Quick List  (minimal, fast)" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenQuickList T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+        </DCSection>
+
+        <DCSection id="dashboard" title="TripReport — Home Dashboard"
+          subtitle="3 directions · Click label to focus · Drag grip to reorder">
+
+          <DCArtboard id="navigator" label="A · Navigator  (map-first, in-field)" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenNavigator T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+          <DCArtboard id="journal" label="B · Field Journal  (dashboard, at-camp)" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenFieldJournal T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+          <DCArtboard id="storyteller" label="C · Storyteller  (feed, share-oriented)" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenStoryteller T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+        </DCSection>
+
+        <DCSection id="river" title="Rafting Mode — Salt River, AZ"
+          subtitle="River intel · On-water logging · Retroactive GPS placement">
+
+          <DCArtboard id="river-intel" label="1 · River Intel & Offline" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenRiverIntel T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+          <DCArtboard id="rapid-logger" label="2 · On-Water Logger" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenRapidLogger T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+          <DCArtboard id="map-tag" label="3 · Map Tag Review (at camp)" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenMapTag T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+        </DCSection>
+
+        <DCSection id="new-trip" title="New Trip Flow"
+          subtitle="Setup → Invite → Launch · 3-screen sequence">
+
+          <DCArtboard id="setup" label="1 · Trip Setup" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenNewTrip T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+          <DCArtboard id="invite" label="2 · Invite & Permissions" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenInvite T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+          <DCArtboard id="launch" label="3 · Ready to Launch" width={390} height={780}>
+            <AndroidDevice width={390} height={780}>
+              <ScreenReadyToLaunch T={T}/>
+            </AndroidDevice>
+          </DCArtboard>
+
+        </DCSection>
+      </DesignCanvas>
+
+      {/* Tweaks Panel */}
+      {tweakOpen && (
+        <div style={{position:'fixed', bottom:24, right:24, zIndex:9999,
+                     background:'white', borderRadius:16, padding:'18px',
+                     boxShadow:'0 8px 40px rgba(0,0,0,0.2)', width:250, fontFamily:F}}>
+          <div style={{fontSize:14, fontWeight:800, color:T.text, marginBottom:14}}>Tweaks</div>
+
+          <div style={{fontSize:11, fontWeight:700, color:T.textSub, marginBottom:8,
+                       textTransform:'uppercase', letterSpacing:.7}}>Accent Color</div>
+          <div style={{display:'flex', gap:8, marginBottom:16}}>
+            {[
+              {c:'#2C5F3E', cl:'#EBF3ED', cm:'#4A8B61', l:'Forest'},
+              {c:'#3A72A8', cl:'#E4EFF8', cm:'#5A8EC8', l:'Ocean'},
+              {c:'#7A3A22', cl:'#FBF0E4', cm:'#A05030', l:'Canyon'},
+              {c:'#1A1917', cl:'#F0EEEB', cm:'#4A4840', l:'Obsidian'},
+            ].map(opt => (
+              <div key={opt.c} onClick={() => {
+                updateToken('accent', opt.c);
+                updateToken('accentLight', opt.cl);
+                updateToken('accentMid', opt.cm);
+              }} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:4, cursor:'pointer'}}>
+                <div style={{width:32, height:32, borderRadius:16, background:opt.c,
+                             border: T.accent===opt.c ? '3px solid #333' : '3px solid transparent'}}/>
+                <span style={{fontSize:9, color:T.textSub, fontWeight:500}}>{opt.l}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{fontSize:11, fontWeight:700, color:T.textSub, marginBottom:8,
+                       textTransform:'uppercase', letterSpacing:.7}}>Trip Name</div>
+          <input value={T.tripName} onChange={e => updateToken('tripName', e.target.value)}
+            style={{width:'100%', border:`1px solid ${T.border}`, borderRadius:8, padding:'7px 10px',
+                    fontSize:12, fontFamily:F, color:T.text, outline:'none', marginBottom:14}}/>
+
+          <div style={{fontSize:11, fontWeight:700, color:T.textSub, marginBottom:8,
+                       textTransform:'uppercase', letterSpacing:.7}}>Background Tone</div>
+          <div style={{display:'flex', gap:8}}>
+            {[{c:'#F5F4F0',l:'Warm'},{c:'#F0F4F5',l:'Cool'},{c:'#FFFFFF',l:'White'}].map(opt => (
+              <div key={opt.c} onClick={() => updateToken('bg', opt.c)}
+                   style={{flex:1, padding:'7px 0', borderRadius:8, background:opt.c,
+                            border: T.bg===opt.c ? `2px solid ${T.accent}` : `1px solid ${T.border}`,
+                            textAlign:'center', cursor:'pointer',
+                            fontSize:10, fontWeight:600, color:T.textSub}}>{opt.l}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

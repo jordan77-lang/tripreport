@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  background: #F5F4F0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Make #root a full-height flex container so screens fill the viewport */
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Hide scrollbars globally (they show in screen scroll areas) */
+* { scrollbar-width: none; }
+*::-webkit-scrollbar { display: none; }
+
+/* GPS pulse animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .5; transform: scale(.9); }
+}
+
+/* Mapbox attribution stays small */
+.mapboxgl-ctrl-attrib { font-size: 10px !important; }

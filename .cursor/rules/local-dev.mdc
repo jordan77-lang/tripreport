@@ -1,0 +1,51 @@
+---
+description: NEVER start dev servers via Shell — prevents process leaks and IDE crashes
+alwaysApply: true
+---
+
+# Local Dev — Agent Must NOT Run Servers
+
+## HARD BAN (no exceptions)
+
+The agent must **NEVER** use the Shell tool to run any of these:
+
+- `npm run dev`
+- `npm run preview`
+- `vite`
+- `npx vite`
+- Any command whose purpose is starting a local HTTP dev server
+
+This applies even when the user says: deploy, launch, run locally, let me see it, start the server.
+
+**The user starts the server themselves in their own terminal.** The agent only prints the command.
+
+## What the agent should do instead
+
+Reply with exactly this workflow (copy/paste for the user):
+
+```
+cd C:\Users\jordan77\Documents\GitHub\Tripreport\app
+npm run dev
+```
+
+Tell them: open port **5173** in Chrome, Edge, or Firefox (not Cursor's built-in browser).
+
+Do NOT include a clickable `http://` link — that can open Cursor's Simple Browser and crash the session.
+
+## Also banned (causes hangs and extra processes)
+
+- `Await` / `AwaitShell` on terminal output
+- `Start-Sleep` to wait for a server
+- Running `npm run lint` or `npm run build` in the same turn as any server command
+- Starting a second server without the user asking to kill the first
+
+## If processes piled up
+
+Tell the user to run in their terminal:
+
+```
+cd C:\Users\jordan77\Documents\GitHub\Tripreport
+npm run kill-dev
+```
+
+The agent may run `npm run kill-dev` once to help cleanup — that is allowed. The agent must NOT run `npm run dev` afterward.
