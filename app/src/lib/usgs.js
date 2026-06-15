@@ -146,6 +146,10 @@ const STATE_SEARCH_PRIORITY = [
   'ok', 'pa', 'ri', 'sc', 'sd', 'tn', 'tx', 'va', 'vt', 'wi', 'wv', 'dc',
 ];
 
+const STATE_SEARCH_BATCH_SIZE = 8;
+const PER_STATE_SITE_LIMIT = 500;
+const DEFAULT_TEXT_SEARCH_LIMIT = 200;
+
 export function findNearbyKnownGauges(lat, lng, { limit = 3, maxMiles = 200 } = {}) {
   if (lat == null || lng == null) return [];
   return KNOWN_GAUGES
@@ -310,8 +314,30 @@ export function parseGaugeSearchQuery(text) {
   return { siteName, stateCd };
 }
 
-export async function fetchGaugeStationsByText(text, { limit = 40, lat = null, lng = null } = {}) {
+export async function fetchNearbyGaugeStationsByText(text, lat, lng, { radiusMiles = 150, limit = 100 } = {}) {
+  if (lat == null || lng == null) return [];
+  const { siteName } = parseGaugeSearchQuery(text);
+  const searchText = siteName || String(text || '').trim();
+
+  const stations = await fetchGaugeStationsByBbox(lat, lng, { radiusMiles, limit: limit * 4 });
+  if (!searchText) return stations.slice(0, limit);
+
+  const filtered = filterStationsByText(stations, searchText);
+  const ranked = rankStationsByText(filtered.length ? filtered : stations, searchText);
+  return ranked.slice(0, limit);
+}
+
+export async function fetchGaugeStationsByText(text, {
+  limit = DEFAULT_TEXT_SEARCH_LIMIT,
+  lat = null,
+  lng = null,
+  scope = 'all',
+} = {}) {
   const q = String(text || '').trim();
+  if (scope === 'nearby') {
+    if (lat == null || lng == null) return [];
+    return fetchNearbyGaugeStationsByText(q, lat, lng, { radiusMiles: 150, limit });
+  }
   if (!q) return [];
 
   const { siteName, stateCd } = parseGaugeSearchQuery(q);
@@ -326,46 +352,28 @@ export async function fetchGaugeStationsByText(text, { limit = 40, lat = null, l
     }
   }
 
-  if (stateCd) {
-    addStations(await fetchGaugeStationsRdb({ stateCd, siteName }, { limit }));
-  } else if (lat != null && lng != null) {
-    const tileRadius = maxBboxRadiusMiles(lat);
-    const bbox = buildBbox(lat, lng, tileRadius);
-    addStations(await fetchGaugeStationsRdb({
-      bBox: formatBboxArg(bbox),
-      siteName,
-    }, { limit }));
-
-    if (merged.length < Math.min(limit, 8)) {
-      const wider = await fetchGaugeStationsByBbox(lat, lng, { radiusMiles: Math.min(250, tileRadius * 2), limit: limit * 2 });
-      addStations(filterStationsByText(wider, siteName));
-    }
-  } else {
-    const states = STATE_SEARCH_PRIORITY;
-    const batchSize = 10;
-    for (let i = 0; i < states.length && merged.length < limit; i += batchSize) {
-      const batch = states.slice(i, i + batchSize);
+  async function searchAllStates(name) {
+    for (let i = 0; i < STATE_SEARCH_PRIORITY.length; i += STATE_SEARCH_BATCH_SIZE) {
+      const batch = STATE_SEARCH_PRIORITY.slice(i, i + STATE_SEARCH_BATCH_SIZE);
       const results = await Promise.all(
-        batch.map((code) => fetchGaugeStationsRdb({ stateCd: code, siteName }, { limit: 12 }).catch(() => [])),
+        batch.map((code) => fetchGaugeStationsRdb(
+          { stateCd: code, siteName: name },
+          { limit: PER_STATE_SITE_LIMIT },
+        ).catch(() => [])),
       );
       results.forEach(addStations);
     }
   }
 
-  const filtered = filterStationsByText(merged, siteName);
-  const ranked = rankStationsByText(filtered.length ? filtered : merged, siteName);
-  const out = ranked.slice(0, limit);
-
-  if (lat != null && lng != null) {
-    return out
-      .map((g) => ({
-        ...g,
-        distanceMiles: g.lat != null && g.lng != null ? haversineMiles(lat, lng, g.lat, g.lng) : g.distanceMiles ?? null,
-      }))
-      .sort((a, b) => (a.distanceMiles ?? Number.POSITIVE_INFINITY) - (b.distanceMiles ?? Number.POSITIVE_INFINITY));
+  if (stateCd) {
+    addStations(await fetchGaugeStationsRdb({ stateCd, siteName }, { limit: PER_STATE_SITE_LIMIT }));
+  } else {
+    await searchAllStates(siteName);
   }
 
-  return out;
+  const filtered = filterStationsByText(merged, siteName);
+  const ranked = rankStationsByText(filtered.length ? filtered : merged, siteName);
+  return ranked.slice(0, limit);
 }
 
 async function fetchGaugeStationsRdb(filters, { limit = 40 } = {}) {
@@ -434,32 +442,46 @@ function riverNameFromStation(name) {
   return idx > -1 ? txt.slice(0, idx).trim() : txt;
 }
 
+function searchTokens(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .split(/[\s,]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 function filterStationsByText(stations, text) {
-  const q = String(text || '').trim().toLowerCase();
-  if (!q) return stations;
-  return stations.filter((g) => {
-    const name = String(g?.name || '').toLowerCase();
-    const river = riverNameFromStation(g?.name || '').toLowerCase();
-    const id = String(g?.id || '').toLowerCase();
-    return name.includes(q) || river.includes(q) || id.includes(q);
-  });
+  const tokens = searchTokens(text);
+  if (!tokens.length) return stations;
+  return stations.filter((g) => stationMatchesTokens(g, tokens));
+}
+
+function stationMatchesTokens(gauge, tokens) {
+  const name = String(gauge?.name || '').toLowerCase();
+  const river = riverNameFromStation(gauge?.name || '').toLowerCase();
+  const id = String(gauge?.id || '').toLowerCase();
+  const haystack = `${name} ${river} ${id}`;
+  return tokens.every((token) => haystack.includes(token));
 }
 
 function rankStationsByText(stations, text) {
-  const q = String(text || '').trim().toLowerCase();
-  if (!q) return stations;
+  const tokens = searchTokens(text);
+  if (!tokens.length) return stations;
+  const q = tokens.join(' ');
   return [...stations]
     .map((g) => {
       const name = String(g?.name || '').toLowerCase();
       const river = riverNameFromStation(g?.name || '').toLowerCase();
       const id = String(g?.id || '').toLowerCase();
       const exactId = id === q ? 5 : 0;
-      const starts = name.startsWith(q) || river.startsWith(q) || id.startsWith(q) ? 3 : 0;
-      const includes = name.includes(q) || river.includes(q) || id.includes(q) ? 1 : 0;
-      return { g, score: exactId + starts + includes };
+      const starts = tokens.some((token) => name.startsWith(token) || river.startsWith(token) || id.startsWith(token)) ? 3 : 0;
+      const includes = stationMatchesTokens(g, tokens) ? 1 : 0;
+      const phrase = name.includes(q) || river.includes(q) ? 2 : 0;
+      return { g, score: exactId + starts + phrase + includes };
     })
     .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.score - a.score || String(a.g.name || '').localeCompare(String(b.g.name || '')))
     .map((x) => x.g);
 }
 

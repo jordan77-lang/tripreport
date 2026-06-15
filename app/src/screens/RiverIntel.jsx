@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Ic } from '../components/Ic';
 import { TripMap } from '../components/TripMap';
 import { T, F, ICONS } from '../tokens';
-import { fetchGauge, fetchGaugeHistory, fetchGaugeHistoryRange, KNOWN_GAUGES, fetchNearbyGaugesByGps, fetchGaugeStationsByText, fetchGaugeStationsByBbox } from '../lib/usgs';
+import { fetchGauge, fetchGaugeHistory, fetchGaugeHistoryRange, KNOWN_GAUGES, fetchNearbyGaugesByGps, fetchGaugeStationsByText, parseGaugeSearchQuery } from '../lib/usgs';
 
 const FAV_KEY = 'tr_favorite_gauges';
 const PRESET_DAYS = { '7d': 7, '14d': 14, '30d': 30 };
@@ -84,6 +84,7 @@ export function RiverIntel({ onBack }) {
   const [searchStations, setSearchStations] = useState([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchScope, setSearchScope] = useState('all'); // all | nearby
   const [gauge, setGauge]       = useState(null);
   const [history, setHistory]   = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -194,9 +195,21 @@ export function RiverIntel({ onBack }) {
 
   const selectedGaugeMeta = gaugesPool.find(g => g.id === siteId) || KNOWN_GAUGES.find(g => g.id === siteId);
   const favorites = gaugesPool.filter(g => favoriteIds.includes(g.id));
-  const draftMatches = useMemo(() => searchGaugeMatches(searchDraft, gaugesPool), [searchDraft, gaugesPool]);
+  const draftMatches = useMemo(() => {
+    const { siteName } = parseGaugeSearchQuery(searchDraft);
+    return searchGaugeMatches(siteName || searchDraft, gaugesPool);
+  }, [searchDraft, gaugesPool]);
 
-  const filtered = query ? searchGaugeMatches(query, gaugesPool) : gaugesPool;
+  const filtered = useMemo(() => {
+    if (!query) return gaugesPool;
+    if (query === 'nearby' && searchStations.length) return searchStations;
+    const { siteName } = parseGaugeSearchQuery(query);
+    const matchText = siteName || query;
+    const source = searchStations.length
+      ? [...searchStations, ...KNOWN_GAUGES]
+      : gaugesPool;
+    return searchGaugeMatches(matchText, source);
+  }, [query, gaugesPool, searchStations]);
   const nearby = nearbyStations.filter(g => g.id !== siteId);
 
   const mapEntries = useMemo(() => {
@@ -240,47 +253,44 @@ export function RiverIntel({ onBack }) {
 
   async function runSearch() {
     const q = searchDraft.trim();
-    if (!q) {
+    if (!q && searchScope !== 'nearby') {
       setQuery('');
       setError(null);
       setSearchStations([]);
       return;
     }
+
+    if (searchScope === 'nearby' && (userPos?.lat == null || userPos?.lng == null)) {
+      setError('Location needed for nearby search. Allow GPS access and try again.');
+      return;
+    }
+
+    const { siteName } = parseGaugeSearchQuery(q);
+    const matchText = siteName || q;
     setSearchLoading(true);
-    let matches = searchGaugeMatches(q, gaugesPool);
+    setError(null);
+    let matches = searchGaugeMatches(matchText, gaugesPool);
 
     try {
       const remote = await fetchGaugeStationsByText(q, {
-        limit: 60,
+        limit: 200,
         lat: userPos?.lat ?? null,
         lng: userPos?.lng ?? null,
+        scope: searchScope,
       });
       if (remote.length) {
         setSearchStations(remote);
-        matches = searchGaugeMatches(q, [...remote, ...gaugesPool]);
+        matches = remote;
       } else {
         setSearchStations([]);
+        matches = searchScope === 'nearby'
+          ? []
+          : searchGaugeMatches(matchText, gaugesPool);
       }
     } catch {
-      // Keep local matching if remote search fails.
+      matches = searchScope === 'nearby' ? [] : searchGaugeMatches(matchText, gaugesPool);
     } finally {
       setSearchLoading(false);
-    }
-
-    if (!matches.length && userPos?.lat != null) {
-      try {
-        const expanded = await fetchGaugeStationsByBbox(userPos.lat, userPos.lng, { radiusMiles: 200, limit: 120 });
-        if (expanded.length) {
-          setSearchStations((prev) => {
-            const map = new Map();
-            [...prev, ...expanded].forEach((g) => { if (g?.id) map.set(g.id, g); });
-            return Array.from(map.values());
-          });
-          matches = searchGaugeMatches(q, [...expanded, ...gaugesPool]);
-        }
-      } catch {
-        // Keep existing matches state if fetch fails.
-      }
     }
 
     if (matches.length === 1) {
@@ -290,8 +300,7 @@ export function RiverIntel({ onBack }) {
       setSiteId(top.id);
       setError(null);
     } else if (matches.length > 1) {
-      // Keep query text so the user can pick among all matched gauges.
-      setQuery(q);
+      setQuery(q || (searchScope === 'nearby' ? 'nearby' : ''));
       setSearchDraft(q);
       setError(null);
     } else {
@@ -319,8 +328,36 @@ export function RiverIntel({ onBack }) {
       }
 
       setSearchStations([]);
-      setQuery(q);
-      setError(`No gauges found matching "${q}"`);
+      setQuery(q || (searchScope === 'nearby' ? 'nearby' : ''));
+      setError(searchScope === 'nearby'
+        ? (q ? `No nearby gauges found matching "${q}"` : 'No gauges found within 150 miles.')
+        : `No gauges found matching "${q}"`);
+    }
+  }
+
+  async function loadNearbyBrowse() {
+    if (userPos?.lat == null || userPos?.lng == null) {
+      setError('Location needed for nearby search. Allow GPS access and try again.');
+      return;
+    }
+    setSearchScope('nearby');
+    setSearchDraft('');
+    setSearchLoading(true);
+    setError(null);
+    try {
+      const remote = await fetchGaugeStationsByText('', {
+        lat: userPos.lat,
+        lng: userPos.lng,
+        scope: 'nearby',
+        limit: 100,
+      });
+      setSearchStations(remote);
+      setQuery('nearby');
+      if (!remote.length) setError('No gauges found within 150 miles.');
+    } catch {
+      setError('Could not load nearby gauges.');
+    } finally {
+      setSearchLoading(false);
     }
   }
 
@@ -382,12 +419,39 @@ export function RiverIntel({ onBack }) {
           </div>
         </div>
 
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', background: T.bg, borderRadius: 9, padding: 2, border: `1px solid ${T.border}` }}>
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'nearby', label: 'Nearby' },
+            ].map((opt) => (
+              <div key={opt.id} onClick={() => setSearchScope(opt.id)}
+                   style={{ padding: '6px 10px', borderRadius: 7, fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
+                            background: searchScope === opt.id ? WATER : 'transparent',
+                            color: searchScope === opt.id ? 'white' : T.textFaint }}>
+                {opt.label}
+              </div>
+            ))}
+          </div>
+          <div onClick={loadNearbyBrowse}
+               style={{ background: searchScope === 'nearby' ? '#E4EFF8' : T.bg, border: `1px solid ${T.border}`,
+                        borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700,
+                        color: '#2A5C8E', cursor: searchLoading ? 'wait' : 'pointer' }}>
+            Near me
+          </div>
+          <span style={{ fontSize: 10, color: T.textFaint, flex: 1 }}>
+            {searchScope === 'nearby' ? 'Within ~150 mi of your GPS' : 'Nationwide USGS gauges'}
+          </span>
+        </div>
+
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
           <input
             value={searchDraft}
             onChange={e => setSearchDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
-            placeholder="Search by river, station, or gauge ID"
+            placeholder={searchScope === 'nearby'
+              ? 'Search nearby rivers, stations, or gauge ID'
+              : 'Search all USGS rivers, stations, or gauge ID'}
             style={{
               flex: 1,
               border: `1.5px solid ${T.border}`,
@@ -468,6 +532,26 @@ export function RiverIntel({ onBack }) {
             </div>
           ))}
         </div>
+
+        {query && filtered.length > 0 && (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '6px 8px', marginBottom: 8, maxHeight: 220, overflowY: 'auto' }}>
+            <div style={{ fontSize: 10, color: T.textFaint, fontWeight: 700, padding: '2px 4px 6px' }}>
+              {searchScope === 'nearby' || query === 'nearby'
+                ? `${filtered.length} gauge${filtered.length === 1 ? '' : 's'} within ~150 mi`
+                : `${filtered.length} gauge${filtered.length === 1 ? '' : 's'} found nationwide`}
+            </div>
+            {filtered.map((g) => (
+              <div key={g.id} onClick={() => { setSearchDraft(g.name); setQuery(g.name); setSiteId(g.id); }}
+                   style={{ padding: '7px 8px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 8,
+                            background: siteId === g.id ? '#E4EFF8' : 'transparent' }}>
+                <span style={{ fontSize: 11.5, color: T.text }}>{g.name}</span>
+                <span style={{ fontSize: 10.5, color: T.textFaint, flexShrink: 0 }}>
+                  {g.distanceMiles != null ? `${g.distanceMiles.toFixed(1)} mi` : `#${g.id}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {query && filtered.length === 0 && (
           <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>No gauges match your search.</div>
@@ -652,21 +736,29 @@ function riverNameFromStation(name) {
 }
 
 function searchGaugeMatches(text, source = KNOWN_GAUGES) {
-  const q = (text || '').trim().toLowerCase();
-  if (!q) return [];
+  const tokens = String(text || '')
+    .trim()
+    .toLowerCase()
+    .split(/[\s,]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (!tokens.length) return [];
   return source
     .map((g) => {
       const name = String(g?.name || '').toLowerCase();
       const river = riverNameFromStation(g?.name || '').toLowerCase();
       const id = String(g?.id || '').toLowerCase();
+      const haystack = `${name} ${river} ${id}`;
+      const q = tokens.join(' ');
       const exactId = id === q ? 5 : 0;
-      const starts = name.startsWith(q) || river.startsWith(q) || id.startsWith(q) ? 3 : 0;
-      const includes = name.includes(q) || river.includes(q) || id.includes(q) ? 1 : 0;
-      return { g, score: exactId + starts + includes };
+      const starts = tokens.some((token) => name.startsWith(token) || river.startsWith(token) || id.startsWith(token)) ? 3 : 0;
+      const phrase = name.includes(q) || river.includes(q) ? 2 : 0;
+      const includes = tokens.every((token) => haystack.includes(token)) ? 1 : 0;
+      return { g, score: exactId + starts + phrase + includes };
     })
-    .filter(x => x.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map(x => x.g);
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || String(a.g.name || '').localeCompare(String(b.g.name || '')))
+    .map((x) => x.g);
 }
 
 function classifyFlow(cfs) {
