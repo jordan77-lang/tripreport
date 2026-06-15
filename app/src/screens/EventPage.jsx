@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { SyncChip } from '../components/SyncChip';
 import { Ic } from '../components/Ic';
@@ -6,7 +6,10 @@ import { EntryForm } from './EntryForm';
 import { TripExpenses } from '../components/TripExpenses';
 import { T, F, ICONS } from '../tokens';
 import { addEntry, getCurrentUserId, updateEntry, updateEvent } from '../lib/storage';
-import { createCoverPhotoFromFile } from '../lib/media';
+import { createPhotoMediaFromFile } from '../lib/media';
+import { MediaThumb } from '../components/MediaThumb';
+import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
+import { mediaCaptureLabel } from '../lib/featureFlags';
 
 const ENTRY_COLORS = {
   campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
@@ -26,7 +29,7 @@ const ENTRY_ICON = {
 // Core contributions always available for any event
 const CORE_CONTRIBUTE = [
   { icon: ICONS.note,    label: 'Add Note',        col: '#6B6763', type: 'note' },
-  { icon: ICONS.camera,  label: 'Photo / Video',   col: '#C05050', type: 'video' },
+  { icon: ICONS.camera,  label: mediaCaptureLabel('Photo / Video'),   col: '#C05050', type: 'video' },
   { icon: ICONS.mic,     label: 'Voice Memo',      col: '#5B8DD9', type: 'voice' },
   { icon: ICONS.compass, label: 'Weather',         col: '#517EA3', type: 'weather' },
   { icon: ICONS.gauge,   label: 'Gauge Reading',   col: '#2A5C8E', type: 'gauge' },
@@ -80,13 +83,15 @@ export function EventPage({
 
   const photos = useMemo(() => {
     const out = [];
-    if (event?.coverPhoto?.thumbDataUrl) {
-      out.push({ src: event.coverPhoto.thumbDataUrl, caption: event.name, isCover: true });
+    const cover = event?.coverPhoto;
+    if (cover && (cover.id || cover.thumbDataUrl || cover.dataUrl)) {
+      out.push({ media: cover, caption: event.name, isCover: true });
     }
     for (const e of entries) {
       for (const f of e.photoFiles || []) {
-        const src = f.thumbDataUrl || f.dataUrl;
-        if (src) out.push({ src, caption: e.title || e.type, entryId: e.id });
+        if (f.id || f.thumbDataUrl || f.dataUrl) {
+          out.push({ media: f, caption: e.title || e.type, entryId: e.id });
+        }
       }
     }
     return out;
@@ -136,7 +141,7 @@ export function EventPage({
   async function onCoverSelected(files) {
     const f = Array.from(files || [])[0];
     if (!f) return;
-    const coverPhoto = await createCoverPhotoFromFile(f);
+    const coverPhoto = trip?.id ? await createPhotoMediaFromFile(f, trip.id, { maxThumbSide: 320, maxFullSide: 1200 }) : null;
     setEventDraft((d) => ({ ...d, coverPhoto }));
   }
 
@@ -230,8 +235,12 @@ export function EventPage({
         {/* ── Photo carousel ── */}
         {photos.length > 0 && (
           <div style={{ position: 'relative', background: '#111', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180, maxHeight: 340 }}>
-            <img src={photos[photoIdx]?.src} alt={photos[photoIdx]?.caption || 'Event photo'}
-                 style={{ width: '100%', maxHeight: 340, objectFit: 'contain', display: 'block' }} />
+            <MediaThumb
+              media={photos[photoIdx]?.media}
+              preferThumb={false}
+              alt={photos[photoIdx]?.caption || 'Event photo'}
+              style={{ width: '100%', maxHeight: 340, objectFit: 'contain', display: 'block' }}
+            />
             <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,.55))', padding: '24px 14px 10px' }}>
               {photos.length > 1 && (
                 <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
@@ -574,21 +583,55 @@ function DataChip({ iconD, color, bg, children }) {
 
 function MediaRow({ entry: e }) {
   const [lightboxIdx, setLightboxIdx] = useState(null);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const videoCount = e.videoFiles?.length || 0;
   const voiceCount = e.voiceFiles?.length || 0;
 
-  const photosWithData = (e.photoFiles || []).filter((f) => f.thumbDataUrl || f.dataUrl);
-  const photosNoData   = (e.photoFiles || []).filter((f) => !f.thumbDataUrl && !f.dataUrl);
+  const photosWithData = (e.photoFiles || []).filter((f) => f.id || f.thumbDataUrl || f.dataUrl);
+  const photosNoData   = (e.photoFiles || []).filter((f) => !f.id && !f.thumbDataUrl && !f.dataUrl);
   const caption = e.photoNotes || '';
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = null;
+
+    async function load() {
+      if (lightboxIdx === null) {
+        setLightboxSrc(null);
+        return;
+      }
+      const media = photosWithData[lightboxIdx];
+      if (!media) {
+        setLightboxSrc(null);
+        return;
+      }
+      if (isLegacyMediaRef(media)) {
+        setLightboxSrc(media.dataUrl || media.thumbDataUrl);
+        return;
+      }
+      try {
+        objectUrl = await createMediaObjectUrl(media.id, { preferThumb: false });
+        if (!cancelled) setLightboxSrc(objectUrl);
+      } catch {
+        if (!cancelled) setLightboxSrc(null);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [lightboxIdx, e.photoFiles]);
 
   return (
     <div style={{ marginTop: 8 }}>
       {photosWithData.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, marginBottom: photosNoData.length || videoCount || voiceCount ? 6 : 0 }}>
           {photosWithData.map((f, i) => (
-            <div key={i} onClick={() => setLightboxIdx(i)}
+            <div key={f.id || i} onClick={() => setLightboxIdx(i)}
                  style={{ position: 'relative', borderRadius: 9, overflow: 'hidden', background: '#F0EDE8', cursor: 'pointer', aspectRatio: '1' }}>
-              <img src={f.thumbDataUrl || f.dataUrl} alt={`Photo ${i + 1}`}
+              <MediaThumb media={f} alt={`Photo ${i + 1}`}
                    style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
             </div>
           ))}
@@ -604,10 +647,10 @@ function MediaRow({ entry: e }) {
           {voiceCount > 0 && <MediaBadge iconD={ICONS.mic} count={voiceCount} label="audio" />}
         </div>
       )}
-      {lightboxIdx !== null && (
+      {lightboxIdx !== null && lightboxSrc && (
         <div onClick={() => setLightboxIdx(null)}
              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.92)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <img src={photosWithData[lightboxIdx]?.thumbDataUrl || photosWithData[lightboxIdx]?.dataUrl}
+          <img src={lightboxSrc}
                alt={`Photo ${lightboxIdx + 1}`}
                style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: 8 }}
                onClick={(ev) => ev.stopPropagation()} />

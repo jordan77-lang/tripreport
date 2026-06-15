@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { createTrip, getContacts, saveContact } from '../lib/storage';
-import { createCoverPhotoFromFile } from '../lib/media';
+import { createTrip, getContacts, saveContact, saveTrip } from '../lib/storage';
+import { createCoverPhotoPreview, finalizeCoverPhotoPreview } from '../lib/media';
 import { pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { listMapRegions, regionMatchesTripTypes } from '../lib/mapRegions';
@@ -69,8 +69,8 @@ export function NewTrip({ onDone, onBack }) {
   async function onTripCoverSelected(files) {
     const file = Array.from(files || [])[0];
     if (!file) return;
-    const nextCover = await createCoverPhotoFromFile(file);
-    setCoverPhoto(nextCover);
+    if (coverPhoto?.previewUrl) URL.revokeObjectURL(coverPhoto.previewUrl);
+    setCoverPhoto(createCoverPhotoPreview(file));
   }
 
   async function searchPlace() {
@@ -166,7 +166,7 @@ export function NewTrip({ onDone, onBack }) {
     const offlineRegions = selectedOfflineRegions;
     const catalogRegion = offlineRegions.length === 1 ? listMapRegions().find((r) => r.id === offlineRegions[0]) : null;
 
-    const trip = createTrip({
+    let trip = createTrip({
       name: name || 'My Trip',
       types,
       privacy,
@@ -178,7 +178,7 @@ export function NewTrip({ onDone, onBack }) {
       gpsTrackingEnabled: false,
       gpsBackgroundTracking: false,
       gpsIntervalMs: 15000,
-      coverPhoto,
+      coverPhoto: null,
       mapArea: mapBounds ? {
         sw: { lng: mapBounds.getWest(), lat: mapBounds.getSouth() },
         ne: { lng: mapBounds.getEast(), lat: mapBounds.getNorth() },
@@ -192,6 +192,15 @@ export function NewTrip({ onDone, onBack }) {
       } : null),
       location: catalogRegion ? catalogRegion.area : undefined,
     });
+
+    if (coverPhoto?.file) {
+      try {
+        const coverRef = await finalizeCoverPhotoPreview(coverPhoto, trip.id);
+        trip = saveTrip({ ...trip, coverPhoto: coverRef });
+      } catch (e) {
+        console.warn('Could not save cover photo locally', e);
+      }
+    }
 
     if (offlineRegions.length) {
       void preloadMapRegions(offlineRegions);
@@ -261,12 +270,12 @@ export function NewTrip({ onDone, onBack }) {
                   Choose Photo
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onTripCoverSelected(e.target.files)} />
                 </label>
-                {!!coverPhoto && <span onClick={() => setCoverPhoto(null)} style={{ fontSize: 10.5, color: T.textFaint, cursor: 'pointer' }}>Remove</span>}
+                {!!coverPhoto && <span onClick={() => { if (coverPhoto?.previewUrl) URL.revokeObjectURL(coverPhoto.previewUrl); setCoverPhoto(null); }} style={{ fontSize: 10.5, color: T.textFaint, cursor: 'pointer' }}>Remove</span>}
               </div>
               {!!coverPhoto && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 9px' }}>
-                  {coverPhoto.thumbDataUrl
-                    ? <img src={coverPhoto.thumbDataUrl} alt="Trip cover" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8 }} />
+                  {coverPhoto.previewUrl
+                    ? <img src={coverPhoto.previewUrl} alt="Trip cover" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8 }} />
                     : <div style={{ width: 44, height: 44, borderRadius: 8, background: T.bg, border: `1px solid ${T.border}` }} />}
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 11.5, color: T.text, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{coverPhoto.name}</div>

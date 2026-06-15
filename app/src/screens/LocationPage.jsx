@@ -5,7 +5,9 @@ import { TripMap } from '../components/TripMap';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { addEntry, addEvent, getCurrentUserId, updateEntry, updateLocation } from '../lib/storage';
-import { createCoverPhotoFromFile } from '../lib/media';
+import { createPhotoMediaFromFile } from '../lib/media';
+import { MediaThumb } from '../components/MediaThumb';
+import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 import { shareEntity } from '../lib/share';
 import { fetchWeatherAtTime } from '../lib/weather';
 import { fetchGauge, fetchNearbyGaugesByGps, fetchGaugeStationsByBbox, findNearbyKnownGauges } from '../lib/usgs';
@@ -47,7 +49,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
   const videoUploadRef = useRef(null);
 
   const captureItems = [
-    { icon: ICONS.camera, label: 'Photo / Video', col: '#C05050', type: 'video' },
+    { icon: ICONS.camera, label: mediaCaptureLabel('Photo / Video'), col: '#C05050', type: 'video' },
     { icon: ICONS.fork, label: 'Meal Entry', col: '#B06030', type: 'food' },
     { icon: ICONS.leaf, label: 'Sighting', col: '#4A7A34', type: 'wildlife' },
     { icon: ICONS.compass, label: 'Weather Entry', col: '#517EA3', type: 'weather' },
@@ -427,22 +429,22 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
 
   async function onPhotoSelected(files) {
     const rawFiles = Array.from(files || []);
-    if (!rawFiles.length) return;
+    if (!rawFiles.length || !trip?.id) return;
     const next = await Promise.all(rawFiles.map(async (f) => {
-      const meta = { name: f.name, size: f.size, type: f.type };
       if (f.type?.startsWith('image/')) {
         try {
-          const dataUrl = await readFileAsDataUrl(f);
-          const thumbDataUrl = await resizeDataUrl(dataUrl, 600, f.type);
-          return { ...meta, thumbDataUrl };
-        } catch { return meta; }
+          return await createPhotoMediaFromFile(f, trip.id);
+        } catch {
+          return { name: f.name, size: f.size, type: f.type };
+        }
       }
-      return meta;
+      return { name: f.name, size: f.size, type: f.type };
     }));
     setComposerDraft((d) => ({ ...d, photoFiles: [...(d.photoFiles || []), ...next] }));
   }
 
   function onVideoSelected(files) {
+    if (!VIDEO_ENABLED) return;
     const next = Array.from(files || []).map((f) => ({ name: f.name, size: f.size, type: f.type }));
     if (!next.length) return;
     setComposerDraft((d) => ({ ...d, videoFiles: [...(d.videoFiles || []), ...next] }));
@@ -470,14 +472,14 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
   async function onCoverSelected(files) {
     const f = Array.from(files || [])[0];
     if (!f) return;
-    const coverPhoto = await createCoverPhotoFromFile(f);
+    const coverPhoto = trip?.id ? await createPhotoMediaFromFile(f, trip.id, { maxThumbSide: 320, maxFullSide: 1200 }) : null;
     setEventDraft((d) => ({ ...d, coverPhoto }));
   }
 
   async function onLocationCoverSelected(files) {
     const f = Array.from(files || [])[0];
     if (!f) return;
-    const coverPhoto = await createCoverPhotoFromFile(f);
+    const coverPhoto = trip?.id ? await createPhotoMediaFromFile(f, trip.id, { maxThumbSide: 320, maxFullSide: 1200 }) : null;
     setLocationDraft((d) => ({ ...d, coverPhoto }));
   }
 
@@ -531,9 +533,9 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-        {!!location.coverPhoto?.thumbDataUrl && (
+        {!!location.coverPhoto && (
           <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: 8, marginBottom: 12 }}>
-            <img src={location.coverPhoto.thumbDataUrl} alt="Location cover" style={{ width: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 10, display: 'block', background: '#F0EDE8' }} />
+            <MediaThumb media={location.coverPhoto} alt="Location cover" style={{ width: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 10, display: 'block', background: '#F0EDE8' }} />
           </div>
         )}
 
@@ -587,8 +589,8 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
               </div>
               {!!locationDraft.coverPhoto && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${T.border}`, background: T.bg, borderRadius: 10, padding: '8px 9px', marginBottom: 8 }}>
-                  {locationDraft.coverPhoto.thumbDataUrl ? (
-                    <img src={locationDraft.coverPhoto.thumbDataUrl} alt="Location cover preview" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
+                  {locationDraft.coverPhoto ? (
+                    <MediaThumb media={locationDraft.coverPhoto} alt="Location cover preview" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
                   ) : (
                     <div style={{ width: 42, height: 42, borderRadius: 8, background: T.card, border: `1px solid ${T.border}` }} />
                   )}
@@ -732,18 +734,18 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                     <input ref={coverRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onCoverSelected(e.target.files)} />
                     {!!eventDraft.coverPhoto && <span style={{ fontSize: 10.5, color: T.textFaint }}>{eventDraft.coverPhoto.name}</span>}
                   </div>
-                  {!!eventDraft.coverPhoto?.thumbDataUrl && (
-                    <img src={eventDraft.coverPhoto.thumbDataUrl} alt="Event cover preview" style={{ width: 56, height: 56, borderRadius: 10, objectFit: 'cover', marginBottom: 7 }} />
+                  {!!eventDraft.coverPhoto && (
+                    <MediaThumb media={eventDraft.coverPhoto} alt="Event cover preview" style={{ width: 56, height: 56, borderRadius: 10, objectFit: 'cover', marginBottom: 7 }} />
                   )}
                 </>
               )}
 
-              <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Photo / Video</div>
+              <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>{mediaCaptureLabel('Photo / Video')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
                 <div onClick={() => photoCaptureRef.current?.click()} style={quickBtnStyle(T)}>Take Photo</div>
                 <div onClick={() => photoUploadRef.current?.click()} style={quickBtnStyle(T)}>Upload Photo</div>
-                <div onClick={() => videoCaptureRef.current?.click()} style={quickBtnStyle(T)}>Take Video</div>
-                <div onClick={() => videoUploadRef.current?.click()} style={quickBtnStyle(T)}>Upload Video</div>
+                <div onClick={() => VIDEO_ENABLED && videoCaptureRef.current?.click()} title={!VIDEO_ENABLED ? VIDEO_DISABLED_HINT : undefined} style={{ ...quickBtnStyle(T), ...disabledMediaStyle() }}>Take Video</div>
+                <div onClick={() => VIDEO_ENABLED && videoUploadRef.current?.click()} title={!VIDEO_ENABLED ? VIDEO_DISABLED_HINT : undefined} style={{ ...quickBtnStyle(T), ...disabledMediaStyle() }}>Upload Video</div>
               </div>
               <input ref={photoCaptureRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => onPhotoSelected(e.target.files)} />
               <input ref={photoUploadRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onPhotoSelected(e.target.files)} />
@@ -752,9 +754,9 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
               {!!composerDraft.photoFiles?.length && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                   {composerDraft.photoFiles.map((f, idx) => (
-                    <div key={`${f.name}-${idx}`} style={{ position: 'relative' }}>
-                      {f.thumbDataUrl ? (
-                        <img src={f.thumbDataUrl} alt={f.name}
+                    <div key={f.id || `${f.name}-${idx}`} style={{ position: 'relative' }}>
+                      {f.id || f.thumbDataUrl ? (
+                        <MediaThumb media={f} alt={f.name}
                              style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'contain', background: '#F0EDE8', border: `1px solid ${T.border}`, display: 'block' }} />
                       ) : (
                         <div style={{ width: 64, height: 64, borderRadius: 8, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>📷</div>
@@ -918,8 +920,8 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
               return (
                 <div key={ev.id} onClick={() => openViewEvent(ev.id)}
                      style={{ background: T.card, borderRadius: 11, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                  {ev.coverPhoto?.thumbDataUrl ? (
-                    <img src={ev.coverPhoto.thumbDataUrl} alt={ev.name}
+                  {ev.coverPhoto ? (
+                    <MediaThumb media={ev.coverPhoto} alt={ev.name}
                          style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
                   ) : (
                     <div style={{ width: 44, height: 44, borderRadius: 10, background: (EVENT_COLORS[ev.type] || T.accent) + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 20 }}>
@@ -1063,34 +1065,6 @@ function quickBtnStyle(T) {
     textAlign: 'center',
     cursor: 'pointer',
   };
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function resizeDataUrl(dataUrl, maxSide, mimeType) {
-  const mime = mimeType === 'image/png' ? 'image/png' : mimeType === 'image/webp' ? 'image/webp' : 'image/jpeg';
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL(mime, 0.72));
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
 }
 
 function buildParticipantOptions(trip) {

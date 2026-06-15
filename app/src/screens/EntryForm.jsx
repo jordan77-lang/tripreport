@@ -5,6 +5,9 @@ import { T, F, ICONS } from '../tokens';
 import { fetchGauge, findNearbyKnownGauges } from '../lib/usgs';
 import { fetchCurrentWeather } from '../lib/weather';
 import { getCurrentUserId } from '../lib/storage';
+import { createPhotoMediaFromFile } from '../lib/media';
+import { MediaThumb } from '../components/MediaThumb';
+import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 
 export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, locations = [], defaultLocationId = null }) {
   const initialObservedAt = initialEntry?.observedAt ? new Date(initialEntry.observedAt) : new Date();
@@ -225,15 +228,14 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
   }
 
   async function addMediaFiles(mode, fileList) {
+    if (mode === 'video' && !VIDEO_ENABLED) return;
     const rawFiles = Array.from(fileList || []);
     if (!rawFiles.length) return;
     const files = await Promise.all(rawFiles.map(async (f) => {
       const meta = { name: f.name, size: f.size, type: f.type };
-      if (f.type?.startsWith('image/')) {
+      if (f.type?.startsWith('image/') && trip?.id) {
         try {
-          const dataUrl = await readFileAsDataUrl(f);
-          const thumbDataUrl = await resizeDataUrl(dataUrl, 600, f.type);
-          return { ...meta, thumbDataUrl };
+          return await createPhotoMediaFromFile(f, trip.id);
         } catch {
           return meta;
         }
@@ -610,27 +612,31 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             {[
               { id: 'photo', label: `Photos (${photoFiles.length})`, icon: ICONS.camera },
-              { id: 'video', label: `Videos (${videoFiles.length})`, icon: ICONS.video },
+              { id: 'video', label: `Videos (${videoFiles.length})`, icon: ICONS.video, videoOnly: true },
               { id: 'voice', label: `Audio (${voiceFiles.length})`, icon: ICONS.mic },
-            ].map((opt) => (
-              <div key={opt.id} onClick={() => setMediaMode(opt.id)}
-                   style={{ flex: 1, padding: '7px 9px', borderRadius: 10, cursor: 'pointer',
+            ].map((opt) => {
+              const disabled = opt.videoOnly && !VIDEO_ENABLED;
+              return (
+              <div key={opt.id} onClick={() => { if (!disabled) setMediaMode(opt.id); }}
+                   title={disabled ? VIDEO_DISABLED_HINT : undefined}
+                   style={{ flex: 1, padding: '7px 9px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
                             border: `1.5px solid ${mediaMode === opt.id ? '#2A5C8E' : T.border}`,
                             background: mediaMode === opt.id ? '#E4EFF8' : T.card,
-                            display: 'flex', alignItems: 'center', gap: 7, justifyContent: 'center' }}>
-                <Ic d={opt.icon} size={13} color={mediaMode === opt.id ? '#2A5C8E' : T.textSub} sw={1.8} />
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: mediaMode === opt.id ? '#2A5C8E' : T.textSub }}>{opt.label}</span>
+                            display: 'flex', alignItems: 'center', gap: 7, justifyContent: 'center',
+                            ...(disabled ? disabledMediaStyle() : {}) }}>
+                <Ic d={opt.icon} size={13} color={disabled ? T.textFaint : mediaMode === opt.id ? '#2A5C8E' : T.textSub} sw={1.8} />
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: disabled ? T.textFaint : mediaMode === opt.id ? '#2A5C8E' : T.textSub }}>{opt.label}</span>
               </div>
-            ))}
+            );})}
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <div onClick={() => activeCaptureRef.current?.click()}
-                 style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '8px 10px', fontSize: 11, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
+            <div onClick={() => { if (mediaMode !== 'video' || VIDEO_ENABLED) activeCaptureRef.current?.click(); }}
+                 style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '8px 10px', fontSize: 11, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
               {activeCaptureLabel}
             </div>
-            <div onClick={() => activeAttachRef.current?.click()}
-                 style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 11, fontWeight: 700, color: T.textSub, cursor: 'pointer' }}>
+            <div onClick={() => { if (mediaMode !== 'video' || VIDEO_ENABLED) activeAttachRef.current?.click(); }}
+                 style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 11, fontWeight: 700, color: T.textSub, cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
               {activeAttachLabel}
             </div>
           </div>
@@ -641,9 +647,9 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
           {!!activeMediaFiles.length && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
               {activeMediaFiles.map((f, idx) => (
-                <div key={`${f.name}-${idx}`} style={{ position: 'relative' }}>
-                  {f.thumbDataUrl ? (
-                    <img src={f.thumbDataUrl} alt={f.name}
+                <div key={f.id || `${f.name}-${idx}`} style={{ position: 'relative' }}>
+                  {f.thumbDataUrl || f.id ? (
+                    <MediaThumb media={f} alt={f.name}
                          style={{ width: 72, height: 72, borderRadius: 10, objectFit: 'contain', background: '#F0EDE8', border: `1px solid ${T.border}`, display: 'block' }} />
                   ) : (
                     <div style={{ width: 72, height: 72, borderRadius: 10, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 3 }}>
@@ -744,12 +750,12 @@ const inputStyle = (T) => ({
 
 function defaultTitle(type) {
   const map = { campsite: 'Campsite', water: 'Water Crossing', wildlife: 'Wildlife Sighting',
-                rapid: 'Rapid', 'river-feature': 'River Feature', gauge: 'River Flow Check', weather: 'Weather Check', note: 'Event', food: 'Meal', voice: 'Voice Note', video: 'Photo / Video', 'custom-event': 'Custom Event' };
+                rapid: 'Rapid', 'river-feature': 'River Feature', gauge: 'River Flow Check', weather: 'Weather Check', note: 'Event', food: 'Meal', voice: 'Voice Note', video: mediaCaptureLabel('Photo / Video'), 'custom-event': 'Custom Event' };
   return map[type] || type;
 }
 
 function typeLabel(type) {
-  const map = { 'river-feature': 'River Feature', 'custom-event': 'Custom Event', gauge: 'River Flow', weather: 'Weather' };
+  const map = { 'river-feature': 'River Feature', 'custom-event': 'Custom Event', gauge: 'River Flow', weather: 'Weather', video: mediaCaptureLabel('Photo / Video') };
   return map[type] || type;
 }
 

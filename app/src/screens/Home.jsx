@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Ic } from '../components/Ic';
 import { BottomNav } from '../components/BottomNav';
 import { SyncChip } from '../components/SyncChip';
+import { MediaThumb } from '../components/MediaThumb';
 import { T, F, ICONS } from '../tokens';
 import { fetchGauge, fetchNearbyGaugesByGps } from '../lib/usgs';
 import { fetchCurrentWeather } from '../lib/weather';
@@ -162,8 +163,8 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
               <div style={{ width: 8, height: 8, borderRadius: 4, background: '#5DBE7E', animation: 'pulse 2s infinite' }} />
               <span style={{ fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,.7)', letterSpacing: .8 }}>ACTIVE TRIP</span>
             </div>
-            {!!fieldTrip.coverPhoto?.thumbDataUrl && (
-              <img src={fieldTrip.coverPhoto.thumbDataUrl} alt="Trip cover" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 12, marginBottom: 10, display: 'block', background: 'rgba(0,0,0,.18)' }} />
+            {!!fieldTrip.coverPhoto && (
+              <MediaThumb media={fieldTrip.coverPhoto} alt="Trip cover" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 12, marginBottom: 10, display: 'block', background: 'rgba(0,0,0,.18)' }} />
             )}
             <div style={{ fontSize: 19, fontWeight: 800, color: 'white', letterSpacing: -.4, marginBottom: 2 }}>{fieldTrip.name}</div>
             <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.7)', marginBottom: 12 }}>
@@ -186,8 +187,8 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
               <Ic d={ICONS.compass} size={14} color="rgba(255,255,255,.85)" sw={2} />
               <span style={{ fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,.7)', letterSpacing: .8 }}>UPCOMING TRIP</span>
             </div>
-            {!!selectedPlanningTrip.coverPhoto?.thumbDataUrl && (
-              <img src={selectedPlanningTrip.coverPhoto.thumbDataUrl} alt="Trip cover" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 12, marginBottom: 10, display: 'block', background: 'rgba(0,0,0,.18)' }} />
+            {!!selectedPlanningTrip.coverPhoto && (
+              <MediaThumb media={selectedPlanningTrip.coverPhoto} alt="Trip cover" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 12, marginBottom: 10, display: 'block', background: 'rgba(0,0,0,.18)' }} />
             )}
             <div style={{ fontSize: 19, fontWeight: 800, color: 'white', letterSpacing: -.4, marginBottom: 2 }}>{selectedPlanningTrip.name}</div>
             <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.7)', marginBottom: 12 }}>
@@ -297,8 +298,8 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
               const mealCount = (t.meals || []).length;
               return (
                 <div key={t.id} style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1.5px solid ${isSelected ? '#2A5C8E' : T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  {t.coverPhoto?.thumbDataUrl ? (
-                    <img src={t.coverPhoto.thumbDataUrl} alt={`${t.name} cover`} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
+                  {t.coverPhoto ? (
+                    <MediaThumb media={t.coverPhoto} alt={`${t.name} cover`} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
                   ) : (
                     <div style={{ width: 44, height: 44, borderRadius: 10, background: '#E4EFF8', border: `1px solid #C7DDEF`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <Ic d={ICONS.compass} size={18} color="#2A5C8E" sw={1.8} />
@@ -369,8 +370,8 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
 
           {finalizedTrips.map((t) => (
             <div key={t.id} onClick={() => onSelectTrip?.(t.id)} style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1px solid ${T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-              {t.coverPhoto?.thumbDataUrl ? (
-                <img src={t.coverPhoto.thumbDataUrl} alt={`${t.name} cover`} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
+              {t.coverPhoto ? (
+                <MediaThumb media={t.coverPhoto} alt={`${t.name} cover`} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
               ) : (
                 <div style={{ width: 44, height: 44, borderRadius: 10, background: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Ic d={ICONS.journal} size={18} color={T.textFaint} sw={1.8} />

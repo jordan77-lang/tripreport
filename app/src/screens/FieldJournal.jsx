@@ -4,6 +4,7 @@ import { Ic } from '../components/Ic';
 import { SyncChip } from '../components/SyncChip';
 import { T, F, ICONS, CAPTURE_MODES } from '../tokens';
 import { addEntry, updateEntry } from '../lib/storage';
+import { mediaCaptureLabel } from '../lib/featureFlags';
 import { EntryForm } from './EntryForm';
 
 const ENTRY_COLORS = {
@@ -127,7 +128,7 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
                     <div style={{ width: 30, height: 30, borderRadius: 8, background: item.col + '1A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Ic d={item.icon} size={15} color={item.col} sw={1.9} />
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{item.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{mediaCaptureLabel(item.label)}</span>
                   </div>
                 ))}
               </div>

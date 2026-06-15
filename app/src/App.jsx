@@ -13,6 +13,7 @@ import { useAuth } from './context/AuthContext';
 import { getActiveTrip, getTrips, setActiveTrip, startTrip, updateEntry } from './lib/storage';
 import { useGPS } from './hooks/useGPS';
 import { useOfflineMapPreload } from './hooks/useOfflineMapPreload';
+import { useTripMediaSync } from './hooks/useTripMediaSync';
 import { fetchGauge, fetchNearbyGaugesByGps, findNearbyKnownGauges } from './lib/usgs';
 import { fetchWeatherAtTime } from './lib/weather';
 
@@ -24,6 +25,10 @@ export default function App() {
   const enrichmentRunningRef = useRef(false);
 
   useOfflineMapPreload({
+    enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
+  });
+
+  useTripMediaSync({
     enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
   });
 

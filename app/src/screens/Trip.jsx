@@ -6,7 +6,8 @@ import { TripExpenses } from '../components/TripExpenses';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { addLocation, finalizeTrip, getCurrentUserId, getContacts, reopenTrip, saveContact, saveTrip, startGpsSession, startTrip, stopGpsSession } from '../lib/storage';
-import { createCoverPhotoFromFile } from '../lib/media';
+import { createPhotoMediaFromFile } from '../lib/media';
+import { MediaThumb } from '../components/MediaThumb';
 import { shareEntity } from '../lib/share';
 import { exportGpx, exportHtmlReport } from '../lib/export';
 import { exportTripUpdateFile, formatMergeSummary, mergeTripUpdate, readTripUpdateFile } from '../lib/offlineExchange';
@@ -134,7 +135,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
     const file = Array.from(files || [])[0];
     if (!file) return;
     setTripCoverBusy(true);
-    const nextCover = await createCoverPhotoFromFile(file);
+    const nextCover = trip?.id ? await createPhotoMediaFromFile(file, trip.id, { maxThumbSide: 320, maxFullSide: 1200 }) : null;
     setTripDraft((d) => ({ ...d, coverPhoto: nextCover }));
     setTripCoverBusy(false);
   }
@@ -232,7 +233,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
   async function onLocationCoverSelected(files) {
     const file = Array.from(files || [])[0];
     if (!file) return;
-    const nextCover = await createCoverPhotoFromFile(file);
+    const nextCover = trip?.id ? await createPhotoMediaFromFile(file, trip.id, { maxThumbSide: 320, maxFullSide: 1200 }) : null;
     setLocCoverPhoto(nextCover);
   }
 
@@ -604,9 +605,9 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
           <TripExpenses trip={trip} onTripUpdate={onTripUpdate} showTitle scope="all" />
         </div>
 
-        {trip?.coverPhoto?.thumbDataUrl && (
+        {trip?.coverPhoto && (
           <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: 8, marginBottom: 12 }}>
-            <img src={trip.coverPhoto.thumbDataUrl} alt="Trip cover" style={{ width: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 10, display: 'block', background: '#F0EDE8' }} />
+            <MediaThumb media={trip.coverPhoto} alt="Trip cover" style={{ width: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 10, display: 'block', background: '#F0EDE8' }} />
           </div>
         )}
 
@@ -735,8 +736,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
             </div>
             {!!tripDraft.coverPhoto && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 9px', marginBottom: 8 }}>
-                {tripDraft.coverPhoto.thumbDataUrl ? (
-                  <img src={tripDraft.coverPhoto.thumbDataUrl} alt="Trip cover preview" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
+                {tripDraft.coverPhoto ? (
+                  <MediaThumb media={tripDraft.coverPhoto} alt="Trip cover preview" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
                 ) : (
                   <div style={{ width: 42, height: 42, borderRadius: 8, background: T.card, border: `1px solid ${T.border}` }} />
                 )}
@@ -863,8 +864,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
             </div>
             {!!locCoverPhoto && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 9px', marginBottom: 8 }}>
-                {locCoverPhoto.thumbDataUrl ? (
-                  <img src={locCoverPhoto.thumbDataUrl} alt="Location cover preview" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
+                {locCoverPhoto ? (
+                  <MediaThumb media={locCoverPhoto} alt="Location cover preview" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
                 ) : (
                   <div style={{ width: 42, height: 42, borderRadius: 8, background: T.card, border: `1px solid ${T.border}` }} />
                 )}
@@ -1004,8 +1005,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
                 const num = orderedLocations.findIndex((l) => l.id === id) + 1;
                 return (
                   <>
-                    {loc?.coverPhoto?.thumbDataUrl && (
-                      <img src={loc.coverPhoto.thumbDataUrl} alt={loc.name || 'Location cover'} style={{ width: 20, height: 20, borderRadius: 6, objectFit: 'cover' }} />
+                    {loc?.coverPhoto && (
+                      <MediaThumb media={loc.coverPhoto} alt={loc.name || 'Location cover'} style={{ width: 20, height: 20, borderRadius: 6, objectFit: 'cover' }} />
                     )}
                     <span>{`${num}. ${loc?.icon || '📍'} ${loc?.name || 'Location'}`}</span>
                   </>
@@ -1025,8 +1026,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
             <div key={loc.id} onClick={() => { setSelectedLocationId(loc.id); setLocationPageId(loc.id); }}
                  style={{ background: T.card, borderRadius: 11, border: `1px solid ${selectedLocationId === loc.id ? '#2A5C8E' : T.border}`, padding: '9px 10px', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer' }}>
               <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                {loc.coverPhoto?.thumbDataUrl ? (
-                  <img src={loc.coverPhoto.thumbDataUrl} alt={`${loc.name} cover`} style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+                {loc.coverPhoto ? (
+                  <MediaThumb media={loc.coverPhoto} alt={`${loc.name} cover`} style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
                 ) : (
                   <div style={{ width: 34, height: 34, borderRadius: 8, background: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <span style={{ fontSize: 14 }}>{loc.icon || '📍'}</span>

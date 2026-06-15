@@ -65,11 +65,15 @@ Push to GitHub (Netlify auto-deploys) or drag `dist` to Netlify Drop.
 4. On Trip page → generate **invite code** (coming on Trip page; for now use SQL or Home join after we add invite UI to Trip)
 5. Second phone: create account → **Join trip** → enter code
 
-## 8. Storage bucket (photos — next sprint)
+## 8. Trip photo storage (local-first sync)
 
-**Storage** → **New bucket** → name `trip-media`, **private**
+Photos are stored on the device in **IndexedDB** for fast offline viewing. Supabase Storage is used **only** to upload and download blobs when syncing — the app never loads images from Supabase for display.
 
-We'll add upload policies when media sync is implemented.
+1. In Supabase: **SQL Editor** → **New query**
+2. Paste and run `app/supabase/migrations/002_trip_media_storage.sql`
+3. Confirm **Storage** shows a private bucket named `trip-media`
+
+When signed in and online, pending photos upload automatically; crew photos download to your device in the background.
 
 ## Troubleshooting
 
@@ -88,10 +92,10 @@ We'll add upload policies when media sync is implemented.
 - Trip cloud sync on create (`pushTripToCloud`)
 - Join trip by invite code
 - Main Salmon map region metadata in DB + local config
+- Local-first photos (IndexedDB) with Supabase Storage upload/download sync
 
 ## Coming next
 
 - Invite code button on Trip page + auto-sync on save
-- Photo upload to Supabase Storage
 - PMTiles offline map for Main Salmon
 - Background sync when connectivity returns

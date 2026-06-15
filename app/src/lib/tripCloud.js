@@ -1,6 +1,8 @@
 import { requireSupabase } from './supabase';
 import { getSignedInUserId } from './authUser';
 import { saveTrip, getTrip } from './storage';
+import { syncTripMedia } from './mediaSync';
+import { collectMediaRefsFromTrip, markMediaRefsSynced } from './mediaRefs';
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -47,6 +49,19 @@ export async function pushTripToCloud(localTrip) {
     role: 'owner',
   });
 
+  try {
+    await syncTripMedia(localTrip.id);
+    const trip = getTrip(localTrip.id);
+    if (trip) {
+      const { listMediaForTrip } = await import('./mediaStore');
+      const localMedia = await listMediaForTrip(localTrip.id);
+      const syncedIds = new Set(localMedia.filter((r) => r.syncState === 'synced').map((r) => r.id));
+      saveTrip({ ...markMediaRefsSynced(trip, syncedIds), syncState: 'synced' });
+    }
+  } catch (e) {
+    console.warn('Media sync after trip push failed', e);
+  }
+
   return data;
 }
 
@@ -64,7 +79,12 @@ export async function pullTripFromCloud(tripId) {
 
   const local = cloudRowToLocalTrip(data);
   saveTrip(local);
-  return local;
+  try {
+    await syncTripMedia(tripId);
+  } catch (e) {
+    console.warn('Media download after trip pull failed', e);
+  }
+  return getTrip(tripId) || local;
 }
 
 /** List trips the signed-in user can access. */
