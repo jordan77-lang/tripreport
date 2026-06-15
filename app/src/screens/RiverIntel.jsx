@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Ic } from '../components/Ic';
 import { TripMap } from '../components/TripMap';
 import { T, F, ICONS } from '../tokens';
-import { fetchGauge, fetchGaugeHistory, fetchGaugeHistoryRange, KNOWN_GAUGES, fetchNearbyGaugesByGps, fetchGaugeStationsByText } from '../lib/usgs';
+import { fetchGauge, fetchGaugeHistory, fetchGaugeHistoryRange, KNOWN_GAUGES, fetchNearbyGaugesByGps, fetchGaugeStationsByText, fetchGaugeStationsByBbox } from '../lib/usgs';
 
 const FAV_KEY = 'tr_favorite_gauges';
 const PRESET_DAYS = { '7d': 7, '14d': 14, '30d': 30 };
@@ -83,6 +83,7 @@ export function RiverIntel({ onBack }) {
   const [nearbyStations, setNearbyStations] = useState([]);
   const [searchStations, setSearchStations] = useState([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [gauge, setGauge]       = useState(null);
   const [history, setHistory]   = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -245,23 +246,36 @@ export function RiverIntel({ onBack }) {
       setSearchStations([]);
       return;
     }
+    setSearchLoading(true);
     let matches = searchGaugeMatches(q, gaugesPool);
 
     try {
-      const remote = await fetchGaugeStationsByText(q, { limit: 60 });
+      const remote = await fetchGaugeStationsByText(q, {
+        limit: 60,
+        lat: userPos?.lat ?? null,
+        lng: userPos?.lng ?? null,
+      });
       if (remote.length) {
         setSearchStations(remote);
         matches = searchGaugeMatches(q, [...remote, ...gaugesPool]);
+      } else {
+        setSearchStations([]);
       }
     } catch {
       // Keep local matching if remote search fails.
+    } finally {
+      setSearchLoading(false);
     }
 
     if (!matches.length && userPos?.lat != null) {
       try {
-        const expanded = await fetchNearbyGaugesByGps(userPos.lat, userPos.lng, { radiusMiles: 300, limit: 120 });
+        const expanded = await fetchGaugeStationsByBbox(userPos.lat, userPos.lng, { radiusMiles: 200, limit: 120 });
         if (expanded.length) {
-          setNearbyStations(expanded);
+          setSearchStations((prev) => {
+            const map = new Map();
+            [...prev, ...expanded].forEach((g) => { if (g?.id) map.set(g.id, g); });
+            return Array.from(map.values());
+          });
           matches = searchGaugeMatches(q, [...expanded, ...gaugesPool]);
         }
       } catch {
@@ -388,8 +402,9 @@ export function RiverIntel({ onBack }) {
           />
           <div onClick={runSearch}
                style={{ background: '#E4EFF8', border: `1px solid #3A72A840`, borderRadius: 10, padding: '8px 11px',
-                        fontSize: 11, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-            Search
+                        fontSize: 11, fontWeight: 700, color: '#2A5C8E', cursor: searchLoading ? 'wait' : 'pointer',
+                        display: 'flex', alignItems: 'center', opacity: searchLoading ? 0.7 : 1 }}>
+            {searchLoading ? 'Searching…' : 'Search'}
           </div>
           <div style={{ display: 'flex', background: T.bg, borderRadius: 9, padding: 2, border: `1px solid ${T.border}` }}>
             {[

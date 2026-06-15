@@ -27,7 +27,7 @@ export function AuthScreen() {
         await signInWithPassword(email, password);
       }
     } catch (err) {
-      setError(err?.message || 'Could not sign in');
+      setError(formatAuthError(err, mode));
     } finally {
       setBusy(false);
     }
@@ -149,3 +149,19 @@ const inputStyle = {
   background: T.card,
   color: T.text,
 };
+
+function formatAuthError(err, mode) {
+  const msg = String(err?.message || '');
+  if (/invalid login credentials/i.test(msg)) {
+    return mode === 'signin'
+      ? 'Wrong email or password. Try Create account if you have not signed up yet.'
+      : msg;
+  }
+  if (/email not confirmed/i.test(msg)) {
+    return 'Email not confirmed yet. Check your inbox, or ask your trip lead to disable confirmation in Supabase for field testing.';
+  }
+  if (/user already registered/i.test(msg)) {
+    return 'That email already has an account. Switch to Sign in.';
+  }
+  return msg || 'Could not sign in';
+}
