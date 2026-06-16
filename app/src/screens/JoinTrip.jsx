@@ -67,7 +67,7 @@ export function JoinTrip({ onJoined, onBack }) {
   );
 }
 
-export function InviteCodePanel({ tripId, onClose }) {
+export function InviteCodePanel({ tripId, onClose, onTripUpdate }) {
   const [code, setCode] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -79,6 +79,7 @@ export function InviteCodePanel({ tripId, onClose }) {
     try {
       const next = await createTripInvite(tripId);
       setCode(next);
+      onTripUpdate?.();
     } catch (err) {
       setError(err?.message || 'Could not create invite');
     } finally {
@@ -89,11 +90,34 @@ export function InviteCodePanel({ tripId, onClose }) {
   async function copyCode() {
     if (!code) return;
     try {
-      await navigator.clipboard.writeText(code);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = code;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // ignore
+      setError('Could not copy — select the code and copy manually.');
+    }
+  }
+
+  async function shareCode() {
+    if (!code || !navigator.share) return;
+    try {
+      await navigator.share({
+        title: 'TripReport invite',
+        text: `Join my trip on TripReport. Invite code: ${code}`,
+      });
+    } catch {
+      // user cancelled or share unavailable
     }
   }
 
@@ -130,6 +154,11 @@ export function InviteCodePanel({ tripId, onClose }) {
           <div style={{ fontSize: 10.5, color: T.textFaint, textAlign: 'center', marginTop: 6 }}>
             {copied ? 'Copied!' : 'Tap to copy'}
           </div>
+          {typeof navigator !== 'undefined' && navigator.share && (
+            <button type="button" onClick={shareCode} style={{ ...primaryBtn(false), marginTop: 10 }}>
+              Share invite code
+            </button>
+          )}
         </div>
       ) : (
         <button type="button" onClick={generate} disabled={busy} style={primaryBtn(busy)}>

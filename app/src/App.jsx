@@ -14,6 +14,7 @@ import { getActiveTrip, getTrips, setActiveTrip, startTrip, updateEntry } from '
 import { useGPS } from './hooks/useGPS';
 import { useOfflineMapPreload } from './hooks/useOfflineMapPreload';
 import { useTripMediaSync } from './hooks/useTripMediaSync';
+import { useCloudTripSync } from './hooks/useCloudTripSync';
 import { fetchGauge, fetchNearbyGaugesByGps, findNearbyKnownGauges } from './lib/usgs';
 import { fetchWeatherAtTime } from './lib/weather';
 
@@ -24,6 +25,11 @@ export default function App() {
   const [allTrips, setAllTrips] = useState(() => getTrips());
   const enrichmentRunningRef = useRef(false);
 
+  const refreshTrip = useCallback(() => {
+    setTrip(getActiveTrip());
+    setAllTrips(getTrips());
+  }, []);
+
   useOfflineMapPreload({
     enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
   });
@@ -32,10 +38,10 @@ export default function App() {
     enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
   });
 
-  const refreshTrip = useCallback(() => {
-    setTrip(getActiveTrip());
-    setAllTrips(getTrips());
-  }, []);
+  useCloudTripSync({
+    enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
+    onSynced: refreshTrip,
+  });
   const gpsEnabled = trip?.status === 'active' && (
     Boolean(trip?.gpsSessionActive) ||
     (Boolean(trip?.gpsTrackingEnabled) && (screen === 'map' || Boolean(trip?.gpsBackgroundTracking)))

@@ -1,8 +1,14 @@
-import { requireSupabase } from './supabase';
+import { requireSupabase, supabaseConfigured } from './supabase';
 import { getSignedInUserId } from './authUser';
-import { saveTrip, getTrip } from './storage';
+import {
+  saveTrip,
+  getTrip,
+  getTrips,
+  claimAnonymousTripsForUser,
+  isTripOwner,
+} from './storage';
 import { syncTripMedia } from './mediaSync';
-import { collectMediaRefsFromTrip, markMediaRefsSynced } from './mediaRefs';
+import { markMediaRefsSynced } from './mediaRefs';
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -13,16 +19,30 @@ function randomInviteCode() {
   return out;
 }
 
+function resolveCloudOwnerId(localTrip, userId) {
+  const anonKey = 'tr_user_id';
+  let ownerId = localTrip.ownerId || userId;
+  try {
+    const anonId = typeof localStorage !== 'undefined' ? localStorage.getItem(anonKey) : null;
+    if (anonId && ownerId === anonId) ownerId = userId;
+  } catch {
+    // ignore
+  }
+  if (!ownerId) ownerId = userId;
+  return ownerId;
+}
+
 /** Push local trip document to Supabase (creates or updates). */
 export async function pushTripToCloud(localTrip) {
   const supabase = requireSupabase();
   const userId = getSignedInUserId();
   if (!userId) throw new Error('Sign in to sync trips');
 
+  const ownerId = resolveCloudOwnerId(localTrip, userId);
   const payload = buildCloudPayload(localTrip);
   const row = {
     id: localTrip.id,
-    owner_id: localTrip.ownerId || userId,
+    owner_id: ownerId,
     name: localTrip.name,
     status: localTrip.status || 'planning',
     start_date: localTrip.startDate || null,
@@ -45,18 +65,23 @@ export async function pushTripToCloud(localTrip) {
   // Ensure owner is a member
   await supabase.from('trip_members').upsert({
     trip_id: localTrip.id,
-    user_id: localTrip.ownerId || userId,
+    user_id: ownerId,
     role: 'owner',
   });
 
+  const trip = getTrip(localTrip.id);
+  if (trip) {
+    saveTrip({ ...trip, ownerId, syncState: 'synced', updatedAt: Date.now() });
+  }
+
   try {
     await syncTripMedia(localTrip.id);
-    const trip = getTrip(localTrip.id);
-    if (trip) {
+    const refreshed = getTrip(localTrip.id);
+    if (refreshed) {
       const { listMediaForTrip } = await import('./mediaStore');
       const localMedia = await listMediaForTrip(localTrip.id);
       const syncedIds = new Set(localMedia.filter((r) => r.syncState === 'synced').map((r) => r.id));
-      saveTrip({ ...markMediaRefsSynced(trip, syncedIds), syncState: 'synced' });
+      saveTrip({ ...markMediaRefsSynced(refreshed, syncedIds), syncState: 'synced', ownerId });
     }
   } catch (e) {
     console.warn('Media sync after trip push failed', e);
@@ -104,6 +129,20 @@ export async function createTripInvite(tripId, { role = 'contributor', maxUses =
   const userId = getSignedInUserId();
   if (!userId) throw new Error('Sign in to invite others');
 
+  const localTrip = getTrip(tripId);
+  if (!localTrip) throw new Error('Trip not found on this device');
+
+  if (!isTripOwner(localTrip, userId)) {
+    claimAnonymousTripsForUser(userId);
+    const refreshed = getTrip(tripId);
+    if (!refreshed || !isTripOwner(refreshed, userId)) {
+      throw new Error('Only the trip owner can create invite codes');
+    }
+  }
+
+  // Invites require the trip row in Supabase with matching owner_id (RLS).
+  await pushTripToCloud(getTrip(tripId) || localTrip);
+
   const code = randomInviteCode();
   const expiresAt = expiresInDays
     ? new Date(Date.now() + expiresInDays * 864e5).toISOString()
@@ -118,8 +157,58 @@ export async function createTripInvite(tripId, { role = 'contributor', maxUses =
     expires_at: expiresAt,
   });
 
-  if (error) throw error;
+  if (error) {
+    if (error.code === '42501' || error.message?.includes('policy')) {
+      throw new Error('Could not create invite — sync the trip to cloud first, then try again.');
+    }
+    throw error;
+  }
   return code;
+}
+
+/** Pull cloud trips and push local changes after sign-in or on reconnect. */
+export async function syncUserTripsWithCloud() {
+  if (!supabaseConfigured) return { pulled: 0, pushed: 0, skipped: 'not-configured' };
+
+  const userId = getSignedInUserId();
+  if (!userId) return { pulled: 0, pushed: 0, skipped: 'not-signed-in' };
+
+  claimAnonymousTripsForUser(userId);
+
+  let pulled = 0;
+  let pushed = 0;
+
+  for (const trip of getTrips()) {
+    if (!isTripOwner(trip, userId)) continue;
+    if (trip.syncState === 'synced') continue;
+    try {
+      await pushTripToCloud(trip);
+      pushed += 1;
+    } catch (e) {
+      console.warn('Trip push failed during cloud sync', trip.id, e);
+    }
+  }
+
+  try {
+    const cloudList = await listCloudTrips();
+    for (const row of cloudList) {
+      try {
+        const local = getTrip(row.id);
+        const cloudUpdated = Date.parse(row.updated_at) || 0;
+        const localUpdated = local?.updatedAt || 0;
+        if (!local || cloudUpdated > localUpdated) {
+          await pullTripFromCloud(row.id);
+          pulled += 1;
+        }
+      } catch (e) {
+        console.warn('Trip pull failed during cloud sync', row.id, e);
+      }
+    }
+  } catch (e) {
+    console.warn('Could not list cloud trips', e);
+  }
+
+  return { pulled, pushed };
 }
 
 export async function joinTripByCode(code) {

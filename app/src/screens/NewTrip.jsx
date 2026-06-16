@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { createTrip, getContacts, saveContact, saveTrip } from '../lib/storage';
+import { createTrip, getContacts, getTrip, saveContact, saveTrip } from '../lib/storage';
 import { createCoverPhotoPreview, finalizeCoverPhotoPreview } from '../lib/media';
 import { pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
@@ -209,6 +209,7 @@ export function NewTrip({ onDone, onBack }) {
     if (supabaseConfigured) {
       try {
         await pushTripToCloud(trip);
+        trip = getTrip(trip.id) || trip;
       } catch (e) {
         console.error('Cloud sync failed — trip saved locally', e);
       }

@@ -28,16 +28,44 @@ export function deleteContact(id) {
   localStorage.setItem(CONTACTS_KEY, JSON.stringify(next));
 }
 
-export function getCurrentUserId() {
-  const authId = getSignedInUserId();
-  if (authId) return authId;
-
+export function getAnonymousUserId() {
   let id = localStorage.getItem(USER_KEY);
   if (!id) {
     id = crypto.randomUUID();
     localStorage.setItem(USER_KEY, id);
   }
   return id;
+}
+
+export function getCurrentUserId() {
+  const authId = getSignedInUserId();
+  if (authId) return authId;
+  return getAnonymousUserId();
+}
+
+/** Reassign trips created before sign-in (anonymous owner id) to the signed-in account. */
+export function claimAnonymousTripsForUser(signedInUserId) {
+  if (!signedInUserId) return 0;
+  const anonId = localStorage.getItem(USER_KEY);
+  if (!anonId || anonId === signedInUserId) return 0;
+
+  let claimed = 0;
+  for (const trip of getTrips()) {
+    if (trip.ownerId && trip.ownerId !== anonId) continue;
+    saveTrip({
+      ...trip,
+      ownerId: signedInUserId,
+      syncState: 'pending',
+      updatedAt: Date.now(),
+    });
+    claimed += 1;
+  }
+  return claimed;
+}
+
+export function isTripOwner(trip, userId) {
+  if (!trip || !userId) return false;
+  return trip.ownerId === userId;
 }
 
 export function getTrips() {

@@ -5,7 +5,8 @@ import { SyncChip } from '../components/SyncChip';
 import { TripExpenses } from '../components/TripExpenses';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { addLocation, finalizeTrip, getCurrentUserId, getContacts, reopenTrip, saveContact, saveTrip, startGpsSession, startTrip, stopGpsSession } from '../lib/storage';
+import { addLocation, finalizeTrip, getContacts, getCurrentUserId, isTripOwner, reopenTrip, saveContact, saveTrip, startGpsSession, startTrip, stopGpsSession } from '../lib/storage';
+import { getSignedInUserId } from '../lib/authUser';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
 import { shareEntity } from '../lib/share';
@@ -18,6 +19,8 @@ import { InviteCodePanel } from './JoinTrip';
 
 export function Trip({ trip, onNav, onFab, onTripUpdate }) {
   const currentUserId = getCurrentUserId();
+  const signedInUserId = getSignedInUserId();
+  const canInvite = Boolean(supabaseConfigured && signedInUserId && trip && isTripOwner(trip, signedInUserId));
   const participants = useMemo(() => buildParticipantOptions(trip, currentUserId), [trip, currentUserId]);
   const [typeFilter, setTypeFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
@@ -534,6 +537,11 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
             {exchangeStatus.message}
           </div>
         )}
+
+        {canInvite && (
+          <InviteCodePanel tripId={trip.id} onTripUpdate={onTripUpdate} />
+        )}
+
         {isPlanning && (
           <div style={{ background: '#E4EFF8', border: '1px solid #C7DDEF', borderRadius: 12, padding: '12px 14px', marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#2A5C8E', marginBottom: 4 }}>Trip is in planning mode</div>
@@ -595,10 +603,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
             <div style={{ fontSize: 11.5, fontWeight: 700, color: T.textSub, marginBottom: 4 }}>Field tools locked until start</div>
             <div style={{ fontSize: 10.5, color: T.textFaint }}>Live Map and Field Journal unlock when you start this trip.</div>
           </div>
-        )}
-
-        {supabaseConfigured && trip?.ownerId === currentUserId && (
-          <InviteCodePanel tripId={trip.id} />
         )}
 
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 12 }}>
