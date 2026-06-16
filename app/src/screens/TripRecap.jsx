@@ -218,7 +218,7 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
             </div>
 
             <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, lineHeight: 1.45 }}>
-              Edit your report below. Download the Word file and open it on your PC, or upload to Google Drive → Open with Google Docs.
+              Edit your report below. Photos are embedded when you download the Word file ({photos.length} on this trip).
             </div>
 
             <textarea

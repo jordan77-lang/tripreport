@@ -1,3 +1,5 @@
+import { collectTripPhotos } from './tripPhotos';
+
 /** Build structured trip data for AI report generation (text only). */
 
 export function buildTripManifest(trip) {
@@ -49,6 +51,13 @@ export function buildTripManifest(trip) {
     }));
 
   const stats = computeManifestStats(trip, entries);
+  const photos = collectTripPhotos(trip).map((p) => ({
+    id: p.id,
+    label: p.caption || p.locationName || p.eventName || 'Trip photo',
+    day: p.day,
+    locationName: p.locationName || null,
+    eventName: p.eventName || null,
+  }));
 
   return {
     tripId: trip.id,
@@ -59,6 +68,7 @@ export function buildTripManifest(trip) {
     endDate: trip.endDate || (trip.endedAt ? new Date(trip.endedAt).toISOString().slice(0, 10) : null),
     participants: (trip.collaborators || []).map((c) => c.handle || c.name).filter(Boolean),
     stats,
+    photos,
     days,
     locationSummaries: locations.map((l) => ({
       id: l.id,

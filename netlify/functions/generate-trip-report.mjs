@@ -102,7 +102,8 @@ Rules:
 - Voice: ${settings.voice === 'third' ? 'third person' : 'first person plural (we)'}
 - Use ONLY facts from the manifest and what you see in photos. Do not invent gauge readings, places, or events.
 - Organize sections by day when possible (heading like "Day 1 — ...").
-- Reference photo labels when they support the narrative.
+- Write flowing prose only — do NOT use [Photo: ...] placeholders. Photos are added automatically in the Word export.
+- When photos are attached, describe what you see accurately using their labels from the manifest.
 - ${settings.includeStats === false ? 'Do not emphasize numeric stats.' : 'Weave in provided stats naturally.'}
 - Write prose paragraphs in section body fields, not bullet lists unless appropriate for data.`;
 }
