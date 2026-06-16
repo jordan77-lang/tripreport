@@ -1,9 +1,6 @@
-import ws from 'ws';
-import { createClient } from '@supabase/supabase-js';
-
-/** Verify Supabase JWT from Authorization header (serverless-safe client). */
+/** Verify Supabase JWT via Auth REST API (no Realtime / WebSocket). */
 export async function verifyAuth(authHeader, { optional = false } = {}) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
   const anon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !anon) {
     if (optional) return null;
@@ -12,17 +9,17 @@ export async function verifyAuth(authHeader, { optional = false } = {}) {
   if (!authHeader?.startsWith('Bearer ')) {
     throw new Error('Sign in required');
   }
-  const jwt = authHeader.slice(7);
-  const supabase = createClient(url, anon, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
+
+  const res = await fetch(`${url}/auth/v1/user`, {
+    headers: {
+      Authorization: authHeader,
+      apikey: anon,
     },
-    global: { headers: { Authorization: `Bearer ${jwt}` } },
-    realtime: { transport: ws },
   });
-  const { data, error } = await supabase.auth.getUser(jwt);
-  if (error || !data?.user) throw new Error('Invalid session');
-  return data.user;
+
+  if (!res.ok) {
+    throw new Error(res.status === 401 ? 'Invalid session — sign in again' : 'Sign in required');
+  }
+
+  return res.json();
 }
