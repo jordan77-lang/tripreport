@@ -9,6 +9,7 @@ import { buildTripManifest, manifestContentHash } from '../lib/tripManifest';
 import { collectTripPhotos, listTripDays, preparePhotosForApi } from '../lib/tripPhotos';
 import { narrativeFromReportResult } from '../lib/recapSettings';
 import { generateTripReport, emailTripReport } from '../lib/recapApi';
+import { RECAP_EMAIL_ENABLED } from '../lib/recapSettings';
 import { downloadTripReportDocx, docxBlobToBase64, buildTripReportDocx } from '../lib/recapDocx';
 
 export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
@@ -208,10 +209,12 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
                 style={{ flex: 1, minWidth: 120, border: `1px solid ${T.border}`, borderRadius: 10, padding: '11px 12px', fontSize: ts(14), fontWeight: 700, background: T.card, color: T.text, cursor: 'pointer' }}>
                 {exporting ? '…' : 'Download .docx'}
               </button>
-              <button type="button" onClick={() => void handleEmailDocx()} disabled={emailing}
-                style={{ flex: 1, minWidth: 120, border: `1px solid ${T.border}`, borderRadius: 10, padding: '11px 12px', fontSize: ts(14), fontWeight: 700, background: T.card, color: T.text, cursor: 'pointer' }}>
-                {emailing ? 'Sending…' : 'Email to me'}
-              </button>
+              {RECAP_EMAIL_ENABLED && (
+                <button type="button" onClick={() => void handleEmailDocx()} disabled={emailing}
+                  style={{ flex: 1, minWidth: 120, border: `1px solid ${T.border}`, borderRadius: 10, padding: '11px 12px', fontSize: ts(14), fontWeight: 700, background: T.card, color: T.text, cursor: 'pointer' }}>
+                  {emailing ? 'Sending…' : 'Email to me'}
+                </button>
+              )}
             </div>
 
             <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, lineHeight: 1.45 }}>

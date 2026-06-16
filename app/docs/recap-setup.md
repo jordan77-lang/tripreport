@@ -27,7 +27,7 @@ Redeploy after adding variables.
 2. Generate or write report → **Email to me**
 3. Open the `.docx` attachment on your PC in Word, or upload to Google Drive → Open with Google Docs
 
-**Download .docx** works without Resend; email requires Resend setup.
+Requires `RESEND_API_KEY` and `REPORT_EMAIL_FROM` on Netlify. **Download .docx** works without email configured.
 
 ## Local testing
 

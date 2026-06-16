@@ -1,3 +1,6 @@
+/** Flip to true after Resend is configured on Netlify (RESEND_API_KEY, REPORT_EMAIL_FROM). */
+export const RECAP_EMAIL_ENABLED = true;
+
 export const DEFAULT_REPORT_SETTINGS = {
   tone: 'family',
   length: 'standard',
