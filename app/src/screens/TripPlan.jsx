@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { Ic } from '../components/Ic';
+import { TripEditPanel } from '../components/TripEditPanel';
 import { T, F, ICONS } from '../tokens';
+import { ts } from '../lib/textScale';
+import { buildTripDraft, formatTripDateRange } from '../lib/tripEdit';
 import {
   getCurrentUserId,
   addGearItem, updateGearItem, removeGearItem,
@@ -32,8 +35,15 @@ const SLOT_LABEL = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', s
 
 export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
   const [tab, setTab] = useState('gear');
+  const [editingTrip, setEditingTrip] = useState(false);
+  const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const currentUserId = getCurrentUserId();
   const participants = useMemo(() => buildParticipants(trip, currentUserId), [trip, currentUserId]);
+
+  function openTripEdit() {
+    setTripDraft(buildTripDraft(trip));
+    setEditingTrip(true);
+  }
 
   if (!trip) {
     return (
@@ -55,10 +65,46 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
               <Ic d={ICONS.chevR} size={15} color={T.textSub} sw={2.2} />
             </span>
           </div>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -.4 }}>Trip Planning</div>
-            <div style={{ fontSize: 11, color: T.textSub }}>{trip.name}</div>
+            <div style={{ fontSize: ts(13), color: T.textSub }}>{trip.name}</div>
+            <button
+              type="button"
+              onClick={openTripEdit}
+              style={{
+                marginTop: 4,
+                border: 'none',
+                background: 'none',
+                padding: 0,
+                fontSize: ts(13),
+                color: T.accent,
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: F,
+              }}
+            >
+              {formatTripDateRange(trip.startDate, trip.endDate)} · Edit trip
+            </button>
           </div>
+          <button
+            type="button"
+            onClick={openTripEdit}
+            style={{
+              height: 36,
+              padding: '0 12px',
+              borderRadius: 9,
+              border: `1px solid ${T.border}`,
+              background: editingTrip ? '#E4EFF8' : T.bg,
+              fontSize: ts(13),
+              fontWeight: 700,
+              color: '#2A5C8E',
+              cursor: 'pointer',
+              fontFamily: F,
+              flexShrink: 0,
+            }}
+          >
+            Edit
+          </button>
         </div>
         <div style={{ display: 'flex', gap: 2 }}>
           {TABS.map((tb) => (
@@ -74,11 +120,23 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-        {tab === 'gear' && <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
-        {tab === 'meals' && <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
-        {tab === 'shopping' && <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />}
-        {tab === 'expenses' && <TripExpenses trip={trip} onTripUpdate={onTripUpdate} scope="trip" />}
-        {tab === 'maps' && <OfflineMapsPanel trip={trip} onTripUpdate={onTripUpdate} />}
+        {editingTrip && (
+          <TripEditPanel
+            trip={trip}
+            draft={tripDraft}
+            onCancel={() => setEditingTrip(false)}
+            onSaved={() => {
+              setEditingTrip(false);
+              onTripUpdate?.();
+            }}
+            onDraftChange={setTripDraft}
+          />
+        )}
+        {!editingTrip && tab === 'gear' && <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
+        {!editingTrip && tab === 'meals' && <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
+        {!editingTrip && tab === 'shopping' && <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />}
+        {!editingTrip && tab === 'expenses' && <TripExpenses trip={trip} onTripUpdate={onTripUpdate} scope="trip" />}
+        {!editingTrip && tab === 'maps' && <OfflineMapsPanel trip={trip} onTripUpdate={onTripUpdate} />}
         <div style={{ height: 16 }} />
       </div>
 

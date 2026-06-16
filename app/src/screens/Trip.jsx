@@ -13,6 +13,8 @@ import { shareEntity } from '../lib/share';
 import { exportGpx, exportHtmlReport } from '../lib/export';
 import { exportTripUpdateFile, formatMergeSummary, mergeTripUpdate, readTripUpdateFile } from '../lib/offlineExchange';
 import { TripOverflowMenu, tripMenuIcon } from '../components/TripOverflowMenu';
+import { TripEditPanel } from '../components/TripEditPanel';
+import { buildTripDraft, formatTripDate, formatTripDateRange } from '../lib/tripEdit';
 import { ts } from '../lib/textScale';
 import { deleteTripCompletely, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
@@ -56,7 +58,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   const [participantInput, setParticipantInput] = useState('');
   const [contacts, setContacts] = useState(() => getContacts());
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
-  const [tripCoverBusy, setTripCoverBusy] = useState(false);
   const [locCoverPhoto, setLocCoverPhoto] = useState(null);
   const [exchangeStatus, setExchangeStatus] = useState(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState(null);
@@ -118,39 +119,18 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     onTripUpdate?.();
   }
 
-  function saveTripDetails() {
-    if (!trip) return;
-    const nextName = tripDraft.name.trim();
-    if (!nextName) return;
-    saveTrip({
-      ...trip,
-      name: nextName,
-      location: tripDraft.location,
-      startDate: tripDraft.startDate,
-      endDate: tripDraft.endDate,
-      privacy: tripDraft.privacy,
-      gpsTrackingEnabled: tripDraft.gpsTrackingEnabled,
-      gpsBackgroundTracking: tripDraft.gpsTrackingEnabled ? tripDraft.gpsBackgroundTracking : false,
-      gpsIntervalMs: tripDraft.gpsIntervalMs,
-      coverPhoto: tripDraft.coverPhoto || null,
-      updatedAt: Date.now(),
-      syncState: 'pending',
-    });
+  function openTripEdit() {
+    setTripDraft(buildTripDraft(trip));
+    setEditingTrip(true);
+  }
+
+  function closeTripEdit() {
+    setEditingTrip(false);
+  }
+
+  function handleTripEditSaved() {
     setEditingTrip(false);
     onTripUpdate?.();
-  }
-
-  async function onTripCoverSelected(files) {
-    const file = Array.from(files || [])[0];
-    if (!file) return;
-    setTripCoverBusy(true);
-    const nextCover = trip?.id ? await createPhotoMediaFromFile(file, trip.id, { maxThumbSide: 320, maxFullSide: 1200 }) : null;
-    setTripDraft((d) => ({ ...d, coverPhoto: nextCover }));
-    setTripCoverBusy(false);
-  }
-
-  function clearTripCover() {
-    setTripDraft((d) => ({ ...d, coverPhoto: null }));
   }
 
   function handleFinalizeTrip() {
@@ -216,11 +196,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       label: editingTrip ? 'Close edit' : 'Edit trip details',
       icon: tripMenuIcon('edit'),
       onClick: () => {
-        if (editingTrip) setEditingTrip(false);
-        else {
-          setTripDraft(buildTripDraft(trip));
-          setEditingTrip(true);
-        }
+        if (editingTrip) closeTripEdit();
+        else openTripEdit();
       },
     },
     ...(canDeleteTrip ? [{
@@ -492,6 +469,24 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: ts(22), fontWeight: 800, color: T.text, letterSpacing: -.4, lineHeight: 1.2 }}>{trip.name}</div>
             <div style={{ fontSize: ts(14), color: T.textSub, marginTop: 4 }}>{entries.length} entries · {track.length} GPS pts</div>
+            <button
+              type="button"
+              onClick={openTripEdit}
+              style={{
+                marginTop: 6,
+                border: 'none',
+                background: 'none',
+                padding: 0,
+                fontSize: ts(14),
+                color: T.accent,
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: F,
+                textAlign: 'left',
+              }}
+            >
+              {formatTripDateRange(trip.startDate, trip.endDate)} · Edit
+            </button>
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{
                 fontSize: ts(13), fontWeight: 700,
@@ -504,7 +499,28 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
               <SyncChip state={tripSyncState} compact />
             </div>
           </div>
-          <TripOverflowMenu items={overflowItems} />
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={openTripEdit}
+              aria-label="Edit trip"
+              style={{
+                height: 40,
+                padding: '0 12px',
+                borderRadius: 10,
+                border: `1px solid ${T.border}`,
+                background: editingTrip ? '#E4EFF8' : T.bg,
+                fontSize: ts(13),
+                fontWeight: 700,
+                color: '#2A5C8E',
+                cursor: 'pointer',
+                fontFamily: F,
+              }}
+            >
+              Edit
+            </button>
+            <TripOverflowMenu items={overflowItems} />
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
@@ -601,6 +617,16 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           }}>
             {exchangeStatus.message}
           </div>
+        )}
+
+        {editingTrip && (
+          <TripEditPanel
+            trip={trip}
+            draft={tripDraft}
+            onCancel={closeTripEdit}
+            onSaved={handleTripEditSaved}
+            onDraftChange={setTripDraft}
+          />
         )}
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12, padding: 4 }}>
@@ -711,125 +737,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             )}
           </div>
         </div>
-        )}
-
-        {editingTrip && (
-          <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '11px 12px', marginBottom: 12 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Trip Details</div>
-            <input
-              value={tripDraft.name}
-              onChange={(e) => setTripDraft((d) => ({ ...d, name: e.target.value }))}
-              placeholder="Trip name"
-              style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-            />
-            <input
-              value={tripDraft.location}
-              onChange={(e) => setTripDraft((d) => ({ ...d, location: e.target.value }))}
-              placeholder="Region / area"
-              style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-            />
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <input
-                type="date"
-                value={tripDraft.startDate || ''}
-                onChange={(e) => setTripDraft((d) => ({ ...d, startDate: e.target.value }))}
-                style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-              />
-              <input
-                type="date"
-                value={tripDraft.endDate || ''}
-                onChange={(e) => setTripDraft((d) => ({ ...d, endDate: e.target.value }))}
-                style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              {['private', 'friends', 'public'].map((p) => (
-                <div key={p} onClick={() => setTripDraft((d) => ({ ...d, privacy: p }))}
-                     style={{ padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                              background: tripDraft.privacy === p ? '#2A5C8E' : T.bg,
-                              color: tripDraft.privacy === p ? 'white' : T.textSub,
-                              border: tripDraft.privacy === p ? 'none' : `1px solid ${T.border}` }}>
-                  {p}
-                </div>
-              ))}
-            </div>
-            <div style={{ fontSize: 10.5, color: T.textSub, marginBottom: 6, fontWeight: 700 }}>GPS Tracking (Optional)</div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              {[{ id: false, label: 'Off' }, { id: true, label: 'On' }].map((opt) => (
-                <div key={String(opt.id)} onClick={() => setTripDraft((d) => ({ ...d, gpsTrackingEnabled: opt.id, gpsBackgroundTracking: opt.id ? d.gpsBackgroundTracking : false }))}
-                     style={{ padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                              background: tripDraft.gpsTrackingEnabled === opt.id ? '#2A5C8E' : T.bg,
-                              color: tripDraft.gpsTrackingEnabled === opt.id ? 'white' : T.textSub,
-                              border: tripDraft.gpsTrackingEnabled === opt.id ? 'none' : `1px solid ${T.border}` }}>
-                  {opt.label}
-                </div>
-              ))}
-            </div>
-            {tripDraft.gpsTrackingEnabled && (
-              <>
-                <div style={{ fontSize: 10.5, color: T.textSub, marginBottom: 6, fontWeight: 700 }}>Sample Interval</div>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                  {[{ ms: 5000, label: '5s' }, { ms: 15000, label: '15s' }, { ms: 30000, label: '30s' }].map((it) => (
-                    <div key={it.ms} onClick={() => setTripDraft((d) => ({ ...d, gpsIntervalMs: it.ms }))}
-                         style={{ padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                                  background: tripDraft.gpsIntervalMs === it.ms ? '#2A5C8E' : T.bg,
-                                  color: tripDraft.gpsIntervalMs === it.ms ? 'white' : T.textSub,
-                                  border: tripDraft.gpsIntervalMs === it.ms ? 'none' : `1px solid ${T.border}` }}>
-                      {it.label}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ fontSize: 10.5, color: T.textSub, marginBottom: 6, fontWeight: 700 }}>Track In Background</div>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                  {[{ id: false, label: 'No' }, { id: true, label: 'Yes' }].map((opt) => (
-                    <div key={String(opt.id)} onClick={() => setTripDraft((d) => ({ ...d, gpsBackgroundTracking: opt.id }))}
-                         style={{ padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                                  background: tripDraft.gpsBackgroundTracking === opt.id ? T.amber : T.bg,
-                                  color: tripDraft.gpsBackgroundTracking === opt.id ? 'white' : T.textSub,
-                                  border: tripDraft.gpsBackgroundTracking === opt.id ? 'none' : `1px solid ${T.border}` }}>
-                      {opt.label}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ fontSize: 10.5, color: T.textFaint, marginBottom: 8 }}>
-                  Background tracking records while you use other screens and may use more battery.
-                </div>
-              </>
-            )}
-            <div style={{ fontSize: 10.5, color: T.textSub, marginBottom: 6, fontWeight: 700 }}>Trip Cover Photo</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
-                {tripCoverBusy ? 'Processing...' : 'Choose Photo'}
-                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onTripCoverSelected(e.target.files)} disabled={tripCoverBusy} />
-              </label>
-              {!!tripDraft.coverPhoto && (
-                <span onClick={clearTripCover} style={{ fontSize: 10.5, color: T.textFaint, cursor: 'pointer' }}>Remove</span>
-              )}
-            </div>
-            {!!tripDraft.coverPhoto && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 9px', marginBottom: 8 }}>
-                {tripDraft.coverPhoto ? (
-                  <MediaThumb media={tripDraft.coverPhoto} alt="Trip cover preview" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: 42, height: 42, borderRadius: 8, background: T.card, border: `1px solid ${T.border}` }} />
-                )}
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11, color: T.text, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tripDraft.coverPhoto.name}</div>
-                  <div style={{ fontSize: 10, color: T.textFaint }}>{Math.round((tripDraft.coverPhoto.size || 0) / 1024)} KB</div>
-                </div>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div onClick={() => setEditingTrip(false)}
-                   style={{ flex: 1, height: 34, borderRadius: 9, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: T.textSub }}>
-                Cancel
-              </div>
-              <div onClick={saveTripDetails}
-                   style={{ flex: 1, height: 34, borderRadius: 9, background: '#2A5C8E', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'white' }}>
-                Save Trip
-              </div>
-            </div>
-          </div>
         )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1494,27 +1401,6 @@ function addHours(date, hours) {
   const d = new Date(date);
   d.setHours(d.getHours() + hours);
   return d;
-}
-
-function formatTripDate(value) {
-  if (!value) return 'TBD';
-  const d = new Date(`${String(value).slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return 'TBD';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function buildTripDraft(trip) {
-  return {
-    name: trip?.name || '',
-    location: trip?.location || '',
-    startDate: trip?.startDate || '',
-    endDate: trip?.endDate || '',
-    privacy: trip?.privacy || 'private',
-    gpsTrackingEnabled: Boolean(trip?.gpsTrackingEnabled),
-    gpsBackgroundTracking: Boolean(trip?.gpsBackgroundTracking),
-    gpsIntervalMs: trip?.gpsIntervalMs || 5000,
-    coverPhoto: trip?.coverPhoto || null,
-  };
 }
 
 function buildParticipantOptions(trip, currentUserId) {
