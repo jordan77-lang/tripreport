@@ -24,8 +24,11 @@ From the repo root you can also run `npm run dev`, `npm run build`, and `npm run
    - `VITE_USGS_KEY` (optional)
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
+   - `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` (trip recap AI)
+   - `RESEND_API_KEY`, `REPORT_EMAIL_FROM` (optional — email report)
 
 See [app/docs/supabase-setup.md](app/docs/supabase-setup.md) for Supabase project setup.
+See [app/docs/recap-setup.md](app/docs/recap-setup.md) for AI report and email setup.
 
 Push to `main` to trigger a deploy.
 

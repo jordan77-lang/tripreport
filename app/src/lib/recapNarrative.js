@@ -2,7 +2,6 @@ import { collectTripPhotos, listTripDays } from './tripPhotos';
 
 /** `[Photo: id:abc|Caption here]` — stable id for docx export; caption shown in draft UI. */
 export const PHOTO_LINE_RE = /^\[Photo:\s*(?:id:([^|\]]+)\|)?([^\]]*)\]\s*$/i;
-export const PHOTO_INLINE_RE = /\[Photo:\s*(?:id:([^|\]]+)\|)?([^\]]*)\]/gi;
 
 export function photoCaption(photo) {
   const parts = [photo.caption, photo.locationName, photo.eventName].filter(Boolean);

@@ -8,3 +8,12 @@ dist/
 
 # Local Netlify folder
 .netlify
+
+# Local reference PDFs (Doley tone examples) — keep on disk, not in git
+Examples/
+
+# Cursor / Claude local settings
+.claude/
+
+# Design canvas sidecar (if recreated)
+.design-canvas.state.json
