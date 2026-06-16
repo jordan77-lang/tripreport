@@ -8,9 +8,11 @@ import { getTrip, saveTrip } from '../lib/storage';
 import { buildTripManifest, manifestContentHash } from '../lib/tripManifest';
 import { collectTripPhotos, listTripDays, preparePhotosForApi } from '../lib/tripPhotos';
 import { narrativeFromReportResult } from '../lib/recapSettings';
+import { weaveChronologicalPhotoPlaceholders, ensurePhotoPlaceholders, hasPhotoPlaceholders } from '../lib/recapNarrative';
 import { generateTripReport, emailTripReport } from '../lib/recapApi';
 import { RECAP_EMAIL_ENABLED } from '../lib/recapSettings';
 import { downloadTripReportDocx, docxBlobToBase64, buildTripReportDocx } from '../lib/recapDocx';
+import { ReportNarrativeEditor } from '../components/ReportNarrativeEditor';
 
 export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
   const trip = tripProp?.id ? (getTrip(tripProp.id) || tripProp) : tripProp;
@@ -62,6 +64,13 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
     onTripUpdate?.();
   }
 
+  function insertPhotoPlaceholders() {
+    const woven = weaveChronologicalPhotoPlaceholders(trip, narrative);
+    setNarrative(woven);
+    saveNarrative(woven);
+    setStatus({ kind: 'success', message: 'Photo placeholders inserted in chronological order.' });
+  }
+
   async function handleGenerate(settings) {
     setGenerating(true);
     setStatus(null);
@@ -69,7 +78,7 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
       const manifest = buildTripManifest(trip);
       const photosForApi = await preparePhotosForApi(trip, settings);
       const result = await generateTripReport({ manifest, settings, photos: photosForApi });
-      const text = narrativeFromReportResult(result);
+      const text = weaveChronologicalPhotoPlaceholders(trip, narrativeFromReportResult(result));
       setNarrative(text);
       const hash = manifestContentHash(manifest);
       saveTrip({
@@ -104,7 +113,8 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
     setExporting(true);
     try {
       saveNarrative(narrative);
-      await downloadTripReportDocx(trip, narrative);
+      const exportText = ensurePhotoPlaceholders(trip, narrative);
+      await downloadTripReportDocx(trip, exportText);
       setStatus({ kind: 'success', message: 'Word document downloaded. Open on your PC or upload to Google Drive.' });
     } catch (e) {
       setStatus({ kind: 'error', message: e?.message || 'Download failed.' });
@@ -127,7 +137,8 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
     setStatus(null);
     try {
       saveNarrative(narrative);
-      const blob = await buildTripReportDocx(trip, narrative);
+      const exportText = ensurePhotoPlaceholders(trip, narrative);
+      const blob = await buildTripReportDocx(trip, exportText);
       const docxBase64 = await docxBlobToBase64(blob);
       const fileName = `${(trip.name || 'trip').replace(/[^a-z0-9]+/gi, '-')}-report.docx`;
       await emailTripReport({ to, tripName: trip.name, docxBase64, fileName });
@@ -218,20 +229,21 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
             </div>
 
             <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, lineHeight: 1.45 }}>
-              Edit your report below. Photos are embedded when you download the Word file ({photos.length} on this trip).
+              Edit the text blocks below. Photo placeholders show where images appear in the Word download, in the order they were taken.
             </div>
 
-            <textarea
+            {narrative.trim() && !hasPhotoPlaceholders(narrative) && collectTripPhotos(trip).length > 0 && (
+              <button type="button" onClick={insertPhotoPlaceholders}
+                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 10, fontSize: ts(13), fontWeight: 700, background: T.card, color: T.text, cursor: 'pointer' }}>
+                Insert photo placeholders in timeline
+              </button>
+            )}
+
+            <ReportNarrativeEditor
               value={narrative}
-              onChange={(e) => setNarrative(e.target.value)}
-              onBlur={() => { if (narrative !== trip.recap?.narrativeText) saveNarrative(narrative); }}
-              placeholder="Generate a draft with AI, or write your trip story here…"
-              rows={18}
-              style={{
-                width: '100%', minHeight: 320, border: `1.5px solid ${T.border}`, borderRadius: 12,
-                padding: '12px 14px', fontSize: ts(15), lineHeight: 1.55, fontFamily: F, color: T.text,
-                background: T.card, boxSizing: 'border-box', outline: 'none', resize: 'vertical',
-              }}
+              onChange={setNarrative}
+              onBlurSave={() => { if (narrative !== trip.recap?.narrativeText) saveNarrative(narrative); }}
+              trip={trip}
             />
 
             {trip.recap?.generatedAt && (

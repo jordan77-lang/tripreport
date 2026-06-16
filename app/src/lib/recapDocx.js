@@ -1,10 +1,16 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun } from 'docx';
 import { createMediaObjectUrl, isLegacyMediaRef } from './mediaStore';
 import { collectTripPhotos } from './tripPhotos';
+import {
+  ensurePhotoPlaceholders,
+  findPhotoForPlaceholder,
+  parseNarrativeSegments,
+} from './recapNarrative';
 
 const DOCX_IMAGE_WIDTH = 420;
 
 export async function buildTripReportDocx(trip, narrativeText) {
+  const wovenText = ensurePhotoPlaceholders(trip, narrativeText);
   const title = trip?.name || 'Trip Report';
   const meta = [
     trip?.location,
@@ -14,6 +20,7 @@ export async function buildTripReportDocx(trip, narrativeText) {
 
   const allPhotos = collectTripPhotos(trip);
   const usedPhotoIds = new Set();
+  const segments = parseNarrativeSegments(wovenText);
 
   const children = [
     new Paragraph({
@@ -29,52 +36,29 @@ export async function buildTripReportDocx(trip, narrativeText) {
     }));
   }
 
-  if (trip?.coverPhoto) {
-    const cover = await loadImageForDocx(trip.coverPhoto);
-    if (cover) {
-      children.push(photoParagraph(cover));
-      if (trip.coverPhoto.id) usedPhotoIds.add(trip.coverPhoto.id);
+  for (const seg of segments) {
+    if (seg.type === 'photo') {
+      const photo = findPhotoForPlaceholder(allPhotos, seg, usedPhotoIds);
+      if (photo) await appendTripPhoto(children, photo, usedPhotoIds);
+      continue;
     }
-  }
 
-  const blocks = String(narrativeText || '').split(/\n{2,}/);
-  for (const block of blocks) {
-    const trimmed = block.trim();
-    if (!trimmed) continue;
-    const lines = trimmed.split('\n');
-    const first = lines[0];
-    const isHeading = lines.length === 1 && first.length < 80 && !first.endsWith('.');
-    if (isHeading && (first === 'Summary' || first === 'Closing' || /^Day \d/i.test(first) || first.length < 48)) {
-      children.push(new Paragraph({
-        heading: HeadingLevel.HEADING_2,
-        children: [new TextRun({ text: first, bold: true, size: 28 })],
-        spacing: { before: 240, after: 120 },
-      }));
-      if (lines.length > 1) {
-        await appendTextWithPhotos(children, lines.slice(1).join('\n'), allPhotos, usedPhotoIds);
-      }
-    } else {
-      await appendTextWithPhotos(children, trimmed, allPhotos, usedPhotoIds);
-    }
-  }
-
-  const unused = allPhotos.filter((p) => !usedPhotoIds.has(p.id));
-  if (unused.length > 0) {
-    children.push(new Paragraph({
-      heading: HeadingLevel.HEADING_1,
-      children: [new TextRun({ text: 'Photos from the trip', bold: true, size: 32 })],
-      spacing: { before: 360, after: 200 },
-    }));
-
-    const byDay = groupPhotosByDay(unused);
-    for (const [day, photos] of byDay) {
-      children.push(new Paragraph({
-        heading: HeadingLevel.HEADING_2,
-        children: [new TextRun({ text: formatDayHeading(day), bold: true, size: 26 })],
-        spacing: { before: 200, after: 120 },
-      }));
-      for (const photo of photos) {
-        await appendTripPhoto(children, photo, usedPhotoIds);
+    const blocks = seg.content.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+    for (const block of blocks) {
+      const lines = block.split('\n');
+      const first = lines[0];
+      const isHeading = lines.length === 1 && first.length < 80 && !first.endsWith('.');
+      if (isHeading && (first === 'Summary' || first === 'Closing' || /^Day \d/i.test(first) || first.length < 48)) {
+        children.push(new Paragraph({
+          heading: HeadingLevel.HEADING_2,
+          children: [new TextRun({ text: first, bold: true, size: 28 })],
+          spacing: { before: 240, after: 120 },
+        }));
+        if (lines.length > 1) {
+          children.push(bodyParagraph(lines.slice(1).join('\n')));
+        }
+      } else {
+        children.push(bodyParagraph(block));
       }
     }
   }
@@ -101,28 +85,6 @@ export async function docxBlobToBase64(blob) {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
-}
-
-async function appendTextWithPhotos(children, text, allPhotos, usedPhotoIds) {
-  const re = /\[Photo:\s*([^\]]+)\]/gi;
-  if (!re.test(text)) {
-    children.push(bodyParagraph(text));
-    return;
-  }
-
-  re.lastIndex = 0;
-  let lastIndex = 0;
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    const before = text.slice(lastIndex, match.index).trim();
-    if (before) children.push(bodyParagraph(before));
-    const photo = matchPhoto(allPhotos, match[1], usedPhotoIds);
-    if (photo) await appendTripPhoto(children, photo, usedPhotoIds);
-    lastIndex = re.lastIndex;
-  }
-
-  const tail = text.slice(lastIndex).trim();
-  if (tail) children.push(bodyParagraph(tail));
 }
 
 async function appendTripPhoto(children, photo, usedPhotoIds) {
@@ -152,44 +114,6 @@ function photoParagraph(img) {
     ],
     spacing: { after: 80 },
   });
-}
-
-function matchPhoto(photos, label, usedPhotoIds) {
-  const q = label.trim().toLowerCase();
-  if (!q) return null;
-
-  const candidates = photos.filter((p) => !usedPhotoIds.has(p.id));
-  const exact = candidates.find((p) => (p.caption || '').toLowerCase() === q);
-  if (exact) return exact;
-
-  const partial = candidates.find((p) => {
-    const cap = (p.caption || '').toLowerCase();
-    const loc = (p.locationName || '').toLowerCase();
-    const ev = (p.eventName || '').toLowerCase();
-    return cap.includes(q) || q.includes(cap)
-      || (loc && (q.includes(loc) || loc.includes(q)))
-      || (ev && (q.includes(ev) || ev.includes(q)));
-  });
-  if (partial) return partial;
-
-  return candidates[0] || null;
-}
-
-function groupPhotosByDay(photos) {
-  const byDay = new Map();
-  for (const p of photos) {
-    const day = p.day || 'unknown';
-    if (!byDay.has(day)) byDay.set(day, []);
-    byDay.get(day).push(p);
-  }
-  return [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b));
-}
-
-function formatDayHeading(dayKey) {
-  if (!dayKey || dayKey === 'unknown') return 'Undated photos';
-  const d = new Date(`${dayKey}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return dayKey;
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 function bodyParagraph(text) {

@@ -76,6 +76,7 @@ function buildSystemPrompt(settings) {
     family: 'warm, personal, suitable for family and friends',
     formal: 'professional field patrol / agency report tone',
     adventure: 'vivid outdoor adventure storytelling',
+    doley: `first-person river journal in the style of veteran BLM volunteer John Dole trip reports: conversational and observational with dry humor; name companions and thank them by name; cite river miles, camp names, and landmarks precisely; describe meals, music around the fire, rigging chaos, and small mishaps matter-of-factly; note plants and wildlife with common names and Latin binomials when known; weave in cultural site monitoring, GPS marking, and patrol duties casually; use long flowing sentences and understated wit (e.g. still-not-dead-yet gratitude, logistical asides, gentle self-deprecation); close with genuine affection for the crew — never marketing hype or generic adventure clichés`,
   };
   const focusMap = {
     balanced: 'balance river, camps, wildlife, and people',
@@ -99,11 +100,11 @@ Rules:
 - Length: ${settings.length || 'standard'}
 - Audience: ${settings.audience || 'family'}
 - Focus: ${focusMap[settings.focus] || focusMap.balanced}
-- Voice: ${settings.voice === 'third' ? 'third person' : 'first person plural (we)'}
+- Voice: ${settings.tone === 'doley' ? 'first person (I / we)' : settings.voice === 'third' ? 'third person' : 'first person plural (we)'}
 - Use ONLY facts from the manifest and what you see in photos. Do not invent gauge readings, places, or events.
-- Organize sections by day when possible (heading like "Day 1 — ...").
-- Write flowing prose only — do NOT use [Photo: ...] placeholders. Photos are added automatically in the Word export.
+- Write flowing prose only — do NOT use [Photo: ...] placeholders; photos are inserted automatically in chronological order.
 - When photos are attached, describe what you see accurately using their labels from the manifest.
+- ${settings.tone === 'doley' ? 'Prefer section headings like "Day 1 — Launch" with mile markers and camp names in the body. A brief Summary and Closing are fine.' : 'Organize sections by day when possible (heading like "Day 1 — ...").'}
 - ${settings.includeStats === false ? 'Do not emphasize numeric stats.' : 'Weave in provided stats naturally.'}
 - Write prose paragraphs in section body fields, not bullet lists unless appropriate for data.`;
 }

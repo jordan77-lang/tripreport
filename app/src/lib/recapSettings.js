@@ -17,6 +17,7 @@ export const REPORT_SETTING_OPTIONS = {
     { id: 'family', label: 'Warm & family-friendly' },
     { id: 'formal', label: 'Formal patrol report' },
     { id: 'adventure', label: 'Adventure story' },
+    { id: 'doley', label: 'Doley (river journal)' },
   ],
   length: [
     { id: 'short', label: 'Short (1–2 pages)' },
