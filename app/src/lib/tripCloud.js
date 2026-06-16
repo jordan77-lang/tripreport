@@ -1,5 +1,5 @@
 import { requireSupabase, supabaseConfigured } from './supabase';
-import { getSignedInUserId } from './authUser';
+import { getSignedInUserId, getSignedInDisplayName } from './authUser';
 import {
   saveTrip,
   getTrip,
@@ -29,45 +29,82 @@ function resolveCloudOwnerId(localTrip, userId) {
     // ignore
   }
   if (!ownerId) ownerId = userId;
+  // RLS on trips insert requires owner_id = auth.uid() — never send a stale id.
+  if (userId) ownerId = userId;
   return ownerId;
+}
+
+/** Ensure profile row exists and return the Supabase session user id (matches auth.uid()). */
+async function ensureSignedInProfile(supabase) {
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.access_token) {
+    throw new Error('Session expired — sign out and sign in again, then retry Cloud sync.');
+  }
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user?.id) throw new Error('Sign in to sync trips');
+
+  const displayName = getSignedInDisplayName()
+    || user.user_metadata?.display_name
+    || user.email?.split('@')[0]
+    || 'User';
+
+  const { error: profileError } = await supabase.from('profiles').upsert({
+    id: user.id,
+    display_name: displayName,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (profileError) {
+    throw new Error(formatSupabaseError(profileError, 'Could not save your profile'));
+  }
+
+  return user.id;
+}
+
+function formatSupabaseError(error, fallback) {
+  const msg = error?.message || fallback;
+  if (msg.includes('row-level security') || error?.code === '42501') {
+    return 'Cloud sync blocked — run migration 004_upsert_trip_rpc.sql in Supabase SQL Editor, then tap Cloud sync again.';
+  }
+  return msg;
 }
 
 /** Push local trip document to Supabase (creates or updates). */
 export async function pushTripToCloud(localTrip) {
   const supabase = requireSupabase();
-  const userId = getSignedInUserId();
-  if (!userId) throw new Error('Sign in to sync trips');
+  const userId = await ensureSignedInProfile(supabase);
+  if (getSignedInUserId() && getSignedInUserId() !== userId) {
+    console.warn('Auth session user differs from app user cache — using Supabase session');
+  }
+
+  if (!isTripOwner(localTrip, userId)) {
+    claimAnonymousTripsForUser(userId);
+    const refreshed = getTrip(localTrip.id);
+    if (!refreshed || !isTripOwner(refreshed, userId)) {
+      throw new Error('Only the trip owner can sync this trip to the cloud');
+    }
+    localTrip = refreshed;
+  }
 
   const ownerId = resolveCloudOwnerId(localTrip, userId);
   const payload = buildCloudPayload(localTrip);
-  const row = {
-    id: localTrip.id,
-    owner_id: ownerId,
-    name: localTrip.name,
-    status: localTrip.status || 'planning',
-    start_date: localTrip.startDate || null,
-    end_date: localTrip.endDate || null,
-    types: localTrip.types || [],
-    location: localTrip.location || null,
-    privacy: localTrip.privacy || 'friends',
-    payload,
-    updated_at: new Date().toISOString(),
-  };
 
-  const { data, error } = await supabase
-    .from('trips')
-    .upsert(row)
-    .select('id, updated_at')
-    .single();
-
-  if (error) throw error;
-
-  // Ensure owner is a member
-  await supabase.from('trip_members').upsert({
-    trip_id: localTrip.id,
-    user_id: ownerId,
-    role: 'owner',
+  const { data: updatedAt, error } = await supabase.rpc('upsert_trip_for_owner', {
+    p_id: localTrip.id,
+    p_name: localTrip.name,
+    p_status: localTrip.status || 'planning',
+    p_start_date: localTrip.startDate || null,
+    p_end_date: localTrip.endDate || null,
+    p_types: localTrip.types || [],
+    p_location: localTrip.location || null,
+    p_privacy: localTrip.privacy || 'friends',
+    p_payload: payload,
   });
+
+  if (error) throw new Error(formatSupabaseError(error, 'Could not sync trip to cloud'));
+
+  const data = { id: localTrip.id, updated_at: updatedAt };
 
   const trip = getTrip(localTrip.id);
   if (trip) {
@@ -126,8 +163,7 @@ export async function listCloudTrips() {
 
 export async function createTripInvite(tripId, { role = 'contributor', maxUses = null, expiresInDays = 90 } = {}) {
   const supabase = requireSupabase();
-  const userId = getSignedInUserId();
-  if (!userId) throw new Error('Sign in to invite others');
+  const userId = await ensureSignedInProfile(supabase);
 
   const localTrip = getTrip(tripId);
   if (!localTrip) throw new Error('Trip not found on this device');
@@ -158,10 +194,7 @@ export async function createTripInvite(tripId, { role = 'contributor', maxUses =
   });
 
   if (error) {
-    if (error.code === '42501' || error.message?.includes('policy')) {
-      throw new Error('Could not create invite — sync the trip to cloud first, then try again.');
-    }
-    throw error;
+    throw new Error(formatSupabaseError(error, 'Could not create invite'));
   }
   return code;
 }
@@ -170,8 +203,13 @@ export async function createTripInvite(tripId, { role = 'contributor', maxUses =
 export async function syncUserTripsWithCloud() {
   if (!supabaseConfigured) return { pulled: 0, pushed: 0, skipped: 'not-configured' };
 
-  const userId = getSignedInUserId();
-  if (!userId) return { pulled: 0, pushed: 0, skipped: 'not-signed-in' };
+  const supabase = requireSupabase();
+  let userId;
+  try {
+    userId = await ensureSignedInProfile(supabase);
+  } catch {
+    return { pulled: 0, pushed: 0, skipped: 'not-signed-in' };
+  }
 
   claimAnonymousTripsForUser(userId);
 
