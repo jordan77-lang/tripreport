@@ -9,8 +9,11 @@ import { RiverIntel }   from './screens/RiverIntel';
 import { AuthScreen }   from './screens/Auth';
 import { ProfileSetup } from './screens/ProfileSetup';
 import { JoinTrip }     from './screens/JoinTrip';
+import { TripRecap }    from './screens/TripRecap';
 import { useAuth } from './context/AuthContext';
-import { getActiveTrip, getTrips, setActiveTrip, startTrip, updateEntry } from './lib/storage';
+import { claimAnonymousTripsForUser, clearActiveTrip, getActiveTrip, getTrips, setActiveTrip, startTrip, updateEntry } from './lib/storage';
+import { getSignedInUserId } from './lib/authUser';
+import { Settings } from './screens/Settings';
 import { useGPS } from './hooks/useGPS';
 import { useOfflineMapPreload } from './hooks/useOfflineMapPreload';
 import { useTripMediaSync } from './hooks/useTripMediaSync';
@@ -42,6 +45,13 @@ export default function App() {
     enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
     onSynced: refreshTrip,
   });
+
+  useEffect(() => {
+    const userId = getSignedInUserId();
+    if (!userId || !auth.isSignedIn) return;
+    const claimed = claimAnonymousTripsForUser(userId);
+    if (claimed > 0) refreshTrip();
+  }, [auth.isSignedIn, refreshTrip]);
   const gpsEnabled = trip?.status === 'active' && (
     Boolean(trip?.gpsSessionActive) ||
     (Boolean(trip?.gpsTrackingEnabled) && (screen === 'map' || Boolean(trip?.gpsBackgroundTracking)))
@@ -170,7 +180,18 @@ export default function App() {
     setScreen('trip');
   };
 
+  const onOpenRecap = (tripId) => {
+    if (tripId) setActiveTrip(tripId);
+    refreshTrip();
+    setScreen('recap');
+  };
+
   const common = { trip, onNav, onFab };
+  const onTripDeleted = () => {
+    clearActiveTrip();
+    refreshTrip();
+    setScreen('home');
+  };
 
   if (auth.configured) {
     if (auth.loading) {
@@ -185,10 +206,12 @@ export default function App() {
   }
 
   switch (screen) {
-    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onRiverIntel={() => setScreen('river')} onOpenTrip={() => setScreen('trip')} onStartTrip={handleStartTrip} onOpenPlan={() => setScreen('plan')} onJoinTrip={() => setScreen('join')} auth={auth} />;
-    case 'trip':    return <Trip {...common} onTripUpdate={refreshTrip} />;
-    case 'map':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} /> : <Navigator {...common} gps={gps} />;
-    case 'log':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} />;
+    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onRiverIntel={() => setScreen('river')} onOpenTrip={() => setScreen('trip')} onStartTrip={handleStartTrip} onOpenPlan={() => setScreen('plan')} onJoinTrip={() => setScreen('join')} onOpenSettings={() => setScreen('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
+    case 'settings': return <Settings onBack={() => setScreen('home')} auth={auth} />;
+    case 'recap':   return <TripRecap trip={trip} onBack={() => setScreen('home')} onTripUpdate={refreshTrip} auth={auth} />;
+    case 'trip':    return <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
+    case 'map':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <Navigator {...common} gps={gps} />;
+    case 'log':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} />;
     case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={() => setScreen('trip')} />;
     case 'river':   return <RiverIntel onBack={() => setScreen('home')} />;
     case 'new-trip':

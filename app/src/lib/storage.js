@@ -43,15 +43,18 @@ export function getCurrentUserId() {
   return getAnonymousUserId();
 }
 
-/** Reassign trips created before sign-in (anonymous owner id) to the signed-in account. */
+/** Reassign trips created before sign-in (anonymous / missing owner) to the signed-in account. */
 export function claimAnonymousTripsForUser(signedInUserId) {
   if (!signedInUserId) return 0;
   const anonId = localStorage.getItem(USER_KEY);
-  if (!anonId || anonId === signedInUserId) return 0;
 
   let claimed = 0;
   for (const trip of getTrips()) {
-    if (trip.ownerId && trip.ownerId !== anonId) continue;
+    const unowned = !trip.ownerId;
+    const ownedByAnon = anonId && trip.ownerId === anonId;
+    const ownedBySelf = trip.ownerId === signedInUserId;
+    if (ownedBySelf) continue;
+    if (!unowned && !ownedByAnon) continue;
     saveTrip({
       ...trip,
       ownerId: signedInUserId,
@@ -65,7 +68,11 @@ export function claimAnonymousTripsForUser(signedInUserId) {
 
 export function isTripOwner(trip, userId) {
   if (!trip || !userId) return false;
-  return trip.ownerId === userId;
+  if (trip.ownerId === userId) return true;
+  const anonId = localStorage.getItem(USER_KEY);
+  if (!trip.ownerId && getSignedInUserId() === userId) return true;
+  if (anonId && trip.ownerId === anonId && getSignedInUserId() === userId) return true;
+  return false;
 }
 
 export function getTrips() {
@@ -691,6 +698,15 @@ export function clearActiveTrip() {
   localStorage.removeItem(ACTIVE_KEY);
 }
 
+export function deleteLocalTrip(tripId) {
+  if (!tripId) return;
+  const trips = getTrips().filter((t) => t.id !== tripId);
+  localStorage.setItem(TRIPS_KEY, JSON.stringify(trips));
+  if (localStorage.getItem(ACTIVE_KEY) === tripId) {
+    clearActiveTrip();
+  }
+}
+
 function normalizeTripShape(trip) {
   if (!trip || typeof trip !== 'object') return trip;
   return {
@@ -716,6 +732,7 @@ function normalizeTripShape(trip) {
     coverPhoto: trip.coverPhoto || null,
     mapArea: trip.mapArea || null,
     offlineRegions: Array.isArray(trip.offlineRegions) ? trip.offlineRegions : [],
+    recap: trip.recap && typeof trip.recap === 'object' ? trip.recap : null,
   };
 }
 

@@ -6,6 +6,7 @@ import {
   getTrips,
   claimAnonymousTripsForUser,
   isTripOwner,
+  deleteLocalTrip,
 } from './storage';
 import { syncTripMedia } from './mediaSync';
 import { markMediaRefsSynced } from './mediaRefs';
@@ -249,6 +250,37 @@ export async function syncUserTripsWithCloud() {
   return { pulled, pushed };
 }
 
+export async function deleteTripFromCloud(tripId) {
+  if (!tripId || !supabaseConfigured) return;
+  const supabase = requireSupabase();
+  await ensureSignedInProfile(supabase);
+  const { error } = await supabase.from('trips').delete().eq('id', tripId);
+  if (error) throw new Error(formatSupabaseError(error, 'Could not delete trip from cloud'));
+}
+
+/** Remove trip locally, from cloud, and clear local photo blobs. Owner-only in UI. */
+export async function deleteTripCompletely(tripId) {
+  if (!tripId) throw new Error('Trip id required');
+
+  try {
+    await deleteTripFromCloud(tripId);
+  } catch (e) {
+    console.warn('Cloud trip delete failed (local delete will continue)', e);
+  }
+
+  try {
+    const { listMediaForTrip, deleteMediaRecord } = await import('./mediaStore');
+    const media = await listMediaForTrip(tripId);
+    for (const record of media) {
+      await deleteMediaRecord(record.id);
+    }
+  } catch (e) {
+    console.warn('Local media cleanup failed', e);
+  }
+
+  deleteLocalTrip(tripId);
+}
+
 export async function joinTripByCode(code) {
   const supabase = requireSupabase();
   const { data, error } = await supabase.rpc('join_trip_by_code', {
@@ -281,6 +313,7 @@ function buildCloudPayload(trip) {
     coverPhoto, mapArea, offlineRegions,
     gpsTrackingEnabled, gpsBackgroundTracking, gpsIntervalMs,
     startedAt, endedAt, gpsSessionActive, gpsSessionId, gpsSessionStartedAt,
+    recap,
   } = trip;
 
   return {
@@ -305,6 +338,7 @@ function buildCloudPayload(trip) {
     gpsSessionActive: Boolean(gpsSessionActive),
     gpsSessionId: gpsSessionId || null,
     gpsSessionStartedAt: gpsSessionStartedAt || null,
+    recap: recap || null,
   };
 }
 
@@ -346,6 +380,7 @@ function cloudRowToLocalTrip(row) {
     gpsSessionActive: p.gpsSessionActive,
     gpsSessionId: p.gpsSessionId,
     gpsSessionStartedAt: p.gpsSessionStartedAt,
+    recap: p.recap || existing?.recap || null,
   };
 }
 

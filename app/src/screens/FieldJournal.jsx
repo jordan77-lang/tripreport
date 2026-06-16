@@ -5,6 +5,7 @@ import { SyncChip } from '../components/SyncChip';
 import { T, F, ICONS, CAPTURE_MODES } from '../tokens';
 import { addEntry, updateEntry } from '../lib/storage';
 import { mediaCaptureLabel } from '../lib/featureFlags';
+import { ts } from '../lib/textScale';
 import { EntryForm } from './EntryForm';
 
 const ENTRY_COLORS = {
@@ -62,10 +63,10 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
       <div style={{ background: T.card, padding: '10px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: T.text, letterSpacing: -.5 }}>
+            <div style={{ fontSize: ts(20), fontWeight: 800, color: T.text, letterSpacing: -.5 }}>
               {trip?.name || 'No active trip'}
             </div>
-            <div style={{ fontSize: 11, color: T.textSub, marginTop: 2 }}>
+            <div style={{ fontSize: ts(13), color: T.textSub, marginTop: 2 }}>
               {entries.length} entries logged
             </div>
             <div style={{ marginTop: 6 }}>
@@ -75,8 +76,8 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
           {trip?.types && (
             <div style={{ display: 'flex', gap: 4 }}>
               {trip.types.slice(0, 2).map(type => (
-                <div key={type} style={{ background: T.accentLight, borderRadius: 6, padding: '3px 8px',
-                                          fontSize: 9.5, fontWeight: 700, color: T.accent }}>{type}</div>
+                <div key={type} style={{ background: T.accentLight, borderRadius: 6, padding: '4px 9px',
+                                          fontSize: ts(11), fontWeight: 700, color: T.accent }}>{type}</div>
               ))}
             </div>
           )}
@@ -89,14 +90,14 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
         <div style={{ background: T.card, borderRadius: 14, padding: '12px 14px',
                       border: `1px solid ${T.border}`, marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub,
+            <div style={{ fontSize: ts(12), fontWeight: 700, color: T.textSub,
                            textTransform: 'uppercase', letterSpacing: .8 }}>Quick Capture</div>
             {hasRiver && (
               <div style={{ display: 'flex', background: T.bg, borderRadius: 8, padding: 2, gap: 1,
                              border: `1px solid ${T.border}` }}>
                 {['camping', 'river'].map(mode => (
                   <div key={mode} onClick={() => setCaptureMode(mode)}
-                       style={{ padding: '3px 9px', borderRadius: 6, fontSize: 10, fontWeight: 700,
+                       style={{ padding: '5px 10px', borderRadius: 6, fontSize: ts(12), fontWeight: 700,
                                  cursor: 'pointer', transition: 'all .15s',
                                  background: captureMode === mode ? (mode === 'river' ? '#3A72A8' : T.accent) : 'transparent',
                                  color: captureMode === mode ? 'white' : T.textFaint }}>
@@ -108,27 +109,27 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
           </div>
           <div style={{ position: 'relative' }}>
             <div onClick={() => setShowCaptureMenu(v => !v)}
-                 style={{ height: 42, borderRadius: 11, border: `1.5px solid ${T.border}`, background: T.bg,
+                 style={{ minHeight: 46, borderRadius: 11, border: `1.5px solid ${T.border}`, background: T.bg,
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', cursor: 'pointer' }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>Choose entry type for a location</span>
-              <span style={{ fontSize: 12, color: T.textFaint }}>{showCaptureMenu ? '▲' : '▼'}</span>
+              <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>Choose entry type for a location</span>
+              <span style={{ fontSize: ts(13), color: T.textFaint }}>{showCaptureMenu ? '▲' : '▼'}</span>
             </div>
 
             {showCaptureMenu && (
               <div style={{ position: 'absolute', top: 46, left: 0, right: 0, background: T.card, border: `1px solid ${T.border}`,
                             borderRadius: 11, boxShadow: '0 8px 20px rgba(0,0,0,.12)', zIndex: 5, maxHeight: 260, overflowY: 'auto' }}>
                 {!locations.length && (
-                  <div style={{ padding: '12px 11px', fontSize: 11, color: T.textFaint }}>
+                  <div style={{ padding: '12px 11px', fontSize: ts(13), color: T.textFaint }}>
                     Create a trip location from the Trip page first.
                   </div>
                 )}
                 {!!locations.length && captureItems.map((item, i) => (
                   <div key={i} onClick={() => { setEditingEntry(null); setActiveForm(item.type); setShowCaptureMenu(false); }}
-                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 11px', cursor: 'pointer', borderBottom: i < captureItems.length - 1 ? `1px solid ${T.border}` : 'none' }}>
-                    <div style={{ width: 30, height: 30, borderRadius: 8, background: item.col + '1A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Ic d={item.icon} size={15} color={item.col} sw={1.9} />
+                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 11px', cursor: 'pointer', borderBottom: i < captureItems.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 8, background: item.col + '1A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Ic d={item.icon} size={16} color={item.col} sw={1.9} />
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{mediaCaptureLabel(item.label)}</span>
+                    <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{mediaCaptureLabel(item.label)}</span>
                   </div>
                 ))}
               </div>
@@ -138,25 +139,25 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
 
         {/* Entries */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Entries</span>
-          <span style={{ fontSize: 12, color: T.textSub }}>{filteredEntries.length}{search.trim() ? `/${entries.length}` : ''} total</span>
+          <span style={{ fontSize: ts(15), fontWeight: 700, color: T.text }}>Entries</span>
+          <span style={{ fontSize: ts(13), color: T.textSub }}>{filteredEntries.length}{search.trim() ? `/${entries.length}` : ''} total</span>
         </div>
 
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search title, notes, type, location…"
-          style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '9px 11px', fontSize: 12, fontFamily: F, marginBottom: 10, boxSizing: 'border-box', outline: 'none', background: T.card }}
+          style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '11px 12px', fontSize: ts(14), fontFamily: F, marginBottom: 10, boxSizing: 'border-box', outline: 'none', background: T.card }}
         />
 
         {entries.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '32px 0', color: T.textFaint, fontSize: 13 }}>
+          <div style={{ textAlign: 'center', padding: '32px 0', color: T.textFaint, fontSize: ts(14) }}>
             No entries yet — tap a capture button above
           </div>
         )}
 
         {entries.length > 0 && filteredEntries.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '24px 0', color: T.textFaint, fontSize: 12 }}>
+          <div style={{ textAlign: 'center', padding: '24px 0', color: T.textFaint, fontSize: ts(13) }}>
             No entries match &ldquo;{search}&rdquo;
           </div>
         )}
@@ -164,7 +165,7 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
         {filteredEntries.map((e, i) => {
           const col = ENTRY_COLORS[e.type] || T.accent;
           return (
-            <div key={e.id || i} style={{ background: T.card, borderRadius: 12, padding: '11px 12px',
+            <div key={e.id || i} style={{ background: T.card, borderRadius: 12, padding: '12px 13px',
                                            marginBottom: 8, border: `1px solid ${T.border}`,
                                            display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <div style={{ width: 36, height: 36, borderRadius: 9, background: col + '1C',
@@ -173,63 +174,63 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{e.title || e.type}</span>
+                  <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{e.title || e.type}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 10, color: T.textFaint }}>{timeAgo(e.createdAt)}</span>
+                    <span style={{ fontSize: ts(12), color: T.textFaint }}>{timeAgo(e.createdAt)}</span>
                     <SyncChip state={e.syncState || 'pending'} compact />
                   </div>
                 </div>
-                <div style={{ fontSize: 10.5, color: col, fontWeight: 700, marginBottom: e.notes ? 4 : 0,
+                <div style={{ fontSize: ts(12), color: col, fontWeight: 700, marginBottom: e.notes ? 4 : 0,
                                textTransform: 'capitalize' }}>{entryTypeLabel(e)}</div>
-                <div style={{ fontSize: 10.5, color: '#2A5C8E', marginBottom: 4 }}>
+                <div style={{ fontSize: ts(12), color: '#2A5C8E', marginBottom: 4 }}>
                   {entryLocationLabel(e, locations)}
                 </div>
-                {e.observedAt && <div style={{ fontSize: 10.5, color: T.textFaint, marginBottom: 4 }}>Observed: {new Date(e.observedAt).toLocaleString()}</div>}
-                {e.notes && <div style={{ fontSize: 11.5, color: T.textSub, lineHeight: 1.4 }}>{e.notes}</div>}
-                {e.mapTagSymbol && <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>Tag: {e.mapTagSymbol}</div>}
+                {e.observedAt && <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>Observed: {new Date(e.observedAt).toLocaleString()}</div>}
+                {e.notes && <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.4 }}>{e.notes}</div>}
+                {e.mapTagSymbol && <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>Tag: {e.mapTagSymbol}</div>}
                 {e.cfs && (
-                  <div style={{ fontSize: 11, color: '#3A72A8', fontWeight: 600 }}>
+                  <div style={{ fontSize: ts(13), color: '#3A72A8', fontWeight: 600 }}>
                     {e.cfs} CFS{e.rapidClass ? ` · Class ${e.rapidClass}` : ''}
                   </div>
                 )}
                 {e.gaugeSyncPending && (
-                  <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
+                  <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>
                     Gauge flow pending sync when back online
                   </div>
                 )}
                 {e.type === 'weather' && (e.weatherSummary || e.weatherTempC != null) && (
-                  <div style={{ fontSize: 11, color: '#2A5C8E', fontWeight: 600 }}>
+                  <div style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 600 }}>
                     {e.weatherSummary || 'Weather'}
                     {e.weatherTempC != null ? ` · ${Math.round(cToF(e.weatherTempC))}°F` : ''}
                     {e.weatherWindKph != null ? ` · Wind ${Math.round(e.weatherWindKph)} km/h` : ''}
                   </div>
                 )}
                 {e.weatherSyncPending && (
-                  <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
+                  <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>
                     Weather conditions pending sync when back online
                   </div>
                 )}
                 {e.weatherObservation && (
-                  <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 3 }}>
+                  <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 3 }}>
                     Obs: {e.weatherObservation}
                   </div>
                 )}
-                {e.rating && <div style={{ fontSize: 11, color: T.amber }}>{'★'.repeat(e.rating)}{'☆'.repeat(5 - e.rating)}</div>}
-                {e.lat && <div style={{ fontSize: 10, color: T.textFaint, marginTop: 3 }}>📍 GPS tagged</div>}
+                {e.rating && <div style={{ fontSize: ts(14), color: T.amber }}>{'★'.repeat(e.rating)}{'☆'.repeat(5 - e.rating)}</div>}
+                {e.lat && <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>📍 GPS tagged</div>}
                 {(e.photoNotes || e.videoNotes || e.voiceNotes) && (
-                  <div style={{ fontSize: 10, color: T.textFaint, marginTop: 3 }}>
+                  <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>
                     {(e.photoNotes ? '📷 ' : '') + (e.videoNotes ? '🎥 ' : '') + (e.voiceNotes ? '🎙 ' : '')}Media notes added
                   </div>
                 )}
                 {(e.photoFiles?.length || e.videoFiles?.length || e.voiceFiles?.length) && (
-                  <div style={{ fontSize: 10, color: T.textFaint, marginTop: 3 }}>
+                  <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>
                     {(e.photoFiles?.length || 0)} photos · {(e.videoFiles?.length || 0)} videos · {(e.voiceFiles?.length || 0)} audio
                   </div>
                 )}
                 <div style={{ marginTop: 7 }}>
                   <span
                     onClick={() => { setEditingEntry(e); setActiveForm(e.type || 'note'); }}
-                    style={{ fontSize: 10.5, color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}
+                    style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}
                   >
                     Edit entry
                   </span>

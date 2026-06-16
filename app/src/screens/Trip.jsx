@@ -12,15 +12,18 @@ import { MediaThumb } from '../components/MediaThumb';
 import { shareEntity } from '../lib/share';
 import { exportGpx, exportHtmlReport } from '../lib/export';
 import { exportTripUpdateFile, formatMergeSummary, mergeTripUpdate, readTripUpdateFile } from '../lib/offlineExchange';
-import { pushTripToCloud } from '../lib/tripCloud';
+import { TripOverflowMenu, tripMenuIcon } from '../components/TripOverflowMenu';
+import { ts } from '../lib/textScale';
+import { deleteTripCompletely, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { LocationPage } from './LocationPage';
 import { InviteCodePanel } from './JoinTrip';
 
-export function Trip({ trip, onNav, onFab, onTripUpdate }) {
+export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap }) {
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
   const canInvite = Boolean(supabaseConfigured && signedInUserId && trip && isTripOwner(trip, signedInUserId));
+  const canDeleteTrip = Boolean(trip && isTripOwner(trip, signedInUserId || currentUserId));
   const participants = useMemo(() => buildParticipantOptions(trip, currentUserId), [trip, currentUserId]);
   const [typeFilter, setTypeFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
@@ -57,6 +60,9 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
   const [locCoverPhoto, setLocCoverPhoto] = useState(null);
   const [exchangeStatus, setExchangeStatus] = useState(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [tripSection, setTripSection] = useState('overview');
   const importUpdateRef = useRef(null);
   const entries = useMemo(() => trip?.entries ?? [], [trip?.entries]);
   const locations = useMemo(() => trip?.locations ?? [], [trip?.locations]);
@@ -183,6 +189,48 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
       setCloudSyncStatus({ kind: 'error', message: e?.message || 'Cloud sync failed.' });
     }
   }
+
+  async function confirmDeleteTrip() {
+    if (!trip?.id || !canDeleteTrip || !deleteConfirm) return;
+    setDeleteBusy(true);
+    try {
+      await deleteTripCompletely(trip.id);
+      onTripDeleted?.();
+    } catch (e) {
+      setCloudSyncStatus({ kind: 'error', message: e?.message || 'Could not delete trip.' });
+      setDeleteConfirm(false);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
+  const overflowItems = [
+    { id: 'share', label: 'Share trip summary', icon: tripMenuIcon('share'), onClick: shareTrip },
+    { id: 'gpx', label: 'Export GPX track', icon: tripMenuIcon('export'), onClick: () => exportGpx(trip) },
+    { id: 'report', label: 'Export HTML report', icon: tripMenuIcon('export'), onClick: () => exportHtmlReport(trip) },
+    ...(supabaseConfigured ? [{ id: 'sync', label: 'Sync to cloud', icon: tripMenuIcon('sync'), onClick: () => void syncToCloud() }] : []),
+    { id: 'export', label: 'Export offline update', icon: tripMenuIcon('export'), onClick: exportOfflineUpdate },
+    { id: 'import', label: 'Import offline update', icon: tripMenuIcon('import'), onClick: () => importUpdateRef.current?.click() },
+    {
+      id: 'edit',
+      label: editingTrip ? 'Close edit' : 'Edit trip details',
+      icon: tripMenuIcon('edit'),
+      onClick: () => {
+        if (editingTrip) setEditingTrip(false);
+        else {
+          setTripDraft(buildTripDraft(trip));
+          setEditingTrip(true);
+        }
+      },
+    },
+    ...(canDeleteTrip ? [{
+      id: 'delete',
+      label: 'Delete trip',
+      danger: true,
+      icon: 'M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6',
+      onClick: () => { setTripSection('overview'); setDeleteConfirm(true); },
+    }] : []),
+  ];
 
   async function exportOfflineUpdate() {
     if (!trip) return;
@@ -439,66 +487,57 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
 
   return (
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
-      <div style={{ background: T.card, padding: '12px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: T.text, letterSpacing: -.4 }}>{trip.name}</div>
-            <div style={{ fontSize: 11, color: T.textSub }}>{entries.length} entries · {track.length} GPS pts</div>
-            <div style={{ marginTop: 4, fontSize: 10.5, color: isCompleted ? '#2E6D3A' : isPlanning ? '#2A5C8E' : '#2A5C8E', fontWeight: 700 }}>
-              {isCompleted ? 'Finalized trip (still editable)' : isPlanning ? `Planning · starts ${formatTripDate(trip.startDate)}` : 'Active trip'}
+      <div style={{ background: T.card, padding: '14px 16px 12px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: ts(22), fontWeight: 800, color: T.text, letterSpacing: -.4, lineHeight: 1.2 }}>{trip.name}</div>
+            <div style={{ fontSize: ts(14), color: T.textSub, marginTop: 4 }}>{entries.length} entries · {track.length} GPS pts</div>
+            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{
+                fontSize: ts(13), fontWeight: 700,
+                color: isCompleted ? '#2E6D3A' : isPlanning ? '#2A5C8E' : '#2A5C8E',
+                background: isCompleted ? '#E5F4E8' : isPlanning ? '#E4EFF8' : '#E4EFF8',
+                borderRadius: 8, padding: '4px 8px',
+              }}>
+                {isCompleted ? 'Completed' : isPlanning ? `Planning · ${formatTripDate(trip.startDate)}` : 'Active'}
+              </span>
+              <SyncChip state={tripSyncState} compact />
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-            <div onClick={shareTrip}
-                 style={{ background: '#EAF3FB', border: '1px solid #C7DDEF', borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
-              Share
-            </div>
-            <div onClick={() => exportGpx(trip)}
-                 style={{ background: '#EAF3FB', border: '1px solid #C7DDEF', borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
-              GPX
-            </div>
-            <div onClick={() => exportHtmlReport(trip)}
-                 style={{ background: '#EAF3FB', border: '1px solid #C7DDEF', borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
-              Report
-            </div>
-            {supabaseConfigured && (
-              <div onClick={() => void syncToCloud()}
-                   style={{ background: '#E8F2EA', border: '1px solid #A8CFB2', borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: '#2E6D3A', cursor: 'pointer' }}>
-                Cloud sync
-              </div>
-            )}
-            <div onClick={exportOfflineUpdate}
-                 style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: T.accent, cursor: 'pointer' }}>
-              Export Update
-            </div>
-            <div onClick={() => importUpdateRef.current?.click()}
-                 style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: T.accent, cursor: 'pointer' }}>
-              Import Update
-            </div>
-            <div onClick={isCompleted ? handleReopenTrip : isActive ? handleFinalizeTrip : undefined}
-                 style={{ background: isCompleted ? '#E5F4E8' : isActive ? '#FFF1E4' : '#E4EFF8', border: `1px solid ${isCompleted ? '#A4CFAD' : isActive ? '#E4C5A8' : '#C7DDEF'}`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: isCompleted ? '#2E6D3A' : isActive ? '#8A5526' : '#2A5C8E', cursor: isPlanning ? 'default' : 'pointer', opacity: isPlanning ? 0.55 : 1 }}>
-              {isCompleted ? 'Reopen Trip' : isActive ? 'Finish Trip' : 'Planning'}
-            </div>
-            {isPlanning && (
-              <div onClick={handleStartTrip}
-                   style={{ background: T.accent, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 800, color: 'white', cursor: 'pointer' }}>
-                Start Trip
-              </div>
-            )}
-            <div onClick={() => {
-              if (editingTrip) {
-                setEditingTrip(false);
-                return;
-              }
-              setTripDraft(buildTripDraft(trip));
-              setEditingTrip(true);
-            }}
-                 style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: T.textSub, cursor: 'pointer' }}>
-              {editingTrip ? 'Close Edit' : 'Edit Trip'}
-            </div>
-            <SyncChip state={tripSyncState} compact />
-          </div>
+          <TripOverflowMenu items={overflowItems} />
         </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+          {isPlanning && (
+            <button type="button" onClick={handleStartTrip}
+                 style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: 'white', cursor: 'pointer', background: T.accent }}>
+              Start Trip
+            </button>
+          )}
+          {isActive && (
+            <button type="button" onClick={handleFinalizeTrip}
+                 style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: '#8A5526', cursor: 'pointer', background: '#FFF1E4', border: '1px solid #E4C5A8' }}>
+              Finish Trip
+            </button>
+          )}
+          {isCompleted && (
+            <button type="button" onClick={handleReopenTrip}
+                 style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: '#2E6D3A', cursor: 'pointer', background: '#E5F4E8', border: '1px solid #A4CFAD' }}>
+              Reopen Trip
+            </button>
+          )}
+          <button type="button" onClick={() => onNav('plan')}
+               style={{ flex: 1, minWidth: 120, border: `1px solid ${T.border}`, borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 700, color: T.text, cursor: 'pointer', background: T.bg }}>
+            Trip Plan
+          </button>
+          {isCompleted && onOpenRecap && (
+            <button type="button" onClick={() => onOpenRecap(trip.id)}
+                 style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: 'white', cursor: 'pointer', background: '#2E6D3A' }}>
+              Recap & Share
+            </button>
+          )}
+        </div>
+
         <input
           ref={importUpdateRef}
           type="file"
@@ -509,6 +548,32 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+        {deleteConfirm && canDeleteTrip && (
+          <div style={{
+            background: '#FFF0F0',
+            border: '1px solid #E7B5B5',
+            borderRadius: 12,
+            padding: '12px 14px',
+            marginBottom: 12,
+          }}>
+            <div style={{ fontSize: ts(14), fontWeight: 800, color: '#8A1414', marginBottom: 6 }}>
+              Delete this trip?
+            </div>
+            <div style={{ fontSize: ts(13), color: '#6B3535', lineHeight: 1.45, marginBottom: 10 }}>
+              Permanently removes &ldquo;{trip.name}&rdquo;, all entries, photos, and tracks. This cannot be undone.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => setDeleteConfirm(false)} disabled={deleteBusy}
+                style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', fontSize: ts(14), fontWeight: 700, color: T.textSub, background: T.card, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void confirmDeleteTrip()} disabled={deleteBusy}
+                style={{ flex: 1, border: 'none', borderRadius: 10, padding: '10px 12px', fontSize: ts(14), fontWeight: 800, color: 'white', background: '#B03030', cursor: deleteBusy ? 'wait' : 'pointer', opacity: deleteBusy ? 0.7 : 1 }}>
+                {deleteBusy ? 'Deleting…' : 'Delete forever'}
+              </button>
+            </div>
+          </div>
+        )}
         {!!cloudSyncStatus && (
           <div style={{
             background: cloudSyncStatus.kind === 'error' ? '#FBE4E4' : '#E8F2EA',
@@ -538,36 +603,39 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
           </div>
         )}
 
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12, padding: 4 }}>
+          {[
+            { id: 'overview', label: 'Overview' },
+            { id: 'entries', label: `Entries (${entries.length})` },
+          ].map((tab) => (
+            <button key={tab.id} type="button" onClick={() => setTripSection(tab.id)}
+              style={{
+                flex: 1, border: 'none', borderRadius: 9, padding: '10px 12px', fontSize: ts(14),
+                fontWeight: tripSection === tab.id ? 800 : 600, fontFamily: F, cursor: 'pointer',
+                background: tripSection === tab.id ? T.card : 'transparent',
+                color: tripSection === tab.id ? T.text : T.textSub,
+                boxShadow: tripSection === tab.id ? '0 1px 4px rgba(0,0,0,.06)' : 'none',
+              }}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {tripSection === 'overview' && (
+        <>
+
         {canInvite && (
           <InviteCodePanel tripId={trip.id} onTripUpdate={onTripUpdate} />
         )}
 
         {isPlanning && (
           <div style={{ background: '#E4EFF8', border: '1px solid #C7DDEF', borderRadius: 12, padding: '12px 14px', marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#2A5C8E', marginBottom: 4 }}>Trip is in planning mode</div>
-            <div style={{ fontSize: 11, color: T.textSub, marginBottom: 10 }}>
-              Coordinate gear, meals, and expenses now. Start the trip when you leave to unlock map tracking and field journal capture.
-            </div>
-            <div onClick={handleStartTrip}
-                 style={{ background: T.accent, borderRadius: 10, padding: '11px 14px', textAlign: 'center', cursor: 'pointer', boxShadow: `0 4px 14px ${T.accent}40` }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: 'white' }}>Start Trip Now</span>
+            <div style={{ fontSize: ts(14), fontWeight: 800, color: '#2A5C8E', marginBottom: 4 }}>Planning mode</div>
+            <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.45 }}>
+              Use Trip Plan for gear, meals, and expenses. Tap Start Trip in the header when you head out to unlock map and journal.
             </div>
           </div>
         )}
-        <div onClick={() => onNav('plan')}
-             style={{ background: T.accent, borderRadius: 12, padding: '12px 14px', marginBottom: 8,
-                      display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
-                      boxShadow: `0 4px 16px ${T.accent}35` }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,.2)',
-                         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Ic d={ICONS.users} size={18} color="white" sw={1.9} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: 'white' }}>Plan This Trip</div>
-            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.7)' }}>Gear, meals, shopping & shared expenses</div>
-          </div>
-          <Ic d={ICONS.chevR} size={16} color="white" sw={2.2} />
-        </div>
 
         {isActive && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
@@ -1053,9 +1121,27 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
           ))}
         </div>
 
+        {canDeleteTrip && !deleteConfirm && (
+          <div style={{ marginTop: 8, marginBottom: 4, paddingTop: 16, borderTop: `1px dashed ${T.border}` }}>
+            <div style={{ fontSize: ts(12), fontWeight: 700, color: T.textFaint, marginBottom: 8, letterSpacing: 0.4 }}>
+              TRIP OWNER
+            </div>
+            <button type="button" onClick={() => setDeleteConfirm(true)}
+              style={{ width: '100%', border: '1px solid #E7B5B5', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 700, color: '#B03030', background: '#FFF5F5', cursor: 'pointer' }}>
+              Delete this trip
+            </button>
+          </div>
+        )}
+
+        </>
+        )}
+
+        {tripSection === 'entries' && (
+        <>
+
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Trip Entries</span>
-          <span onClick={() => onNav('log')} style={{ fontSize: 12, color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Open Journal →</span>
+          <span style={{ fontSize: ts(15), fontWeight: 700, color: T.text }}>Trip Entries</span>
+          <span onClick={() => onNav('log')} style={{ fontSize: ts(13), color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Open Journal →</span>
         </div>
 
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 11px', marginBottom: 10 }}>
@@ -1175,9 +1261,12 @@ export function Trip({ trip, onNav, onFab, onTripUpdate }) {
         })}
 
         {filteredEntries.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '20px 0', color: T.textFaint, fontSize: 12 }}>
+          <div style={{ textAlign: 'center', padding: '20px 0', color: T.textFaint, fontSize: ts(13) }}>
             No entries match current filters.
           </div>
+        )}
+
+        </>
         )}
       </div>
 

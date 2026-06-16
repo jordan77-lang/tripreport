@@ -4,10 +4,11 @@ import { BottomNav } from '../components/BottomNav';
 import { SyncChip } from '../components/SyncChip';
 import { MediaThumb } from '../components/MediaThumb';
 import { T, F, ICONS } from '../tokens';
+import { ts } from '../lib/textScale';
 import { fetchGauge, fetchNearbyGaugesByGps } from '../lib/usgs';
 import { fetchCurrentWeather } from '../lib/weather';
 
-export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTrip, onSelectTrip, onStartTrip, onOpenPlan, onJoinTrip, auth }) {
+export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTrip, onSelectTrip, onStartTrip, onOpenPlan, onJoinTrip, onOpenSettings, onOpenRecap, auth }) {
   const fieldTrip = trip?.status === 'active' ? trip : null;
   const selectedPlanningTrip = trip?.status === 'planning' ? trip : null;
   const [nowMs] = useState(() => Date.now());
@@ -120,10 +121,10 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
 
       {/* Header */}
       <div style={{ background: T.card, padding: '12px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: T.text, letterSpacing: -.6 }}>TripReport</div>
-            <div style={{ fontSize: 12, color: T.textSub, marginTop: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: ts(22), fontWeight: 800, color: T.text, letterSpacing: -.6 }}>TripReport</div>
+            <div style={{ fontSize: ts(13), color: T.textSub, marginTop: 2 }}>
               {fieldTrip
                 ? `Active: ${fieldTrip.name}`
                 : selectedPlanningTrip
@@ -131,22 +132,22 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
                   : 'Ready to explore'}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             {auth?.configured && onJoinTrip && (
               <div onClick={onJoinTrip}
-                   style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: T.accent, cursor: 'pointer' }}>
-                Join trip
+                   style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 9, padding: '7px 10px', fontSize: ts(12), fontWeight: 700, color: T.accent, cursor: 'pointer' }}>
+                Join
               </div>
             )}
-            {auth?.configured && (
-              <div onClick={() => auth.signOut()}
-                   style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: T.textSub, cursor: 'pointer' }}>
-                Sign out
-              </div>
+            {onOpenSettings && (
+              <button type="button" onClick={onOpenSettings} aria-label="Settings"
+                style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <Ic d="M4 6h16 M4 12h16 M4 18h16" size={17} color={T.textSub} sw={2} />
+              </button>
             )}
-            <div style={{ width: 38, height: 38, borderRadius: 19, background: T.accent,
+            <div style={{ width: 36, height: 36, borderRadius: 18, background: T.accent,
                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                           fontSize: 14, fontWeight: 800, color: 'white' }} title={auth?.profile?.display_name || ''}>
+                           fontSize: ts(14), fontWeight: 800, color: 'white' }} title={auth?.profile?.display_name || ''}>
               {profileInitial}
             </div>
           </div>
@@ -161,13 +162,13 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
                         boxShadow: `0 4px 20px ${T.accent}40`, padding: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: 4, background: '#5DBE7E', animation: 'pulse 2s infinite' }} />
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,.7)', letterSpacing: .8 }}>ACTIVE TRIP</span>
+              <span style={{ fontSize: ts(11), fontWeight: 700, color: 'rgba(255,255,255,.7)', letterSpacing: .8 }}>ACTIVE TRIP</span>
             </div>
             {!!fieldTrip.coverPhoto && (
               <MediaThumb media={fieldTrip.coverPhoto} alt="Trip cover" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 12, marginBottom: 10, display: 'block', background: 'rgba(0,0,0,.18)' }} />
             )}
-            <div style={{ fontSize: 19, fontWeight: 800, color: 'white', letterSpacing: -.4, marginBottom: 2 }}>{fieldTrip.name}</div>
-            <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.7)', marginBottom: 12 }}>
+            <div style={{ fontSize: ts(20), fontWeight: 800, color: 'white', letterSpacing: -.4, marginBottom: 2 }}>{fieldTrip.name}</div>
+            <div style={{ fontSize: ts(13), color: 'rgba(255,255,255,.7)', marginBottom: 12 }}>
               {(fieldTrip.types || []).join(' · ')} · {entries.length} entries · {track.length} GPS pts
             </div>
             <div style={{ marginBottom: 10 }}>
@@ -176,7 +177,7 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
             <div onClick={onOpenTrip}
                  style={{ background: 'rgba(255,255,255,.15)', borderRadius: 10, padding: '11px 14px',
                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Open Trip Page</span>
+              <span style={{ fontSize: ts(14), fontWeight: 700, color: 'white' }}>Open Trip Page</span>
               <Ic d={ICONS.chevR} size={16} color="white" sw={2.2} />
             </div>
           </div>
@@ -369,7 +370,8 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
           )}
 
           {finalizedTrips.map((t) => (
-            <div key={t.id} onClick={() => onSelectTrip?.(t.id)} style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1px solid ${T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+            <div key={t.id} style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1px solid ${T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <div onClick={() => onSelectTrip?.(t.id)} style={{ display: 'flex', gap: 10, flex: 1, minWidth: 0, cursor: 'pointer' }}>
               {t.coverPhoto ? (
                 <MediaThumb media={t.coverPhoto} alt={`${t.name} cover`} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
               ) : (
@@ -383,7 +385,11 @@ export function Home({ trip, allTrips = [], onNav, onFab, onRiverIntel, onOpenTr
                 <div style={{ fontSize: 10.5, color: T.textFaint }}>{(t.types || []).join(' · ') || 'No type'}</div>
                 <div style={{ fontSize: 10.5, color: T.textFaint }}>Ended: {new Date(t.endedAt || t.updatedAt || t.createdAt || 0).toLocaleDateString()}</div>
               </div>
-              <div style={{ fontSize: 10.5, color: T.accent, fontWeight: 700 }}>Open</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                <div onClick={() => onOpenRecap?.(t.id)} style={{ fontSize: ts(11), color: '#2E6D3A', fontWeight: 800, cursor: 'pointer', textAlign: 'right' }}>Recap</div>
+                <div onClick={() => onSelectTrip?.(t.id)} style={{ fontSize: 10.5, color: T.accent, fontWeight: 700, cursor: 'pointer', textAlign: 'right' }}>Open</div>
+              </div>
             </div>
           ))}
         </div>

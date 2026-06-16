@@ -35,13 +35,18 @@ export async function createPhotoMediaFromFile(file, tripId, {
     fullBlob = file;
   }
 
-  await putMediaRecord({ ...meta, thumbBlob, fullBlob });
+  const fullByteSize = fullBlob?.size || 0;
+  const thumbByteSize = thumbBlob?.size || 0;
+
+  await putMediaRecord({ ...meta, thumbBlob, fullBlob, fullByteSize, thumbByteSize });
 
   return {
     id,
     name: file.name,
     mime,
     size: file.size,
+    fullByteSize,
+    thumbByteSize,
     syncState: 'pending',
   };
 }

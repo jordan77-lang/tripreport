@@ -8,6 +8,7 @@ import { getCurrentUserId } from '../lib/storage';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
+import { ts } from '../lib/textScale';
 
 export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, locations = [], defaultLocationId = null }) {
   const initialObservedAt = initialEntry?.observedAt ? new Date(initialEntry.observedAt) : new Date();
@@ -270,7 +271,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
             <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color={T.text} sw={2} />
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -.4, textTransform: 'capitalize' }}>
+            <div style={{ fontSize: ts(19), fontWeight: 800, color: T.text, letterSpacing: -.4, textTransform: 'capitalize' }}>
               {initialEntry ? 'Edit' : 'Log'} {typeLabel(type)}
             </div>
           </div>
@@ -291,10 +292,10 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
                   onClick={() => { setSelectedLocationId(loc.id); setLocationError(null); }}
                   style={{
                     flexShrink: 0,
-                    padding: '6px 11px',
+                    padding: '8px 12px',
                     borderRadius: 16,
                     cursor: 'pointer',
-                    fontSize: 11,
+                    fontSize: ts(13),
                     fontWeight: 700,
                     background: selectedLocationId === loc.id ? '#2A5C8E' : T.card,
                     color: selectedLocationId === loc.id ? 'white' : T.textSub,
@@ -306,18 +307,18 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
               ))}
             </div>
             {!!selectedLocation && (
-              <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
+              <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 6 }}>
                 {selectedLocation.type} · {selectedLocation.lat?.toFixed(5)}, {selectedLocation.lng?.toFixed(5)}
               </div>
             )}
-            {locationError && <div style={{ fontSize: 11, color: T.amber, marginTop: 6 }}>{locationError}</div>}
+            {locationError && <div style={{ fontSize: ts(13), color: T.amber, marginTop: 6 }}>{locationError}</div>}
           </div>
         )}
 
         {locations.length === 0 && (
           <div style={{ marginBottom: 16, background: T.card, border: `1px dashed ${T.border}`, borderRadius: 10, padding: '10px 11px' }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text }}>No trip locations yet</div>
-            <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
+            <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>No trip locations yet</div>
+            <div style={{ fontSize: ts(13), color: T.textFaint, marginTop: 3 }}>
               Create a map location from the Trip page first, then add entries to it.
             </div>
           </div>
@@ -339,7 +340,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
               {FEATURE_TYPES.map(ft => (
                 <div key={ft} onClick={() => setFeatureType(ft)}
-                     style={{ padding: '7px 11px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
+                     style={{ padding: '8px 12px', borderRadius: 20, fontSize: ts(13), fontWeight: 700,
                                cursor: 'pointer', transition: 'all .15s',
                                background: featureType === ft ? '#3A72A8' : T.card,
                                color: featureType === ft ? 'white' : T.textSub,
@@ -356,15 +357,15 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
             {['📍', '🌊', '⚠', '⛺', '🦌', '🛶', '📈', '📝'].map((s) => (
               <div key={s} onClick={() => setMapTagSymbol(s)}
-                   style={{ width: 36, height: 36, borderRadius: 10, cursor: 'pointer',
+                   style={{ width: 40, height: 40, borderRadius: 10, cursor: 'pointer',
                             border: `2px solid ${mapTagSymbol === s ? userColor : T.border}`,
                             background: mapTagSymbol === s ? `${userColor}22` : T.card,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: ts(18) }}>
                 {s}
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 4 }}>Tag color follows your user color.</div>
+          <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 4 }}>Tag color follows your user color.</div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
@@ -372,7 +373,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             {[{ id: 'now', label: 'Use Current Time' }, { id: 'custom', label: 'Pick Date/Time' }].map((opt) => (
               <div key={opt.id} onClick={() => setObservedTimeMode(opt.id)}
-                   style={{ padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
+                   style={{ padding: '7px 12px', borderRadius: 14, cursor: 'pointer', fontSize: ts(12), fontWeight: 700,
                             background: observedTimeMode === opt.id ? '#2A5C8E' : T.bg,
                             color: observedTimeMode === opt.id ? 'white' : T.textSub,
                             border: observedTimeMode === opt.id ? 'none' : `1px solid ${T.border}` }}>
@@ -399,11 +400,11 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
               <div onClick={setCurrentObservedTime}
                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: T.bg,
                             border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 9px', cursor: 'pointer' }}>
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub }}>Set to current time</span>
+                <span style={{ fontSize: ts(12), fontWeight: 700, color: T.textSub }}>Set to current time</span>
               </div>
             </>
           ) : (
-            <div style={{ fontSize: 11, color: T.textFaint }}>This entry will save with the current time when you tap Save.</div>
+            <div style={{ fontSize: ts(13), color: T.textFaint }}>This entry will save with the current time when you tap Save.</div>
           )}
         </div>
 
@@ -414,11 +415,11 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
             <div style={{ display: 'flex', gap: 8 }}>
               {RAPID_CLASSES.map(cls => (
                 <div key={cls} onClick={() => setRapidClass(cls)}
-                     style={{ flex: 1, height: 48, borderRadius: 12, display: 'flex',
+                     style={{ flex: 1, height: 50, borderRadius: 12, display: 'flex',
                                alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                                background: rapidClass === cls ? classColor(cls) : T.card,
                                border: `1.5px solid ${rapidClass === cls ? classColor(cls) : T.border}`,
-                               fontSize: 13, fontWeight: 800,
+                               fontSize: ts(14), fontWeight: 800,
                                color: rapidClass === cls ? 'white' : T.textSub }}>
                   {cls}
                 </div>
@@ -459,7 +460,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
               />
             </div>
             {gaugeSiteId && !cfs && (
-              <div style={{ fontSize: 10.5, color: T.textFaint }}>
+              <div style={{ fontSize: ts(12), color: T.textFaint }}>
                 Flow can be synced later when you are back online.
               </div>
             )}
@@ -484,12 +485,12 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
               }}
             >
               <Ic d={ICONS.gauge} size={14} color={gaugesLoading ? T.textFaint : '#2A5C8E'} sw={1.8} />
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: gaugesLoading ? T.textFaint : '#2A5C8E' }}>
+              <span style={{ fontSize: ts(13), fontWeight: 700, color: gaugesLoading ? T.textFaint : '#2A5C8E' }}>
                 {gaugesLoading ? 'Looking up gauges...' : 'Find nearby gauges'}
               </span>
             </div>
 
-            {gaugeError && <div style={{ fontSize: 11, color: T.amber, marginBottom: 8 }}>{gaugeError}</div>}
+            {gaugeError && <div style={{ fontSize: ts(13), color: T.amber, marginBottom: 8 }}>{gaugeError}</div>}
 
             {!!nearbyGauges.length && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -497,11 +498,11 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
                   <div key={g.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 11px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{g.siteName}</div>
-                        <div style={{ fontSize: 10.5, color: T.textFaint }}>
+                        <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{g.siteName}</div>
+                        <div style={{ fontSize: ts(12), color: T.textFaint }}>
                           #{g.id} · {g.distanceMiles.toFixed(1)} mi away
                         </div>
-                        <div style={{ fontSize: 10.5, color: '#2A5C8E', marginTop: 2 }}>
+                        <div style={{ fontSize: ts(12), color: '#2A5C8E', marginTop: 2 }}>
                           {g.cfs != null ? `${Math.round(g.cfs).toLocaleString()} CFS` : 'Flow unavailable'}
                           {g.gaugeHt != null ? ` · ${g.gaugeHt.toFixed(1)} ft` : ''}
                         </div>
@@ -513,8 +514,8 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
                           background: '#3A72A8',
                           color: 'white',
                           borderRadius: 9,
-                          padding: '6px 10px',
-                          fontSize: 10.5,
+                          padding: '8px 12px',
+                          fontSize: ts(12),
                           fontWeight: 700,
                           cursor: 'pointer',
                         }}
@@ -547,20 +548,20 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
               }}
             >
               <Ic d={ICONS.compass} size={14} color={weatherLoading ? T.textFaint : '#2A5C8E'} sw={1.8} />
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: weatherLoading ? T.textFaint : '#2A5C8E' }}>
+              <span style={{ fontSize: ts(13), fontWeight: 700, color: weatherLoading ? T.textFaint : '#2A5C8E' }}>
                 {weatherLoading ? 'Fetching weather...' : 'Pull current weather'}
               </span>
             </div>
 
-            {weatherError && <div style={{ fontSize: 11, color: T.amber, marginBottom: 8 }}>{weatherError}</div>}
+            {weatherError && <div style={{ fontSize: ts(13), color: T.amber, marginBottom: 8 }}>{weatherError}</div>}
 
             {weatherSnapshot && (
               <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 11px', marginBottom: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>{weatherSnapshot.summary || 'Conditions'}</div>
-                <div style={{ fontSize: 10.5, color: T.textFaint, marginBottom: 4 }}>
+                <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text, marginBottom: 2 }}>{weatherSnapshot.summary || 'Conditions'}</div>
+                <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>
                   {weatherSnapshot.fetchedAt ? new Date(weatherSnapshot.fetchedAt).toLocaleString() : 'Now'}
                 </div>
-                <div style={{ fontSize: 11, color: '#2A5C8E', fontWeight: 600 }}>
+                <div style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 600 }}>
                   {weatherSnapshot.temperatureC != null ? `${Math.round(cToF(weatherSnapshot.temperatureC))}°F` : 'Temp n/a'}
                   {weatherSnapshot.windKph != null ? ` · Wind ${Math.round(weatherSnapshot.windKph)} km/h` : ''}
                 </div>
@@ -584,8 +585,8 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
             <div style={{ display: 'flex', gap: 8 }}>
               {[1, 2, 3, 4, 5].map(n => (
                 <div key={n} onClick={() => setRating(n)}
-                     style={{ flex: 1, height: 48, borderRadius: 12, display: 'flex',
-                               alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18,
+                     style={{ flex: 1, height: 50, borderRadius: 12, display: 'flex',
+                               alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: ts(20),
                                background: rating >= n ? T.amberLight : T.card,
                                border: `1.5px solid ${rating >= n ? T.amber : T.border}` }}>
                   {rating >= n ? '★' : '☆'}
@@ -619,24 +620,24 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
               return (
               <div key={opt.id} onClick={() => { if (!disabled) setMediaMode(opt.id); }}
                    title={disabled ? VIDEO_DISABLED_HINT : undefined}
-                   style={{ flex: 1, padding: '7px 9px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
+                   style={{ flex: 1, padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
                             border: `1.5px solid ${mediaMode === opt.id ? '#2A5C8E' : T.border}`,
                             background: mediaMode === opt.id ? '#E4EFF8' : T.card,
                             display: 'flex', alignItems: 'center', gap: 7, justifyContent: 'center',
                             ...(disabled ? disabledMediaStyle() : {}) }}>
-                <Ic d={opt.icon} size={13} color={disabled ? T.textFaint : mediaMode === opt.id ? '#2A5C8E' : T.textSub} sw={1.8} />
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: disabled ? T.textFaint : mediaMode === opt.id ? '#2A5C8E' : T.textSub }}>{opt.label}</span>
+                <Ic d={opt.icon} size={14} color={disabled ? T.textFaint : mediaMode === opt.id ? '#2A5C8E' : T.textSub} sw={1.8} />
+                <span style={{ fontSize: ts(12), fontWeight: 700, color: disabled ? T.textFaint : mediaMode === opt.id ? '#2A5C8E' : T.textSub }}>{opt.label}</span>
               </div>
             );})}
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <div onClick={() => { if (mediaMode !== 'video' || VIDEO_ENABLED) activeCaptureRef.current?.click(); }}
-                 style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '8px 10px', fontSize: 11, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
+                 style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '10px 12px', fontSize: ts(13), fontWeight: 700, color: '#2A5C8E', cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
               {activeCaptureLabel}
             </div>
             <div onClick={() => { if (mediaMode !== 'video' || VIDEO_ENABLED) activeAttachRef.current?.click(); }}
-                 style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 11, fontWeight: 700, color: T.textSub, cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
+                 style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', fontSize: ts(13), fontWeight: 700, color: T.textSub, cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
               {activeAttachLabel}
             </div>
           </div>
@@ -679,7 +680,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
         <div style={{ marginBottom: 16 }}>
           <Label>GPS Tag</Label>
           {!!selectedLocation && (
-            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 11, color: T.textSub, marginBottom: 10 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', fontSize: ts(13), color: T.textSub, marginBottom: 10 }}>
               GPS is linked from location: <span style={{ color: '#2A5C8E', fontWeight: 700 }}>{selectedLocation.name}</span>
             </div>
           )}
@@ -692,14 +693,14 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
                    style={{ flex: 1, padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
                              background: gpsMode === opt.id ? T.accentLight : T.card,
                              border: `1.5px solid ${gpsMode === opt.id ? T.accent : T.border}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: gpsMode === opt.id ? T.accent : T.text }}>{opt.label}</div>
-                <div style={{ fontSize: 10, color: T.textFaint, marginTop: 2 }}>{opt.sub}</div>
+                <div style={{ fontSize: ts(12), fontWeight: 700, color: gpsMode === opt.id ? T.accent : T.text }}>{opt.label}</div>
+                <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 2 }}>{opt.sub}</div>
               </div>
             ))}
           </div>
 
           {gpsError && (
-            <div style={{ fontSize: 11, color: T.amber, marginBottom: 8 }}>⚠ {gpsError}</div>
+            <div style={{ fontSize: ts(13), color: T.amber, marginBottom: 8 }}>⚠ {gpsError}</div>
           )}
 
           {gpsMode === 'pin' && (
@@ -729,7 +730,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
              style={{ background: typeColor, borderRadius: 14, padding: '15px', textAlign: 'center',
                       boxShadow: `0 4px 16px ${typeColor}50`, cursor: locations.length && !selectedLocationId ? 'not-allowed' : 'pointer',
                       opacity: locations.length && !selectedLocationId ? 0.6 : 1 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'white', letterSpacing: -.2 }}>
+          <span style={{ fontSize: ts(16), fontWeight: 800, color: 'white', letterSpacing: -.2 }}>
             {initialEntry ? 'Update Entry' : 'Save Entry'}
           </span>
         </div>
@@ -739,13 +740,13 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
 }
 
 const Label = ({ children }) => (
-  <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7,
+  <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: .7,
                  textTransform: 'uppercase', marginBottom: 7, fontFamily: F }}>{children}</div>
 );
 
 const inputStyle = (T) => ({
-  width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 12, padding: '11px 14px',
-  fontSize: 13.5, fontFamily: F, color: T.text, background: T.card, outline: 'none', boxSizing: 'border-box',
+  width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 12, padding: '12px 14px',
+  fontSize: ts(14), fontFamily: F, color: T.text, background: T.card, outline: 'none', boxSizing: 'border-box',
 });
 
 function defaultTitle(type) {

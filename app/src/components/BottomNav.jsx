@@ -1,5 +1,6 @@
 import { Ic } from './Ic';
 import { T, F, ICONS } from '../tokens';
+import { ts } from '../lib/textScale';
 
 const HOME_TAB = { id: 'home', label: 'Home', d: ICONS.home, d2: ICONS.home2 };
 const TRIP_TABS = [
@@ -15,8 +16,8 @@ export function BottomNav({ active = 'home', onNav, trip }) {
     : [HOME_TAB];
 
   return (
-    <div style={{ height: 64, background: T.card, borderTop: `1px solid ${T.border}`,
-                  display: 'flex', alignItems: 'center', paddingBottom: 2, flexShrink: 0 }}>
+    <div style={{ height: 68, background: T.card, borderTop: `1px solid ${T.border}`,
+                  display: 'flex', alignItems: 'center', paddingBottom: 4, flexShrink: 0 }}>
       {tabs.map(t => (
         <div key={t.id}
           onClick={() => onNav?.(t.id)}
@@ -27,10 +28,10 @@ export function BottomNav({ active = 'home', onNav, trip }) {
             <div style={{ position: 'absolute', top: -1, width: 26, height: 3,
                            background: T.accent, borderRadius: 2 }} />
           )}
-          <Ic d={t.d} d2={t.d2} size={trip ? 20 : 21}
+          <Ic d={t.d} d2={t.d2} size={trip ? 22 : 23}
               color={active === t.id ? T.accent : T.textFaint}
               sw={active === t.id ? 2.2 : 1.6} />
-          <span style={{ fontSize: trip ? 9 : 9.5, color: active === t.id ? T.accent : T.textFaint,
+          <span style={{ fontSize: ts(11), color: active === t.id ? T.accent : T.textFaint,
                           fontWeight: active === t.id ? 700 : 400, fontFamily: F,
                           letterSpacing: 0.1, maxWidth: '100%', overflow: 'hidden',
                           textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
