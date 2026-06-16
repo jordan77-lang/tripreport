@@ -46,11 +46,11 @@ export async function generateTripReport({ manifest, settings, photos }) {
   return body;
 }
 
-export async function emailTripReport({ to, tripName, docxBase64, fileName }) {
+export async function emailTripReport({ to, tripName, docxBase64, encoding, fileName }) {
   const res = await fetch(`${FN_BASE}/email-trip-report`, {
     method: 'POST',
     headers: await authHeaders(),
-    body: JSON.stringify({ to, tripName, docxBase64, fileName }),
+    body: JSON.stringify({ to, tripName, docxBase64, encoding, fileName }),
   });
 
   const body = await res.json().catch(() => ({}));

@@ -8,8 +8,17 @@ import {
 } from './recapNarrative';
 
 const DOCX_IMAGE_WIDTH = 420;
+const EMAIL_DOCX_IMAGE_WIDTH = 240;
+/** Netlify function request body limit is ~6 MB; stay under with headroom. */
+export const MAX_EMAIL_PAYLOAD_BYTES = 5.5 * 1024 * 1024;
 
-export async function buildTripReportDocx(trip, narrativeText) {
+export async function buildTripReportDocx(trip, narrativeText, options = {}) {
+  const forEmail = Boolean(options.forEmail);
+  const imageWidth = forEmail ? EMAIL_DOCX_IMAGE_WIDTH : DOCX_IMAGE_WIDTH;
+  const imageLoadOpts = forEmail
+    ? { maxWidth: imageWidth, preferThumb: true, compress: true }
+    : { maxWidth: imageWidth, preferThumb: false, compress: false };
+
   const wovenText = ensurePhotoPlaceholders(trip, narrativeText);
   const title = trip?.name || 'Trip Report';
   const meta = [
@@ -39,7 +48,7 @@ export async function buildTripReportDocx(trip, narrativeText) {
   for (const seg of segments) {
     if (seg.type === 'photo') {
       const photo = findPhotoForPlaceholder(allPhotos, seg, usedPhotoIds);
-      if (photo) await appendTripPhoto(children, photo, usedPhotoIds);
+      if (photo) await appendTripPhoto(children, photo, usedPhotoIds, imageWidth, imageLoadOpts);
       continue;
     }
 
@@ -81,18 +90,53 @@ export async function downloadTripReportDocx(trip, narrativeText) {
 
 export async function docxBlobToBase64(blob) {
   const buffer = await blob.arrayBuffer();
+  return arrayBufferToBase64(buffer);
+}
+
+/** Gzip-compress docx for email transport (Netlify ~6 MB request limit). */
+export async function encodeDocxForEmailTransport(blob) {
+  const rawBase64 = await docxBlobToBase64(blob);
+
+  if (typeof CompressionStream !== 'undefined') {
+    const gzBlob = await gzipBlob(blob);
+    const compressed = {
+      encoding: 'gzip',
+      docxBase64: await docxBlobToBase64(gzBlob),
+    };
+    const jsonBytes = estimateEmailJsonBytes(compressed);
+    if (jsonBytes <= MAX_EMAIL_PAYLOAD_BYTES) return compressed;
+  }
+
+  const raw = { encoding: 'raw', docxBase64: rawBase64 };
+  const jsonBytes = estimateEmailJsonBytes(raw);
+  if (jsonBytes > MAX_EMAIL_PAYLOAD_BYTES) {
+    throw new Error('Report is too large to email (try Download .docx, or use fewer photos).');
+  }
+  return raw;
+}
+
+function estimateEmailJsonBytes({ encoding, docxBase64 }) {
+  return new Blob([JSON.stringify({ encoding, docxBase64, to: 'x', tripName: 'x', fileName: 'x-report.docx' })]).size;
+}
+
+async function gzipBlob(blob) {
+  const stream = blob.stream().pipeThrough(new CompressionStream('gzip'));
+  return new Response(stream).blob();
+}
+
+function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
 
-async function appendTripPhoto(children, photo, usedPhotoIds) {
-  const img = await loadImageForDocx(photo.media);
+async function appendTripPhoto(children, photo, usedPhotoIds, imageWidth, imageLoadOpts) {
+  const img = await loadImageForDocx(photo.media, imageLoadOpts);
   if (!img) return;
 
   usedPhotoIds.add(photo.id);
-  children.push(photoParagraph(img));
+  children.push(photoParagraph(img, imageWidth));
 
   const caption = photo.caption || photo.locationName || photo.eventName;
   if (caption) {
@@ -103,12 +147,12 @@ async function appendTripPhoto(children, photo, usedPhotoIds) {
   }
 }
 
-function photoParagraph(img) {
+function photoParagraph(img, imageWidth) {
   return new Paragraph({
     children: [
       new ImageRun({
         data: img.data,
-        transformation: { width: DOCX_IMAGE_WIDTH, height: Math.max(1, Math.round(DOCX_IMAGE_WIDTH * img.aspect)) },
+        transformation: { width: imageWidth, height: Math.max(1, Math.round(imageWidth * img.aspect)) },
         type: img.type,
       }),
     ],
@@ -123,19 +167,22 @@ function bodyParagraph(text) {
   });
 }
 
-async function loadImageForDocx(media) {
+async function loadImageForDocx(media, { maxWidth = DOCX_IMAGE_WIDTH, preferThumb = false, compress = false } = {}) {
   try {
     if (isLegacyMediaRef(media)) {
       const src = media.dataUrl || media.thumbDataUrl;
       if (!src) return null;
+      if (compress) return canvasToDocxImage(src, { maxSide: maxWidth * 2, quality: 0.78 });
       return dataUrlToDocxImage(src);
     }
     if (!media?.id) return null;
 
-    for (const preferThumb of [false, true]) {
-      const url = await createMediaObjectUrl(media.id, { preferThumb });
+    const order = preferThumb ? [true, false] : [false, true];
+    for (const thumb of order) {
+      const url = await createMediaObjectUrl(media.id, { preferThumb: thumb });
       if (!url) continue;
       try {
+        if (compress) return await canvasToDocxImage(url, { maxSide: maxWidth * 2, quality: 0.78 });
         const res = await fetch(url);
         const blob = await res.blob();
         const buffer = await blob.arrayBuffer();
@@ -153,6 +200,39 @@ async function loadImageForDocx(media) {
   } catch {
     return null;
   }
+}
+
+function canvasToDocxImage(src, { maxSide, quality }) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const ratio = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * ratio));
+        const h = Math.max(1, Math.round(img.height * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(async (blob) => {
+          if (!blob) {
+            reject(new Error('Could not compress image'));
+            return;
+          }
+          const buffer = await blob.arrayBuffer();
+          resolve({
+            data: new Uint8Array(buffer),
+            type: 'jpg',
+            aspect: h / w,
+          });
+        }, 'image/jpeg', quality);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = src;
+  });
 }
 
 async function dataUrlToDocxImage(dataUrl) {

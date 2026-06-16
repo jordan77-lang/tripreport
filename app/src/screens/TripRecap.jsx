@@ -11,7 +11,7 @@ import { narrativeFromReportResult } from '../lib/recapSettings';
 import { weaveChronologicalPhotoPlaceholders, ensurePhotoPlaceholders, hasPhotoPlaceholders } from '../lib/recapNarrative';
 import { generateTripReport, emailTripReport } from '../lib/recapApi';
 import { RECAP_EMAIL_ENABLED } from '../lib/recapSettings';
-import { downloadTripReportDocx, docxBlobToBase64, buildTripReportDocx } from '../lib/recapDocx';
+import { downloadTripReportDocx, encodeDocxForEmailTransport, buildTripReportDocx } from '../lib/recapDocx';
 import { ReportNarrativeEditor } from '../components/ReportNarrativeEditor';
 
 export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
@@ -138,10 +138,10 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
     try {
       saveNarrative(narrative);
       const exportText = ensurePhotoPlaceholders(trip, narrative);
-      const blob = await buildTripReportDocx(trip, exportText);
-      const docxBase64 = await docxBlobToBase64(blob);
+      const blob = await buildTripReportDocx(trip, exportText, { forEmail: true });
+      const { docxBase64, encoding } = await encodeDocxForEmailTransport(blob);
       const fileName = `${(trip.name || 'trip').replace(/[^a-z0-9]+/gi, '-')}-report.docx`;
-      await emailTripReport({ to, tripName: trip.name, docxBase64, fileName });
+      await emailTripReport({ to, tripName: trip.name, docxBase64, encoding, fileName });
       setStatus({ kind: 'success', message: `Report emailed to ${to}. Open the attachment on your PC to edit in Word or Google Docs.` });
     } catch (e) {
       setStatus({ kind: 'error', message: e?.message || 'Email failed. Try Download instead.' });
