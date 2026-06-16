@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "openai": "^4.104.0"
+    "openai": "^4.104.0",
+    "resend": "^4.8.0"
   }
 }
