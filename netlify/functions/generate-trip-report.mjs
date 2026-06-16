@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { createClient } from '@supabase/supabase-js';
+import { verifyAuth } from './shared/supabaseAuth.mjs';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -22,7 +22,7 @@ export async function handler(event) {
   }
 
   try {
-    await verifyAuth(event.headers.authorization || event.headers.Authorization);
+    await verifyAuth(event.headers.authorization || event.headers.Authorization, { optional: true });
   } catch (e) {
     return json(401, { error: e.message || 'Unauthorized' });
   }
@@ -131,20 +131,6 @@ function buildUserContent(manifest, settings, photos) {
   }
 
   return parts;
-}
-
-async function verifyAuth(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anon) return; // dev fallback if auth not configured on server
-  if (!authHeader?.startsWith('Bearer ')) {
-    throw new Error('Sign in required');
-  }
-  const jwt = authHeader.slice(7);
-  const supabase = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${jwt}` } } });
-  const { data, error } = await supabase.auth.getUser(jwt);
-  if (error || !data?.user) throw new Error('Invalid session');
-  return data.user;
 }
 
 function json(statusCode, body) {

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { verifyAuth } from './shared/supabaseAuth.mjs';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -69,18 +69,6 @@ export async function handler(event) {
   }
 
   return json(200, { ok: true, id: data.id });
-}
-
-async function verifyAuth(authHeader) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anon) throw new Error('Sign in required');
-  if (!authHeader?.startsWith('Bearer ')) throw new Error('Sign in required');
-  const jwt = authHeader.slice(7);
-  const supabase = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${jwt}` } } });
-  const { data, error } = await supabase.auth.getUser(jwt);
-  if (error || !data?.user) throw new Error('Invalid session');
-  return data.user;
 }
 
 function json(statusCode, body) {
