@@ -1,5 +1,5 @@
 -- TripReport: Supabase Storage bucket + policies for trip-media
--- Run in Supabase SQL Editor after enabling Storage on your project.
+-- Run in Supabase SQL Editor after 001_initial_schema.sql (safe to re-run).
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
@@ -14,6 +14,7 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+drop policy if exists "Trip members read trip media" on storage.objects;
 create policy "Trip members read trip media"
   on storage.objects for select
   to authenticated
@@ -26,6 +27,7 @@ create policy "Trip members read trip media"
     )
   );
 
+drop policy if exists "Trip members upload trip media" on storage.objects;
 create policy "Trip members upload trip media"
   on storage.objects for insert
   to authenticated
@@ -38,6 +40,7 @@ create policy "Trip members upload trip media"
     )
   );
 
+drop policy if exists "Trip members update trip media" on storage.objects;
 create policy "Trip members update trip media"
   on storage.objects for update
   to authenticated

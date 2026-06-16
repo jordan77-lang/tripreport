@@ -1,9 +1,9 @@
--- TripReport initial schema
--- Run in Supabase SQL Editor (Dashboard → SQL → New query → Run)
+-- TripReport initial schema (idempotent — safe to re-run)
+-- Run in Supabase SQL Editor: Dashboard → SQL → New query → Run
 
 -- ── Profiles ────────────────────────────────────────────────────────────────
 
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   display_name text,
   created_at timestamptz not null default now(),
@@ -12,19 +12,22 @@ create table public.profiles (
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "Profiles are viewable by authenticated users" on public.profiles;
 create policy "Profiles are viewable by authenticated users"
   on public.profiles for select to authenticated using (true);
 
+drop policy if exists "Users can insert own profile" on public.profiles;
 create policy "Users can insert own profile"
   on public.profiles for insert to authenticated with check (auth.uid() = id);
 
+drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile"
   on public.profiles for update to authenticated
   using (auth.uid() = id) with check (auth.uid() = id);
 
 -- ── Trips ───────────────────────────────────────────────────────────────────
 
-create table public.trips (
+create table if not exists public.trips (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references public.profiles (id) on delete restrict,
   name text not null,
@@ -41,14 +44,14 @@ create table public.trips (
   created_at timestamptz not null default now()
 );
 
-create index trips_owner_id_idx on public.trips (owner_id);
-create index trips_updated_at_idx on public.trips (updated_at desc);
+create index if not exists trips_owner_id_idx on public.trips (owner_id);
+create index if not exists trips_updated_at_idx on public.trips (updated_at desc);
 
 alter table public.trips enable row level security;
 
 -- ── Trip members ──────────────────────────────────────────────────────────────
 
-create table public.trip_members (
+create table if not exists public.trip_members (
   trip_id uuid not null references public.trips (id) on delete cascade,
   user_id uuid not null references public.profiles (id) on delete cascade,
   role text not null default 'contributor'
@@ -57,11 +60,11 @@ create table public.trip_members (
   primary key (trip_id, user_id)
 );
 
-create index trip_members_user_id_idx on public.trip_members (user_id);
+create index if not exists trip_members_user_id_idx on public.trip_members (user_id);
 
 -- ── Invites ─────────────────────────────────────────────────────────────────
 
-create table public.trip_invites (
+create table if not exists public.trip_invites (
   code text primary key,
   trip_id uuid not null references public.trips (id) on delete cascade,
   created_by uuid not null references public.profiles (id) on delete cascade,
@@ -73,7 +76,7 @@ create table public.trip_invites (
   created_at timestamptz not null default now()
 );
 
-create index trip_invites_trip_id_idx on public.trip_invites (trip_id);
+create index if not exists trip_invites_trip_id_idx on public.trip_invites (trip_id);
 
 -- ── Access helper (avoids recursive RLS) ────────────────────────────────────
 
@@ -95,14 +98,17 @@ grant execute on function public.is_trip_member(uuid, uuid) to authenticated;
 
 -- ── Trip RLS ────────────────────────────────────────────────────────────────
 
+drop policy if exists "Members can view trips" on public.trips;
 create policy "Members can view trips"
   on public.trips for select to authenticated
   using (public.is_trip_member(id));
 
+drop policy if exists "Owner can insert trips" on public.trips;
 create policy "Owner can insert trips"
   on public.trips for insert to authenticated
   with check (owner_id = auth.uid());
 
+drop policy if exists "Contributors can update trips" on public.trips;
 create policy "Contributors can update trips"
   on public.trips for update to authenticated
   using (
@@ -113,16 +119,19 @@ create policy "Contributors can update trips"
     )
   );
 
+drop policy if exists "Owner can delete trips" on public.trips;
 create policy "Owner can delete trips"
   on public.trips for delete to authenticated
   using (owner_id = auth.uid());
 
 alter table public.trip_members enable row level security;
 
+drop policy if exists "Members can view trip membership" on public.trip_members;
 create policy "Members can view trip membership"
   on public.trip_members for select to authenticated
   using (public.is_trip_member(trip_id));
 
+drop policy if exists "Owner can add members" on public.trip_members;
 create policy "Owner can add members"
   on public.trip_members for insert to authenticated
   with check (
@@ -130,12 +139,14 @@ create policy "Owner can add members"
     or user_id = auth.uid()
   );
 
+drop policy if exists "Owner can update members" on public.trip_members;
 create policy "Owner can update members"
   on public.trip_members for update to authenticated
   using (
     exists (select 1 from public.trips t where t.id = trip_members.trip_id and t.owner_id = auth.uid())
   );
 
+drop policy if exists "Owner or self can remove membership" on public.trip_members;
 create policy "Owner or self can remove membership"
   on public.trip_members for delete to authenticated
   using (
@@ -145,15 +156,18 @@ create policy "Owner or self can remove membership"
 
 alter table public.trip_invites enable row level security;
 
+drop policy if exists "Anyone authenticated can read invites" on public.trip_invites;
 create policy "Anyone authenticated can read invites"
   on public.trip_invites for select to authenticated using (true);
 
+drop policy if exists "Owner can create invites" on public.trip_invites;
 create policy "Owner can create invites"
   on public.trip_invites for insert to authenticated
   with check (
     exists (select 1 from public.trips t where t.id = trip_invites.trip_id and t.owner_id = auth.uid())
   );
 
+drop policy if exists "Owner can update invites" on public.trip_invites;
 create policy "Owner can update invites"
   on public.trip_invites for update to authenticated
   using (
@@ -189,9 +203,9 @@ $$;
 
 grant execute on function public.join_trip_by_code(text) to authenticated;
 
--- ── Media metadata (files in Storage — next sprint) ─────────────────────────
+-- ── Media metadata ──────────────────────────────────────────────────────────
 
-create table public.media_objects (
+create table if not exists public.media_objects (
   id uuid primary key default gen_random_uuid(),
   trip_id uuid not null references public.trips (id) on delete cascade,
   uploaded_by uuid not null references public.profiles (id) on delete cascade,
@@ -203,20 +217,22 @@ create table public.media_objects (
   created_at timestamptz not null default now()
 );
 
-create index media_objects_trip_id_idx on public.media_objects (trip_id);
+create index if not exists media_objects_trip_id_idx on public.media_objects (trip_id);
 alter table public.media_objects enable row level security;
 
+drop policy if exists "Members can view media metadata" on public.media_objects;
 create policy "Members can view media metadata"
   on public.media_objects for select to authenticated
   using (public.is_trip_member(trip_id));
 
+drop policy if exists "Contributors can insert media metadata" on public.media_objects;
 create policy "Contributors can insert media metadata"
   on public.media_objects for insert to authenticated
   with check (uploaded_by = auth.uid() and public.is_trip_member(trip_id));
 
 -- ── Offline map regions ─────────────────────────────────────────────────────
 
-create table public.map_regions (
+create table if not exists public.map_regions (
   id text primary key,
   name text not null,
   description text,
@@ -233,6 +249,7 @@ create table public.map_regions (
 
 alter table public.map_regions enable row level security;
 
+drop policy if exists "Anyone can read active map regions" on public.map_regions;
 create policy "Anyone can read active map regions"
   on public.map_regions for select to authenticated, anon
   using (active = true);
@@ -249,8 +266,16 @@ insert into public.map_regions (
   9,
   '/maps/main-salmon-river.pmtiles',
   1
-);
+)
+on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  river = excluded.river,
+  bounds = excluded.bounds,
+  center = excluded.center,
+  default_zoom = excluded.default_zoom,
+  pmtiles_path = excluded.pmtiles_path,
+  sort_order = excluded.sort_order,
+  active = true;
 
--- ── Storage bucket for trip photos (Dashboard → Storage → New bucket) ─────────
--- Name: trip-media | Public: false
--- Then add RLS policies in Storage policies UI.
+-- ── Photo storage bucket: run 002_trip_media_storage.sql next ───────────────
