@@ -660,7 +660,7 @@ export async function fetchMapRegions() {
 function buildCloudPayload(trip) {
   const {
     entries, locations, events, track, trackSessions, collaborators,
-    gearItems, meals, expenses, shoppingItems,
+    gearItems, meals, expenses, expenseGroups, shoppingItems,
     coverPhoto, mapArea, offlineRegions,
     gpsTrackingEnabled, gpsBackgroundTracking, gpsIntervalMs,
     startedAt, endedAt, gpsSessionActive, gpsSessionId, gpsSessionStartedAt,
@@ -677,6 +677,7 @@ function buildCloudPayload(trip) {
     gearItems: gearItems || [],
     meals: meals || [],
     expenses: expenses || [],
+    expenseGroups: expenseGroups || [],
     shoppingItems: shoppingItems || [],
     coverPhoto: stripHeavyMedia(coverPhoto),
     mapArea: mapArea || null,
@@ -719,6 +720,7 @@ function cloudRowToLocalTrip(row) {
     gearItems: p.gearItems || [],
     meals: p.meals || [],
     expenses: p.expenses || [],
+    expenseGroups: p.expenseGroups || existing?.expenseGroups || [],
     shoppingItems: p.shoppingItems || [],
     coverPhoto: p.coverPhoto || null,
     mapArea: p.mapArea || null,

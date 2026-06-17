@@ -2,8 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Ic } from './Ic';
 import { T, F, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
-import { getCurrentUserId, addExpense, removeExpense } from '../lib/storage';
+import { getCurrentUserId, addExpense, removeExpense, updateExpense, addExpenseGroup, updateExpenseGroup, removeExpenseGroup } from '../lib/storage';
 import { savePlanningToCloud } from '../lib/planningSave';
+import {
+  buildSplitPayload,
+  getEventCrewIds,
+  getExpenseGroups,
+  inferSplitPreset,
+  resolveGroupMembers,
+  SPLIT_ALL,
+  SPLIT_EVENT_CREW,
+} from '../lib/expenseGroups';
 import {
   buildTripParticipants,
   buildParticipantAliasMap,
@@ -47,15 +56,17 @@ export function TripExpenses({
   const startsCollapsed = embedCollapsed || tripOverviewCompact;
   const currentUserId = getCurrentUserId();
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
+  const expenseGroups = useMemo(() => getExpenseGroups(trip), [trip]);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState(currentUserId);
-  const [splitMode, setSplitMode] = useState('custom');
+  const [splitPreset, setSplitPreset] = useState(SPLIT_ALL);
+  const [splitGroupId, setSplitGroupId] = useState(null);
   const [splitIds, setSplitIds] = useState([]);
   const [panel, setPanel] = useState(compact ? 'summary' : 'ledger');
   const [sectionOpen, setSectionOpen] = useState(!startsCollapsed);
-  const [expensesOpen, setExpensesOpen] = useState(false);
   const [showAddForm, setShowAddForm] = useState(!compact && !embedCollapsed);
+  const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [showAllItems, setShowAllItems] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -72,70 +83,136 @@ export function TripExpenses({
   );
 
   useEffect(() => {
-    setSplitIds(participants.map((p) => p.id));
-    const match = participants.find((p) => p.id === currentUserId);
-    if (!participants.some((p) => p.id === paidBy)) {
-      setPaidBy(match?.id || participants[0]?.id || currentUserId);
+    const participantIds = participants.map((p) => p.id);
+    if (participantIds.length && !participantIds.includes(paidBy)) {
+      const match = participants.find((p) => p.id === currentUserId);
+      setPaidBy(match?.id || participantIds[0] || currentUserId);
     }
-    if (scope === 'event' || scope === 'location') {
-      setSplitMode('custom');
-    } else {
-      setSplitMode('all');
-    }
-  }, [participants, paidBy, currentUserId, scope]);
+  }, [participants, paidBy, currentUserId]);
 
-  function toggleSplitId(id) {
-    setSplitIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  function defaultSplitState() {
+    const participantIds = participants.map((p) => p.id);
+    const crew = getEventCrewIds(event, participantIds, aliasMap);
+    if (scope === 'event' && crew.length > 0) {
+      return { preset: SPLIT_EVENT_CREW, groupId: SPLIT_EVENT_CREW, ids: crew };
+    }
+    if (scope === 'all' || scope === 'trip' || scope === 'location') {
+      return { preset: SPLIT_ALL, groupId: null, ids: participantIds };
+    }
+    return { preset: 'custom', groupId: null, ids: participantIds };
   }
 
-  function selectAllSplit() {
-    setSplitIds(participants.map((p) => p.id));
+  function applySplitPreset(preset, groupId = null) {
+    const participantIds = participants.map((p) => p.id);
+    setSplitPreset(preset);
+    if (preset === SPLIT_ALL) {
+      setSplitGroupId(null);
+      setSplitIds(participantIds);
+      return;
+    }
+    if (preset === SPLIT_EVENT_CREW) {
+      setSplitGroupId(SPLIT_EVENT_CREW);
+      setSplitIds(getEventCrewIds(event, participantIds, aliasMap));
+      return;
+    }
+    if (preset === 'group' && groupId) {
+      setSplitGroupId(groupId);
+      const group = expenseGroups.find((g) => g.id === groupId);
+      setSplitIds(resolveGroupMembers(group, participantIds, aliasMap));
+      return;
+    }
+    setSplitGroupId(null);
   }
 
   function openAddForm() {
+    setEditingExpenseId(null);
+    setDescription('');
+    setAmount('');
+    const { preset, groupId, ids } = defaultSplitState();
+    setSplitPreset(preset);
+    setSplitGroupId(groupId);
+    setSplitIds(ids);
     setSectionOpen(true);
-    setExpensesOpen(true);
     setShowAddForm(true);
     setPanel('ledger');
   }
 
   function closeAddForm() {
     setShowAddForm(false);
+    setEditingExpenseId(null);
     if (startsCollapsed && visibleExpenses.length === 0) {
-      setExpensesOpen(false);
       setSectionOpen(false);
     }
   }
 
   function collapseSection() {
     setSectionOpen(false);
-    setExpensesOpen(false);
     setShowAddForm(false);
+    setEditingExpenseId(null);
     setPanel('ledger');
     setExpandedId(null);
   }
 
-  function openExpensesList() {
-    setExpensesOpen(true);
+  function startEdit(expense) {
+    if (!expense) return;
+    const participantIds = participants.map((p) => p.id);
+    const payerId = resolveParticipantId(expense.paidBy, aliasMap, participantIds) || expense.paidBy;
+    const inferred = inferSplitPreset(expense, {
+      participantIds,
+      groups: expenseGroups,
+      event,
+      aliasMap,
+    });
+    setEditingExpenseId(expense.id);
+    setDescription(expense.description || '');
+    setAmount(expense.amount != null ? String(expense.amount) : '');
+    setPaidBy(participantIds.includes(payerId) ? payerId : (participantIds[0] || currentUserId));
+    setSplitPreset(inferred.preset);
+    setSplitGroupId(inferred.groupId);
+    setSplitIds(inferred.splitIds.length ? inferred.splitIds : participantIds);
+    setSectionOpen(true);
+    setShowAddForm(true);
     setPanel('ledger');
+    setExpandedId(null);
+  }
+
+  function splitIsValid() {
+    if (splitPreset === SPLIT_ALL) return participants.length > 0;
+    if (splitPreset === SPLIT_EVENT_CREW) {
+      return getEventCrewIds(event, participants.map((p) => p.id), aliasMap).length > 0;
+    }
+    if (splitPreset === 'group' && splitGroupId) {
+      const group = expenseGroups.find((g) => g.id === splitGroupId);
+      return resolveGroupMembers(group, participants.map((p) => p.id), aliasMap).length > 0;
+    }
+    return splitIds.length > 0;
   }
 
   async function save() {
     if (!trip?.id || saving) return;
     const value = parseFloat(amount);
     if (!description.trim() || !Number.isFinite(value) || value <= 0) return;
-    if (splitMode === 'custom' && splitIds.length === 0) return;
+    if (!splitIsValid()) return;
 
     const who = participants.find((p) => p.id === paidBy);
-    const splitAmong = splitMode === 'all'
-      ? participants.map((p) => p.id)
-      : [...splitIds];
+    const splitFields = buildSplitPayload({
+      preset: splitPreset,
+      groupId: splitGroupId,
+      splitIds,
+      participants,
+      groups: expenseGroups,
+      event,
+      aliasMap,
+    });
+    const existing = editingExpenseId
+      ? allExpenses.find((e) => e.id === editingExpenseId)
+      : null;
     const payload = {
-      description,
+      description: description.trim(),
       amount: value,
       paidBy,
       paidByLabel: who?.label || null,
-      splitAmong,
+      ...splitFields,
     };
 
     if (scope === 'event' && event) {
@@ -146,20 +223,41 @@ export function TripExpenses({
     } else if (scope === 'location' && location) {
       payload.locationId = location.id;
       payload.locationName = location.name;
+    } else if (existing) {
+      payload.locationId = existing.locationId ?? null;
+      payload.locationName = existing.locationName ?? null;
+      payload.eventId = existing.eventId ?? null;
+      payload.eventName = existing.eventName ?? null;
     }
 
     setSaving(true);
     try {
       await savePlanningToCloud(trip.id, () => {
-        addExpense(trip.id, payload);
+        if (editingExpenseId) {
+          updateExpense(trip.id, editingExpenseId, payload);
+        } else {
+          addExpense(trip.id, payload);
+        }
       });
       setDescription('');
       setAmount('');
+      setEditingExpenseId(null);
       setShowAddForm(false);
       onTripUpdate?.();
     } finally {
       setSaving(false);
     }
+  }
+
+  async function deleteExpense(expense) {
+    if (!trip?.id || !expense?.id) return;
+    if (!window.confirm(`Delete "${expense.description}" (${money(expense.amount)})?`)) return;
+    await savePlanningToCloud(trip.id, () => {
+      removeExpense(trip.id, expense.id);
+    });
+    if (editingExpenseId === expense.id) closeAddForm();
+    if (expandedId === expense.id) setExpandedId(null);
+    onTripUpdate?.();
   }
 
   const total = visibleExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
@@ -184,12 +282,12 @@ export function TripExpenses({
         : 'Trip Expenses';
 
   const hint = scope === 'event'
-    ? 'Split costs for this event only — e.g. gas for people in this vehicle.'
+    ? 'Gas and tolls: split with this event\'s crew. Set crew in Edit Event above.'
     : scope === 'location'
-      ? 'Costs for this stop. Open an event to split by vehicle or subgroup.'
+      ? 'Tag costs to this stop, or open an event to split by vehicle crew.'
       : scope === 'trip'
         ? 'Pre-trip costs not tied to a location yet.'
-        : 'All trip costs. Event and location expenses are labeled below.';
+        : 'All trip costs roll into one settle-up. Use whole trip for permits and group meals; saved groups or event crews for subgroups.';
 
   const placeholder = scope === 'event' ? 'Gas, tolls, permit…' : 'What was bought (gas, groceries…)';
   const listLimit = compact && !showAllItems ? 3 : visibleExpenses.length;
@@ -205,7 +303,7 @@ export function TripExpenses({
         total={total}
         count={visibleExpenses.length}
         unsettledCount={unsettledCount}
-        onExpand={() => setSectionOpen(true)}
+        onExpand={() => { setSectionOpen(true); setPanel('ledger'); }}
         onAdd={openAddForm}
       />
     );
@@ -239,7 +337,7 @@ export function TripExpenses({
         count={visibleExpenses.length}
         unsettledCount={unsettledCount}
         compact={compact}
-        onOpenBreakdown={() => { setPanel('breakdown'); setExpensesOpen(false); }}
+        onOpenBreakdown={() => setPanel('breakdown')}
       />
 
       {!compact && (
@@ -258,31 +356,28 @@ export function TripExpenses({
           breakdown={breakdown}
           settlements={settlements}
           participants={participants}
-          onClose={() => setPanel('summary')}
+          onClose={() => setPanel('ledger')}
         />
       )}
 
-      {tripOverviewCompact && sectionOpen && panel !== 'breakdown' && !expensesOpen && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-          {visibleExpenses.length > 0 ? (
-            <button type="button" onClick={openExpensesList} style={viewAllStyle}>
-              View {visibleExpenses.length} expense{visibleExpenses.length === 1 ? '' : 's'}
-            </button>
-          ) : (
-            <button type="button" onClick={openAddForm} style={addTriggerStyle}>
-              <Ic d={ICONS.plus} size={14} color={T.accent} sw={2.4} />
-              <span>Add expense</span>
-            </button>
-          )}
-          {onOpenFull && (
-            <button type="button" onClick={onOpenFull} style={viewAllStyle}>
-              Manage in Trip Plan →
-            </button>
-          )}
+      {tripOverviewCompact && onOpenFull && sectionOpen && panel !== 'breakdown' && (
+        <div style={{ marginBottom: 10 }}>
+          <button type="button" onClick={onOpenFull} style={viewAllStyle}>
+            Manage in Trip Plan →
+          </button>
         </div>
       )}
 
-      {((panel === 'ledger' || (compact && panel !== 'breakdown')) && (!tripOverviewCompact || expensesOpen)) && (
+      {!compact && scope === 'all' && (
+        <ExpenseGroupsPanel
+          trip={trip}
+          participants={participants}
+          groups={expenseGroups}
+          onTripUpdate={onTripUpdate}
+        />
+      )}
+
+      {(panel === 'ledger' || (compact && panel !== 'breakdown')) && (
         <>
           {!showAddForm ? (
             <button
@@ -298,20 +393,34 @@ export function TripExpenses({
               description={description}
               amount={amount}
               paidBy={paidBy}
-              splitMode={splitMode}
+              splitPreset={splitPreset}
+              splitGroupId={splitGroupId}
               splitIds={splitIds}
               participants={participants}
+              expenseGroups={expenseGroups}
+              event={event}
+              eventCrewCount={getEventCrewIds(event, participants.map((p) => p.id), aliasMap).length}
               scope={scope}
               hint={hint}
               placeholder={placeholder}
+              editing={Boolean(editingExpenseId)}
               onDescription={setDescription}
               onAmount={setAmount}
               onPaidBy={setPaidBy}
-              onSplitMode={setSplitMode}
-              onToggleSplitId={toggleSplitId}
-              onSelectAllSplit={selectAllSplit}
+              onSplitPreset={applySplitPreset}
+              onToggleSplitId={(id) => {
+                setSplitPreset('custom');
+                setSplitGroupId(null);
+                setSplitIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+              }}
+              onSelectAllSplit={() => {
+                setSplitPreset('custom');
+                setSplitGroupId(null);
+                setSplitIds(participants.map((p) => p.id));
+              }}
               onAdd={() => void save()}
               saving={saving}
+              splitValid={splitIsValid()}
               onCancel={closeAddForm}
             />
           )}
@@ -329,23 +438,15 @@ export function TripExpenses({
                   aliasMap={aliasMap}
                   scope={scope}
                   expanded={expandedId === e.id}
+                  editing={editingExpenseId === e.id}
                   onToggle={() => setExpandedId((id) => (id === e.id ? null : e.id))}
-                  onDelete={async () => {
-                    await savePlanningToCloud(trip.id, () => {
-                      removeExpense(trip.id, e.id);
-                    });
-                    onTripUpdate?.();
-                  }}
+                  onEdit={() => startEdit(e)}
+                  onDelete={() => void deleteExpense(e)}
                 />
               ))}
               {hiddenCount > 0 && (
                 <button type="button" onClick={() => setShowAllItems(true)} style={viewAllStyle}>
                   View all {visibleExpenses.length} expenses
-                </button>
-              )}
-              {compact && onOpenFull && visibleExpenses.length > 0 && (
-                <button type="button" onClick={onOpenFull} style={viewAllStyle}>
-                  Manage in Trip Plan →
                 </button>
               )}
               {compact && unsettledCount > 0 && panel !== 'breakdown' && (
@@ -546,7 +647,7 @@ function BreakdownPanel({ breakdown, settlements, participants, embedded = false
   );
 }
 
-function ExpenseRow({ expense, trip, participants, aliasMap, scope, expanded, onToggle, onDelete }) {
+function ExpenseRow({ expense, trip, participants, aliasMap, scope, expanded, editing, onToggle, onEdit, onDelete }) {
   const participantIds = participants.map((p) => p.id);
   const split = resolveSplitIds(expense, participantIds, aliasMap);
   const shareEach = expenseShareAmount(expense, split);
@@ -554,7 +655,7 @@ function ExpenseRow({ expense, trip, participants, aliasMap, scope, expanded, on
   const context = scope === 'all' ? formatExpenseContext(expense) : null;
 
   return (
-    <div style={expenseRowStyle}>
+    <div style={{ ...expenseRowStyle, borderColor: editing ? T.accent : T.border }}>
       <button type="button" onClick={onToggle} style={expenseMainBtnStyle}>
         <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
@@ -576,13 +677,176 @@ function ExpenseRow({ expense, trip, participants, aliasMap, scope, expanded, on
                 <div>{money(shareEach)} per person ({split.length} {split.length === 1 ? 'person' : 'people'})</div>
               )}
               {!!context && <div style={{ color: T.accentMid }}>{context}</div>}
+              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                <button type="button" onClick={(ev) => { ev.stopPropagation(); onEdit(); }} style={rowActionBtnStyle}>
+                  Edit
+                </button>
+                <button type="button" onClick={(ev) => { ev.stopPropagation(); void onDelete(); }} style={{ ...rowActionBtnStyle, color: '#8A1414' }}>
+                  Delete
+                </button>
+              </div>
             </div>
           )}
         </div>
         <span style={{ fontSize: ts(11), color: T.textFaint, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : 'none' }}>›</span>
       </button>
-      <button type="button" onClick={() => void onDelete()} aria-label="Delete expense" style={deleteBtnStyle}>✕</button>
     </div>
+  );
+}
+
+function ExpenseGroupsPanel({ trip, participants, groups, onTripUpdate }) {
+  const [open, setOpen] = useState(groups.length > 0);
+  const [editingId, setEditingId] = useState(null);
+  const [name, setName] = useState('');
+  const [memberIds, setMemberIds] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  function resetDraft() {
+    setEditingId(null);
+    setName('');
+    setMemberIds([]);
+  }
+
+  function startAdd() {
+    setEditingId('new');
+    setName('');
+    setMemberIds(participants.map((p) => p.id));
+    setOpen(true);
+  }
+
+  function startEditGroup(group) {
+    setEditingId(group.id);
+    setName(group.name);
+    setMemberIds(group.memberIds || []);
+    setOpen(true);
+  }
+
+  async function saveGroup() {
+    if (!trip?.id || saving || !name.trim() || memberIds.length === 0) return;
+    setSaving(true);
+    try {
+      await savePlanningToCloud(trip.id, () => {
+        if (editingId === 'new') {
+          addExpenseGroup(trip.id, { name: name.trim(), memberIds });
+        } else {
+          updateExpenseGroup(trip.id, editingId, { name: name.trim(), memberIds });
+        }
+      });
+      resetDraft();
+      onTripUpdate?.();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteGroup(group) {
+    if (!trip?.id || !window.confirm(`Delete split group "${group.name}"?`)) return;
+    await savePlanningToCloud(trip.id, () => {
+      removeExpenseGroup(trip.id, group.id);
+    });
+    if (editingId === group.id) resetDraft();
+    onTripUpdate?.();
+  }
+
+  return (
+    <div style={{ marginBottom: 12, background: T.bg, borderRadius: 12, border: `1px solid ${T.border}`, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...ghostBtnStyle, padding: 0, color: T.text, fontWeight: 800 }}>
+          Split groups ({groups.length})
+        </button>
+        <button type="button" onClick={startAdd} style={{ ...ghostBtnStyle, padding: 0, color: T.accent }}>
+          + New group
+        </button>
+      </div>
+      <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 4, lineHeight: 1.4 }}>
+        Save crews like &quot;Our car&quot; or &quot;Raft team&quot; — reuse when splitting gas, groceries, etc.
+      </div>
+
+      {open && groups.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {groups.map((group) => (
+            <div key={group.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: T.card, borderRadius: 10, border: `1px solid ${T.border}` }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>{group.name}</div>
+                <div style={{ fontSize: ts(11), color: T.textFaint }}>
+                  {(group.memberIds || []).length} people
+                </div>
+              </div>
+              <button type="button" onClick={() => startEditGroup(group)} style={rowActionBtnStyle}>Edit</button>
+              <button type="button" onClick={() => void deleteGroup(group)} style={{ ...rowActionBtnStyle, color: '#8A1414' }}>Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editingId && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Group name (e.g. Car 1)"
+            style={{ ...inputStyle, marginBottom: 8 }}
+          />
+          <ParticipantChips
+            participants={participants}
+            selectedIds={memberIds}
+            onToggle={(id) => setMemberIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))}
+            onSelectAll={() => setMemberIds(participants.map((p) => p.id))}
+          />
+          {memberIds.length === 0 && (
+            <div style={{ fontSize: ts(11), color: '#8A5526', marginTop: 6 }}>Pick at least one person</div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button type="button" onClick={resetDraft} style={{ ...ghostBtnStyle, flex: 1 }}>Cancel</button>
+            <button
+              type="button"
+              onClick={() => void saveGroup()}
+              disabled={saving || !name.trim() || memberIds.length === 0}
+              style={{ ...breakdownBtnStyle, flex: 1, opacity: saving || !name.trim() || memberIds.length === 0 ? 0.6 : 1 }}
+            >
+              {saving ? 'Saving…' : 'Save group'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ParticipantChips({ participants, selectedIds, onToggle, onSelectAll, compact = false }) {
+  return (
+    <>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {participants.map((p) => {
+          const on = selectedIds.includes(p.id);
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onToggle(p.id)}
+              style={{
+                padding: compact ? '4px 9px' : '5px 10px',
+                borderRadius: 14,
+                fontSize: ts(11),
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: F,
+                background: on ? T.accent : T.bg,
+                color: on ? 'white' : T.textSub,
+                border: `1.5px solid ${on ? T.accent : T.border}`,
+              }}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      {onSelectAll && (
+        <button type="button" onClick={onSelectAll} style={{ ...ghostBtnStyle, marginTop: 6, padding: 0 }}>
+          Select all
+        </button>
+      )}
+    </>
   );
 }
 
@@ -590,26 +854,35 @@ function AddExpenseForm({
   description,
   amount,
   paidBy,
-  splitMode,
+  splitPreset,
+  splitGroupId,
   splitIds,
   participants,
+  expenseGroups,
+  event,
+  eventCrewCount,
   scope,
   hint,
   placeholder,
+  editing = false,
   onDescription,
   onAmount,
   onPaidBy,
-  onSplitMode,
+  onSplitPreset,
   onToggleSplitId,
   onSelectAllSplit,
   onAdd,
   saving = false,
+  splitValid = true,
   onCancel,
 }) {
+  const showCustom = splitPreset === 'custom';
+  const eventCrewLabel = event?.name ? `${event.name} crew` : 'Event crew';
+
   return (
     <div style={composerStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <div style={{ fontSize: ts(13), fontWeight: 800, color: T.text }}>New expense</div>
+        <div style={{ fontSize: ts(13), fontWeight: 800, color: T.text }}>{editing ? 'Edit expense' : 'New expense'}</div>
         <button type="button" onClick={onCancel} style={ghostBtnStyle}>Cancel</button>
       </div>
       <input
@@ -629,53 +902,63 @@ function AddExpenseForm({
         <select value={paidBy} onChange={(e) => onPaidBy(e.target.value)} style={selectStyle}>
           {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
-        <button type="button" onClick={onAdd} disabled={saving} style={{ ...addBtnStyle, width: 'auto', minWidth: 72, padding: '0 14px', opacity: saving ? 0.7 : 1, cursor: saving ? 'wait' : 'pointer' }} aria-label="Save expense">
+        <button type="button" onClick={onAdd} disabled={saving || !splitValid} style={{ ...addBtnStyle, width: 'auto', minWidth: 72, padding: '0 14px', opacity: saving || !splitValid ? 0.7 : 1, cursor: saving ? 'wait' : 'pointer' }} aria-label={editing ? 'Save expense changes' : 'Save expense'}>
           <span style={{ color: 'white', fontSize: ts(12), fontWeight: 800, fontFamily: F }}>{saving ? 'Saving…' : 'Save'}</span>
         </button>
       </div>
 
       <div style={{ marginTop: 10 }}>
         <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Split between</div>
-        <div style={{ display: 'flex', gap: 6, marginBottom: splitMode === 'custom' ? 8 : 0 }}>
-          {(scope === 'trip' || scope === 'all') && (
-            <SplitModeChip active={splitMode === 'all'} label="Whole group" onClick={() => onSplitMode('all')} />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: showCustom ? 8 : 0 }}>
+          {(scope === 'trip' || scope === 'all' || scope === 'location') && (
+            <SplitModeChip
+              active={splitPreset === SPLIT_ALL}
+              label="Whole trip"
+              onClick={() => onSplitPreset(SPLIT_ALL)}
+            />
           )}
-          <SplitModeChip active={splitMode === 'custom'} label="Subgroup" onClick={() => onSplitMode('custom')} />
+          {scope === 'event' && eventCrewCount > 0 && (
+            <SplitModeChip
+              active={splitPreset === SPLIT_EVENT_CREW}
+              label={eventCrewLabel}
+              onClick={() => onSplitPreset(SPLIT_EVENT_CREW)}
+            />
+          )}
+          {expenseGroups.map((group) => (
+            <SplitModeChip
+              key={group.id}
+              active={splitPreset === 'group' && splitGroupId === group.id}
+              label={group.name}
+              onClick={() => onSplitPreset('group', group.id)}
+            />
+          ))}
+          <SplitModeChip
+            active={splitPreset === 'custom'}
+            label="Pick people"
+            onClick={() => onSplitPreset('custom')}
+          />
         </div>
-        {splitMode === 'custom' && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {participants.map((p) => {
-              const on = splitIds.includes(p.id);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onToggleSplitId(p.id)}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: 14,
-                    fontSize: ts(11),
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    fontFamily: F,
-                    background: on ? T.accent : T.bg,
-                    color: on ? 'white' : T.textSub,
-                    border: `1.5px solid ${on ? T.accent : T.border}`,
-                  }}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
+        {scope === 'event' && eventCrewCount === 0 && (
+          <div style={{ fontSize: ts(11), color: T.textFaint, marginBottom: 8 }}>
+            Tip: set this event&apos;s crew in Edit Event to default gas splits to your car.
           </div>
         )}
-        {splitMode === 'custom' && splitIds.length === 0 && (
+        {showCustom && (
+          <ParticipantChips
+            participants={participants}
+            selectedIds={splitIds}
+            onToggle={onToggleSplitId}
+            onSelectAll={onSelectAllSplit}
+          />
+        )}
+        {showCustom && splitIds.length === 0 && (
           <div style={{ fontSize: ts(11), color: '#8A5526', marginTop: 6 }}>Pick at least one person</div>
         )}
-        {splitMode === 'custom' && (
-          <button type="button" onClick={onSelectAllSplit} style={{ ...ghostBtnStyle, marginTop: 6, padding: 0 }}>
-            Select all
-          </button>
+        {splitPreset === SPLIT_EVENT_CREW && eventCrewCount === 0 && (
+          <div style={{ fontSize: ts(11), color: '#8A5526', marginTop: 6 }}>No crew on this event yet — pick people or set crew above.</div>
+        )}
+        {splitPreset === 'group' && splitGroupId && !splitIds.length && (
+          <div style={{ fontSize: ts(11), color: '#8A5526', marginTop: 6 }}>This group has no members on the trip.</div>
         )}
       </div>
       <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 8, lineHeight: 1.4 }}>{hint}</div>
@@ -879,19 +1162,21 @@ const expenseMainBtnStyle = {
   minWidth: 0,
 };
 
-const deleteBtnStyle = {
+const rowActionBtnStyle = {
   border: 'none',
   background: 'transparent',
-  color: T.textFaint,
+  color: T.accent,
+  fontSize: ts(12),
+  fontWeight: 700,
+  fontFamily: F,
   cursor: 'pointer',
-  fontSize: ts(14),
-  padding: '0 10px',
-  flexShrink: 0,
+  padding: 0,
 };
 
 const breakdownRowStyle = {
   display: 'flex',
   alignItems: 'center',
+  justifyContent: 'space-between',
   gap: 10,
   padding: '10px 12px',
   borderRadius: 10,

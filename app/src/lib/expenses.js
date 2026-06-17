@@ -121,13 +121,15 @@ export function labelFor(participants, id) {
 }
 
 export function formatSplitLabel(expense, participants, trip = null) {
+  if (expense?.splitGroupName) return expense.splitGroupName;
+
   const ids = participants.map((p) => p.id);
   const aliasMap = trip ? buildParticipantAliasMap(trip, participants) : null;
   const split = resolveSplitIds(expense, ids, aliasMap);
   if (expense.splitAmong === 'all' || !Array.isArray(expense.splitAmong)) {
-    return split.length === ids.length ? 'Whole group' : `${split.length} people`;
+    return split.length === ids.length ? 'Whole trip' : `${split.length} people`;
   }
-  if (split.length === ids.length) return 'Whole group';
+  if (split.length === ids.length) return 'Whole trip';
   if (split.length === 1) return labelFor(participants, split[0]);
   if (split.length === 0) return 'No one (update split)';
   return split.map((id) => labelFor(participants, id)).join(', ');

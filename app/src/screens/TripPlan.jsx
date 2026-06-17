@@ -25,6 +25,7 @@ import { supabaseConfigured } from '../lib/supabase';
 import { getSignedInUserId } from '../lib/authUser';
 
 const TABS = [
+  { id: 'details', label: 'Details' },
   { id: 'participants', label: 'Crew' },
   { id: 'gear', label: 'Gear' },
   { id: 'meals', label: 'Meals' },
@@ -54,12 +55,15 @@ export function TripPlan({
   onDismissInvite,
 }) {
   const [tab, setTab] = useState(initialTab || 'gear');
-  const [editingTrip, setEditingTrip] = useState(false);
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
   const canEditTrip = Boolean(trip && isTripMember(trip, signedInUserId || currentUserId));
   const canInvite = Boolean(supabaseConfigured && signedInUserId && trip && isTripOwner(trip, signedInUserId));
+  const visibleTabs = useMemo(
+    () => (canEditTrip ? TABS : TABS.filter((tb) => tb.id !== 'details')),
+    [canEditTrip],
+  );
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const tripSyncState = useMemo(() => {
     if (!trip) return 'synced';
@@ -83,9 +87,9 @@ export function TripPlan({
     if (initialTab) setTab(initialTab);
   }, [initialTab]);
 
-  function openTripEdit() {
-    setTripDraft(buildTripDraft(trip));
-    setEditingTrip(true);
+  function selectTab(nextTab) {
+    if (nextTab === 'details') setTripDraft(buildTripDraft(trip));
+    setTab(nextTab);
   }
 
   if (!trip) {
@@ -111,53 +115,15 @@ export function TripPlan({
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -.4 }}>Trip Planning</div>
             <div style={{ fontSize: ts(13), color: T.textSub }}>{trip.name}</div>
-            {canEditTrip && (
-            <button
-              type="button"
-              onClick={openTripEdit}
-              style={{
-                marginTop: 4,
-                border: 'none',
-                background: 'none',
-                padding: 0,
-                fontSize: ts(13),
-                color: T.accent,
-                fontWeight: 700,
-                cursor: 'pointer',
-                fontFamily: F,
-              }}
-            >
-              {formatTripDateRange(trip.startDate, trip.endDate)} · Edit trip details
-            </button>
-            )}
+            <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>
+              {formatTripDateRange(trip.startDate, trip.endDate)}
+            </div>
           </div>
-          {canEditTrip && (
-          <button
-            type="button"
-            onClick={openTripEdit}
-            aria-label="Edit trip details"
-            style={{
-              height: 36,
-              padding: '0 12px',
-              borderRadius: 9,
-              border: `1px solid ${T.border}`,
-              background: editingTrip ? '#E4EFF8' : T.bg,
-              fontSize: ts(13),
-              fontWeight: 700,
-              color: '#2A5C8E',
-              cursor: 'pointer',
-              fontFamily: F,
-              flexShrink: 0,
-            }}
-          >
-            Edit trip details
-          </button>
-          )}
           <SyncChip state={tripSyncState} compact />
         </div>
         <div style={{ display: 'flex', gap: 2, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          {TABS.map((tb) => (
-            <div key={tb.id} onClick={() => setTab(tb.id)}
+          {visibleTabs.map((tb) => (
+            <div key={tb.id} onClick={() => selectTab(tb.id)}
                  style={{ flex: '1 0 auto', minWidth: 52, textAlign: 'center', padding: '10px 6px', cursor: 'pointer',
                           fontSize: 11.5, fontWeight: 700,
                           color: tab === tb.id ? T.accent : T.textFaint,
@@ -169,19 +135,18 @@ export function TripPlan({
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-        {editingTrip && (
+        {tab === 'details' && canEditTrip && (
           <TripEditPanel
             trip={trip}
             draft={tripDraft}
-            onCancel={() => setEditingTrip(false)}
+            onCancel={() => setTab('gear')}
             onSaved={() => {
-              setEditingTrip(false);
               onTripUpdate?.();
             }}
             onDraftChange={setTripDraft}
           />
         )}
-        {!editingTrip && tab === 'participants' && (
+        {tab === 'participants' && (
           <ParticipantsTab
             trip={trip}
             canInvite={canInvite}
@@ -190,13 +155,13 @@ export function TripPlan({
             onDismissInvite={onDismissInvite}
           />
         )}
-        {!editingTrip && tab === 'gear' && <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
-        {!editingTrip && tab === 'meals' && <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
-        {!editingTrip && tab === 'shopping' && <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />}
-        {!editingTrip && tab === 'expenses' && (
+        {tab === 'gear' && <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
+        {tab === 'meals' && <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
+        {tab === 'shopping' && <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />}
+        {tab === 'expenses' && (
           <TripExpenses trip={trip} onTripUpdate={onTripUpdate} scope="all" showTitle layout="full" />
         )}
-        {!editingTrip && tab === 'maps' && <OfflineMapsPanel trip={trip} onTripUpdate={onTripUpdate} />}
+        {tab === 'maps' && <OfflineMapsPanel trip={trip} onTripUpdate={onTripUpdate} />}
         <div style={{ height: 16 }} />
       </div>
 

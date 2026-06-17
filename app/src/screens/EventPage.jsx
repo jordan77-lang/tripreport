@@ -10,7 +10,7 @@ import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
 import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
-import { mediaCaptureLabel } from '../lib/featureFlags';
+import { buildTripParticipants, labelFor } from '../lib/expenses';
 
 const ENTRY_COLORS = {
   campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
@@ -58,6 +58,7 @@ export function EventPage({
   onPrev = null, onNext = null, eventIndex = null, eventCount = null,
 }) {
   const currentUserId = getCurrentUserId();
+  const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const coverRef = useRef(null);
 
   const [activeFormType, setActiveFormType] = useState(initialAddType);
@@ -71,7 +72,18 @@ export function EventPage({
     notes: event?.notes || '',
     type: event?.type || 'note',
     coverPhoto: event?.coverPhoto,
+    memberIds: event?.memberIds || [],
   });
+
+  useEffect(() => {
+    setEventDraft({
+      name: event?.name || '',
+      notes: event?.notes || '',
+      type: event?.type || 'note',
+      coverPhoto: event?.coverPhoto,
+      memberIds: event?.memberIds || [],
+    });
+  }, [event?.id, event?.name, event?.notes, event?.type, event?.coverPhoto, event?.memberIds]);
 
   const entries = useMemo(() => {
     const list = (trip?.entries || []).filter((e) => e.eventId === event?.id);
@@ -135,6 +147,7 @@ export function EventPage({
         notes: eventDraft.notes,
         type: eventDraft.type,
         coverPhoto: eventDraft.coverPhoto,
+        memberIds: eventDraft.memberIds,
       });
     }).then(() => {
       setEditingEvent(false);
@@ -321,6 +334,38 @@ export function EventPage({
                 rows={2}
                 style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg, resize: 'vertical' }}
               />
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Expense crew (who shares costs for this event)</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {participants.map((p) => {
+                    const on = eventDraft.memberIds.includes(p.id);
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => setEventDraft((d) => ({
+                          ...d,
+                          memberIds: on ? d.memberIds.filter((id) => id !== p.id) : [...d.memberIds, p.id],
+                        }))}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: 14,
+                          cursor: 'pointer',
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          background: on ? accentCol : T.bg,
+                          color: on ? 'white' : T.textSub,
+                          border: on ? 'none' : `1px solid ${T.border}`,
+                        }}
+                      >
+                        {p.label}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 10, color: T.textFaint, marginTop: 6 }}>
+                  e.g. everyone in your car for gas — expenses here default to this crew.
+                </div>
+              </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <div onClick={() => coverRef.current?.click()}
                      style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
@@ -370,6 +415,14 @@ export function EventPage({
               </div>
               {!!event.notes && (
                 <p style={{ margin: '0 0 8px', fontSize: 13, color: T.textSub, lineHeight: 1.6 }}>{event.notes}</p>
+              )}
+              {(event.memberIds?.length > 0) && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 11, color: T.textFaint, marginBottom: event.taggedParticipantLabel ? 6 : 0 }}>
+                  <Ic d={ICONS.users} size={12} color={T.textFaint} sw={1.8} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <span>
+                    Crew: {event.memberIds.map((id) => labelFor(participants, id)).join(', ')}
+                  </span>
+                </div>
               )}
               {!!event.taggedParticipantLabel && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.textFaint }}>

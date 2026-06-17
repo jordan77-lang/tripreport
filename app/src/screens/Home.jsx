@@ -100,14 +100,20 @@ export function Home({ trip, allTrips = [], onNav, onFab, onOpenTrip, onSelectTr
               <SyncChip state={tripSyncState} compact />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div onClick={() => { onSelectTrip?.(currentTrip.id); onOpenPlan?.(); }}
-                   style={{ background: 'rgba(255,255,255,.15)', borderRadius: 10, padding: '11px 10px', textAlign: 'center', cursor: 'pointer' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'white' }}>Plan</span>
-              </div>
-              <div onClick={() => { onSelectTrip?.(currentTrip.id); onOpenTrip?.(); }}
-                   style={{ background: 'rgba(255,255,255,.92)', borderRadius: 10, padding: '11px 10px', textAlign: 'center', cursor: 'pointer' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: '#2A5C8E' }}>Trip</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => { onSelectTrip?.(currentTrip.id); onOpenPlan?.(); }}
+                style={tripListPlanBtnOnDark}
+              >
+                Plan
+              </button>
+              <button
+                type="button"
+                onClick={() => { onSelectTrip?.(currentTrip.id); onOpenTrip?.(); }}
+                style={tripListTripBtnOnDark}
+              >
+                Trip
+              </button>
             </div>
           </div>
         ) : (
@@ -135,29 +141,37 @@ export function Home({ trip, allTrips = [], onNav, onFab, onOpenTrip, onSelectTr
               const gearCount = (t.gearItems || []).length;
               const mealCount = (t.meals || []).length;
               return (
-                <div key={t.id} style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1.5px solid ${isSelected ? '#2A5C8E' : T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  {t.coverPhoto ? (
-                    <MediaThumb media={t.coverPhoto} alt={`${t.name} cover`} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
-                  ) : (
-                    <div style={{ width: 44, height: 44, borderRadius: 10, background: '#E4EFF8', border: `1px solid #C7DDEF`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Ic d={ICONS.compass} size={18} color="#2A5C8E" sw={1.8} />
+                <div key={t.id} style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1.5px solid ${isSelected ? '#2A5C8E' : T.border}` }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
+                    {t.coverPhoto ? (
+                      <MediaThumb media={t.coverPhoto} alt={`${t.name} cover`} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 44, height: 44, borderRadius: 10, background: '#E4EFF8', border: '1px solid #C7DDEF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Ic d={ICONS.compass} size={18} color="#2A5C8E" sw={1.8} />
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>{t.name || 'Trip'}</div>
+                      <div style={{ fontSize: ts(11), color: T.textFaint }}>{(t.types || []).join(' · ') || 'No type'}</div>
+                      <div style={{ fontSize: ts(11), color: T.textSub, marginTop: 2 }}>Starts {formatTripDate(t.startDate)}</div>
+                      <div style={{ fontSize: ts(10), color: T.textFaint, marginTop: 2 }}>{gearCount} gear · {mealCount} meals</div>
                     </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{t.name || 'Trip'}</div>
-                    <div style={{ fontSize: 11, color: T.textFaint }}>{(t.types || []).join(' · ') || 'No type'}</div>
-                    <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2 }}>Starts {formatTripDate(t.startDate)}</div>
-                    <div style={{ fontSize: 10, color: T.textFaint, marginTop: 2 }}>{gearCount} gear · {mealCount} meals</div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-                    <div onClick={() => { onSelectTrip?.(t.id); onOpenPlan?.(); }}
-                         style={{ fontSize: 10.5, color: '#2A5C8E', fontWeight: 700, cursor: 'pointer', textAlign: 'right' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => { onSelectTrip?.(t.id); onOpenPlan?.(); }}
+                      style={tripListPlanBtn}
+                    >
                       Plan
-                    </div>
-                    <div onClick={() => onSelectTrip?.(t.id)}
-                         style={{ fontSize: 10.5, color: T.accent, fontWeight: 800, cursor: 'pointer', textAlign: 'right' }}>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { onSelectTrip?.(t.id); onOpenTrip?.(); }}
+                      style={tripListTripBtn}
+                    >
                       Trip
-                    </div>
+                    </button>
                   </div>
                 </div>
               );
@@ -228,4 +242,43 @@ export function Home({ trip, allTrips = [], onNav, onFab, onOpenTrip, onSelectTr
     </div>
   );
 }
+
+const tripListPlanBtn = {
+  minHeight: 42,
+  borderRadius: 10,
+  border: '1px solid #C7DDEF',
+  background: '#E4EFF8',
+  color: '#2A5C8E',
+  fontSize: 13,
+  fontWeight: 700,
+  fontFamily: F,
+  cursor: 'pointer',
+  padding: '10px 12px',
+};
+
+const tripListTripBtn = {
+  minHeight: 42,
+  borderRadius: 10,
+  border: 'none',
+  background: '#2A5C8E',
+  color: 'white',
+  fontSize: 13,
+  fontWeight: 800,
+  fontFamily: F,
+  cursor: 'pointer',
+  padding: '10px 12px',
+};
+
+const tripListPlanBtnOnDark = {
+  ...tripListPlanBtn,
+  background: 'rgba(255,255,255,.15)',
+  border: '1px solid rgba(255,255,255,.25)',
+  color: 'white',
+};
+
+const tripListTripBtnOnDark = {
+  ...tripListTripBtn,
+  background: 'rgba(255,255,255,.92)',
+  color: '#2A5C8E',
+};
 

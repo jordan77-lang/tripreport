@@ -286,6 +286,7 @@ export function createTrip({
     gearItems: [],
     meals: [],
     expenses: [],
+    expenseGroups: [],
     shoppingItems: [],
     coverPhoto,
     mapArea,
@@ -575,6 +576,7 @@ export function addEvent(tripId, event) {
     coverPhoto: event.coverPhoto,
     taggedParticipantId: event.taggedParticipantId || null,
     taggedParticipantLabel: event.taggedParticipantLabel || null,
+    memberIds: Array.isArray(event.memberIds) ? event.memberIds : [],
     createdBy: event.createdBy || getCurrentUserId(),
     createdAt: now,
     updatedAt: now,
@@ -773,7 +775,9 @@ export function addExpense(tripId, expense) {
       currency: expense.currency || 'USD',
       paidBy: expense.paidBy || getCurrentUserId(),
       paidByLabel: expense.paidByLabel || null,
-      splitAmong: Array.isArray(expense.splitAmong) ? expense.splitAmong : 'all',
+      splitAmong: Array.isArray(expense.splitAmong) ? expense.splitAmong : (expense.splitAmong === 'all' ? 'all' : 'all'),
+      splitGroupId: expense.splitGroupId || null,
+      splitGroupName: expense.splitGroupName || null,
       category: expense.category || 'general',
       locationId: expense.locationId || null,
       locationName: expense.locationName || null,
@@ -795,6 +799,49 @@ export function updateExpense(tripId, id, patch) {
 
 export function removeExpense(tripId, id) {
   return removePlanningItem(tripId, 'expenses', id);
+}
+
+export function addExpenseGroup(tripId, group) {
+  return mutateTrip(tripId, (trip, now) => {
+    const full = {
+      id: crypto.randomUUID(),
+      name: (group.name || '').trim() || 'Group',
+      memberIds: Array.isArray(group.memberIds) ? group.memberIds : [],
+      createdAt: now,
+      updatedAt: now,
+      syncState: 'pending',
+    };
+    trip.expenseGroups = [full, ...(trip.expenseGroups || [])];
+    return full;
+  });
+}
+
+export function updateExpenseGroup(tripId, id, patch) {
+  return mutateTrip(tripId, (trip, now) => {
+    const list = trip.expenseGroups || [];
+    const idx = list.findIndex((g) => g.id === id);
+    if (idx < 0) return null;
+    const updated = {
+      ...list[idx],
+      ...patch,
+      id,
+      name: patch.name != null ? String(patch.name).trim() || list[idx].name : list[idx].name,
+      memberIds: patch.memberIds != null
+        ? (Array.isArray(patch.memberIds) ? patch.memberIds : list[idx].memberIds)
+        : list[idx].memberIds,
+      updatedAt: now,
+      syncState: 'pending',
+    };
+    trip.expenseGroups = list.map((g, i) => (i === idx ? updated : g));
+    return updated;
+  });
+}
+
+export function removeExpenseGroup(tripId, id) {
+  return mutateTrip(tripId, (trip) => {
+    trip.expenseGroups = (trip.expenseGroups || []).filter((g) => g.id !== id);
+    return true;
+  });
 }
 
 export function addShoppingItem(tripId, item) {
