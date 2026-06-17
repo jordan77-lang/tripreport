@@ -83,3 +83,34 @@ export function filterExpenses(expenses, scope, { locationId, eventId } = {}) {
 export function money(value) {
   return `$${(value || 0).toFixed(2)}`;
 }
+
+export function computeParticipantBreakdown(expenses, participants) {
+  const ids = participants.map((p) => p.id);
+  if (!ids.length) return [];
+
+  const paid = {};
+  const share = {};
+  ids.forEach((id) => {
+    paid[id] = 0;
+    share[id] = 0;
+  });
+
+  for (const e of expenses || []) {
+    const amount = e.amount || 0;
+    const split = resolveSplitIds(e, ids);
+    if (!split.length) continue;
+    const portion = amount / split.length;
+    if (paid[e.paidBy] != null) paid[e.paidBy] += amount;
+    split.forEach((id) => {
+      if (share[id] != null) share[id] += portion;
+    });
+  }
+
+  return participants.map((p) => ({
+    id: p.id,
+    label: p.label,
+    paid: paid[p.id] || 0,
+    share: share[p.id] || 0,
+    net: (paid[p.id] || 0) - (share[p.id] || 0),
+  }));
+}

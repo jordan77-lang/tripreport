@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ic } from './Ic';
 import { T, F, ICONS } from '../tokens';
+import { ts } from '../lib/textScale';
 import { getCurrentUserId, addExpense, removeExpense } from '../lib/storage';
 import {
   buildTripParticipants,
   computeBalances,
+  computeParticipantBreakdown,
   computeSettlements,
   filterExpenses,
   formatExpenseContext,
@@ -16,9 +18,13 @@ import {
 /**
  * scope:
  * - trip: pre-planning / trip-wide costs only
- * - location: costs tied to a location (any event at that stop)
- * - event: costs for one event (e.g. gas split for one vehicle group)
- * - all: every expense, with context labels (trip dashboard)
+ * - location: costs tied to a location
+ * - event: costs for one event
+ * - all: every expense (trip dashboard)
+ *
+ * layout:
+ * - full: Trip Plan / location / event pages
+ * - compact: trip overview widget
  */
 export function TripExpenses({
   trip,
@@ -27,7 +33,10 @@ export function TripExpenses({
   scope = 'trip',
   location = null,
   event = null,
+  layout = 'full',
+  onOpenFull,
 }) {
+  const compact = layout === 'compact';
   const currentUserId = getCurrentUserId();
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const [description, setDescription] = useState('');
@@ -35,8 +44,12 @@ export function TripExpenses({
   const [paidBy, setPaidBy] = useState(currentUserId);
   const [splitMode, setSplitMode] = useState('custom');
   const [splitIds, setSplitIds] = useState([]);
-  const allExpenses = trip?.expenses || [];
+  const [panel, setPanel] = useState(compact ? 'summary' : 'ledger');
+  const [showAddForm, setShowAddForm] = useState(!compact);
+  const [showAllItems, setShowAllItems] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
 
+  const allExpenses = trip?.expenses || [];
   const visibleExpenses = useMemo(() => filterExpenses(allExpenses, scope, {
     locationId: location?.id,
     eventId: event?.id,
@@ -91,12 +104,17 @@ export function TripExpenses({
     addExpense(trip.id, payload);
     setDescription('');
     setAmount('');
+    setShowAddForm(false);
     onTripUpdate?.();
   }
 
   const total = visibleExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
   const balances = useMemo(() => computeBalances(visibleExpenses, participants), [visibleExpenses, participants]);
   const settlements = useMemo(() => computeSettlements(balances), [balances]);
+  const breakdown = useMemo(
+    () => computeParticipantBreakdown(visibleExpenses, participants),
+    [visibleExpenses, participants],
+  );
 
   if (!trip) return null;
 
@@ -117,200 +135,587 @@ export function TripExpenses({
         : 'All trip costs. Event and location expenses are labeled below.';
 
   const placeholder = scope === 'event' ? 'Gas, tolls, permit…' : 'What was bought (gas, groceries…)';
+  const listLimit = compact && !showAllItems ? 3 : visibleExpenses.length;
+  const hiddenCount = Math.max(0, visibleExpenses.length - listLimit);
+  const listedExpenses = visibleExpenses.slice(0, listLimit);
+  const unsettledCount = settlements.length;
 
   return (
     <div>
       {showTitle && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase' }}>
+          <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase' }}>
             {title}
           </div>
           {!!(scope === 'event' && event?.name) && (
-            <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>{event.name}</div>
+            <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>{event.name}</div>
           )}
           {!!(scope === 'location' && location?.name) && (
-            <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>{location.name}</div>
+            <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>{location.name}</div>
           )}
         </div>
       )}
 
-      <Composer>
-        <input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={placeholder}
-          style={inputStyle}
+      <SummaryBar
+        total={total}
+        count={visibleExpenses.length}
+        unsettledCount={unsettledCount}
+        compact={compact}
+        onOpenBreakdown={() => setPanel('breakdown')}
+      />
+
+      {!compact && (
+        <SegmentTabs
+          active={panel}
+          onChange={setPanel}
+          tabs={[
+            { id: 'ledger', label: 'Expenses' },
+            { id: 'breakdown', label: 'Breakdown' },
+          ]}
         />
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal"
-            placeholder="Amount"
-            style={{ ...inputStyle, maxWidth: 100 }}
-          />
-          <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)} style={selectStyle}>
-            {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-          <AddButton onClick={add} />
-        </div>
+      )}
 
-        <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Split between</div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: splitMode === 'custom' ? 8 : 0 }}>
-            {(scope === 'trip' || scope === 'all') && (
-              <SplitModeChip active={splitMode === 'all'} label="Whole group" onClick={() => setSplitMode('all')} />
-            )}
-            <SplitModeChip active={splitMode === 'custom'} label="Subgroup" onClick={() => setSplitMode('custom')} />
+      {compact && panel === 'breakdown' && (
+        <BreakdownPanel
+          breakdown={breakdown}
+          settlements={settlements}
+          participants={participants}
+          onClose={() => setPanel('summary')}
+        />
+      )}
+
+      {(panel === 'ledger' || compact) && panel !== 'breakdown' && (
+        <>
+          {!showAddForm ? (
+            <button
+              type="button"
+              onClick={() => setShowAddForm(true)}
+              style={addTriggerStyle}
+            >
+              <Ic d={ICONS.plus} size={14} color={T.accent} sw={2.4} />
+              <span>Add expense</span>
+            </button>
+          ) : (
+            <AddExpenseForm
+              description={description}
+              amount={amount}
+              paidBy={paidBy}
+              splitMode={splitMode}
+              splitIds={splitIds}
+              participants={participants}
+              scope={scope}
+              hint={hint}
+              placeholder={placeholder}
+              onDescription={setDescription}
+              onAmount={setAmount}
+              onPaidBy={setPaidBy}
+              onSplitMode={setSplitMode}
+              onToggleSplitId={toggleSplitId}
+              onSelectAllSplit={selectAllSplit}
+              onAdd={add}
+              onCancel={() => setShowAddForm(false)}
+            />
+          )}
+
+          {visibleExpenses.length === 0 ? (
+            <Empty text={hint} />
+          ) : (
+            <div style={{ marginTop: compact ? 8 : 12 }}>
+              {listedExpenses.map((e) => (
+                <ExpenseRow
+                  key={e.id}
+                  expense={e}
+                  participants={participants}
+                  scope={scope}
+                  expanded={expandedId === e.id}
+                  onToggle={() => setExpandedId((id) => (id === e.id ? null : e.id))}
+                  onDelete={() => { removeExpense(trip.id, e.id); onTripUpdate?.(); }}
+                />
+              ))}
+              {hiddenCount > 0 && (
+                <button type="button" onClick={() => setShowAllItems(true)} style={viewAllStyle}>
+                  View all {visibleExpenses.length} expenses
+                </button>
+              )}
+              {compact && onOpenFull && visibleExpenses.length > 0 && (
+                <button type="button" onClick={onOpenFull} style={viewAllStyle}>
+                  Manage in Trip Plan →
+                </button>
+              )}
+              {compact && unsettledCount > 0 && panel !== 'breakdown' && (
+                <button type="button" onClick={() => setPanel('breakdown')} style={breakdownLinkStyle}>
+                  View {unsettledCount} settlement{unsettledCount === 1 ? '' : 's'} →
+                </button>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {!compact && panel === 'breakdown' && (
+        <BreakdownPanel
+          breakdown={breakdown}
+          settlements={settlements}
+          participants={participants}
+          embedded
+        />
+      )}
+    </div>
+  );
+}
+
+function SummaryBar({ total, count, unsettledCount, compact, onOpenBreakdown }) {
+  const status = count === 0
+    ? 'No expenses yet'
+    : unsettledCount === 0
+      ? 'All settled up'
+      : `${unsettledCount} payment${unsettledCount === 1 ? '' : 's'} to settle`;
+
+  return (
+    <div style={{
+      background: T.accentLight,
+      borderRadius: 12,
+      padding: compact ? '10px 12px' : '12px 14px',
+      marginBottom: compact ? 10 : 12,
+      border: `1px solid ${T.accent}30`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: ts(12), fontWeight: 700, color: T.accentMid }}>Total spent</div>
+          <div style={{ fontSize: ts(22), fontWeight: 900, color: T.text, letterSpacing: -.4, lineHeight: 1.1 }}>
+            {money(total)}
           </div>
-          {splitMode === 'custom' && (
-            <div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {participants.map((p) => {
-                  const on = splitIds.includes(p.id);
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => toggleSplitId(p.id)}
-                      style={{
-                        padding: '5px 10px',
-                        borderRadius: 14,
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        background: on ? T.accent : T.bg,
-                        color: on ? 'white' : T.textSub,
-                        border: `1.5px solid ${on ? T.accent : T.border}`,
-                      }}
-                    >
-                      {p.label}
-                    </div>
-                  );
-                })}
+          <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 4 }}>
+            {count} item{count === 1 ? '' : 's'} · {status}
+          </div>
+        </div>
+        <button type="button" onClick={onOpenBreakdown} style={breakdownBtnStyle}>
+          Breakdown
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SegmentTabs({ active, onChange, tabs }) {
+  return (
+    <div style={{
+      display: 'flex',
+      gap: 4,
+      marginBottom: 12,
+      background: T.bg,
+      border: `1px solid ${T.border}`,
+      borderRadius: 10,
+      padding: 3,
+    }}>
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => onChange(tab.id)}
+          style={{
+            flex: 1,
+            border: 'none',
+            borderRadius: 8,
+            padding: '8px 10px',
+            fontSize: ts(13),
+            fontWeight: active === tab.id ? 800 : 600,
+            fontFamily: F,
+            cursor: 'pointer',
+            background: active === tab.id ? T.card : 'transparent',
+            color: active === tab.id ? T.text : T.textSub,
+            boxShadow: active === tab.id ? '0 1px 3px rgba(0,0,0,.06)' : 'none',
+          }}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BreakdownPanel({ breakdown, settlements, participants, embedded = false, onClose }) {
+  return (
+    <div style={{
+      background: embedded ? 'transparent' : T.card,
+      borderRadius: embedded ? 0 : 12,
+      border: embedded ? 'none' : `1px solid ${T.border}`,
+      padding: embedded ? 0 : '12px 14px',
+      marginBottom: embedded ? 0 : 12,
+    }}>
+      {!embedded && onClose && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: ts(14), fontWeight: 800, color: T.text }}>Expense breakdown</div>
+          <button type="button" onClick={onClose} style={ghostBtnStyle}>Close</button>
+        </div>
+      )}
+
+      <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 8 }}>
+        By person
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+        {breakdown.map((row) => (
+          <div key={row.id} style={breakdownRowStyle}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {row.label}
               </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-                <span onClick={selectAllSplit} style={{ fontSize: 10, color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Select all</span>
-                {splitIds.length === 0 && (
-                  <span style={{ fontSize: 10, color: '#8A5526' }}>Pick at least one person</span>
-                )}
+              <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 2 }}>
+                Paid {money(row.paid)} · Share {money(row.share)}
               </div>
+            </div>
+            <div style={{
+              fontSize: ts(13),
+              fontWeight: 800,
+              color: row.net > 0.01 ? '#2E6D3A' : row.net < -0.01 ? '#8A5526' : T.textSub,
+              flexShrink: 0,
+            }}>
+              {row.net > 0.01 ? `+${money(row.net)}` : row.net < -0.01 ? `-${money(Math.abs(row.net))}` : 'Even'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 8 }}>
+        Settle up
+      </div>
+      {settlements.length === 0 ? (
+        <div style={{ fontSize: ts(13), color: T.accentMid, fontWeight: 600 }}>Everyone is square.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {settlements.map((s, i) => (
+            <div key={i} style={settlementRowStyle}>
+              <span style={{ fontSize: ts(13), color: T.text }}>
+                <b>{labelFor(participants, s.from)}</b>
+                {' → '}
+                <b>{labelFor(participants, s.to)}</b>
+              </span>
+              <span style={{ fontSize: ts(13), fontWeight: 800, color: T.text }}>{money(s.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExpenseRow({ expense, participants, scope, expanded, onToggle, onDelete }) {
+  const payer = expense.paidByLabel || labelFor(participants, expense.paidBy);
+  const context = scope === 'all' ? formatExpenseContext(expense) : null;
+
+  return (
+    <div style={expenseRowStyle}>
+      <button type="button" onClick={onToggle} style={expenseMainBtnStyle}>
+        <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {expense.description}
+            </span>
+            <span style={{ fontSize: ts(14), fontWeight: 800, color: T.text, flexShrink: 0 }}>{money(expense.amount)}</span>
+          </div>
+          {!expanded && (
+            <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {payer}{context ? ` · ${context}` : ''}
+            </div>
+          )}
+          {expanded && (
+            <div style={{ marginTop: 6, fontSize: ts(12), color: T.textSub, lineHeight: 1.45 }}>
+              <div>Paid by {payer}</div>
+              <div>Split: {formatSplitLabel(expense, participants)}</div>
+              {!!context && <div style={{ color: T.accentMid }}>{context}</div>}
             </div>
           )}
         </div>
-        <div style={{ fontSize: 10, color: T.textFaint, marginTop: 8 }}>{hint}</div>
-      </Composer>
+        <span style={{ fontSize: ts(11), color: T.textFaint, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : 'none' }}>›</span>
+      </button>
+      <button type="button" onClick={onDelete} aria-label="Delete expense" style={deleteBtnStyle}>✕</button>
+    </div>
+  );
+}
 
-      {visibleExpenses.length > 0 && (
-        <div style={{ background: T.accentLight, borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: T.accent }}>
-              {scope === 'all' ? 'Total spent' : 'Subtotal here'}
-            </span>
-            <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>{money(total)}</span>
-          </div>
-          {settlements.length === 0
-            ? <div style={{ fontSize: 11, color: T.accentMid }}>All settled up{scope !== 'all' ? ' for this group' : ''}.</div>
-            : settlements.map((s, i) => (
-                <div key={i} style={{ fontSize: 11.5, color: T.text, marginTop: 3 }}>
-                  <b>{labelFor(participants, s.from)}</b> owes <b>{labelFor(participants, s.to)}</b> {money(s.amount)}
-                </div>
-              ))}
+function AddExpenseForm({
+  description,
+  amount,
+  paidBy,
+  splitMode,
+  splitIds,
+  participants,
+  scope,
+  hint,
+  placeholder,
+  onDescription,
+  onAmount,
+  onPaidBy,
+  onSplitMode,
+  onToggleSplitId,
+  onSelectAllSplit,
+  onAdd,
+  onCancel,
+}) {
+  return (
+    <div style={composerStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: ts(13), fontWeight: 800, color: T.text }}>New expense</div>
+        <button type="button" onClick={onCancel} style={ghostBtnStyle}>Cancel</button>
+      </div>
+      <input
+        value={description}
+        onChange={(e) => onDescription(e.target.value)}
+        placeholder={placeholder}
+        style={inputStyle}
+      />
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <input
+          value={amount}
+          onChange={(e) => onAmount(e.target.value)}
+          inputMode="decimal"
+          placeholder="$0.00"
+          style={{ ...inputStyle, maxWidth: 96 }}
+        />
+        <select value={paidBy} onChange={(e) => onPaidBy(e.target.value)} style={selectStyle}>
+          {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+        <button type="button" onClick={onAdd} style={addBtnStyle} aria-label="Add expense">
+          <Ic d={ICONS.plus} size={16} color="white" sw={2.4} />
+        </button>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Split between</div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: splitMode === 'custom' ? 8 : 0 }}>
+          {(scope === 'trip' || scope === 'all') && (
+            <SplitModeChip active={splitMode === 'all'} label="Whole group" onClick={() => onSplitMode('all')} />
+          )}
+          <SplitModeChip active={splitMode === 'custom'} label="Subgroup" onClick={() => onSplitMode('custom')} />
         </div>
-      )}
-
-      {visibleExpenses.length === 0 && (
-        <Empty text={hint} />
-      )}
-
-      {visibleExpenses.map((e) => (
-        <div key={e.id} style={cardStyle}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{e.description}</div>
-            <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2 }}>
-              Paid by {e.paidByLabel || labelFor(participants, e.paidBy)}
-            </div>
-            <div style={{ fontSize: 10, color: T.textFaint, marginTop: 2 }}>
-              Split: {formatSplitLabel(e, participants)}
-            </div>
-            {scope === 'all' && (
-              <div style={{ fontSize: 10, color: T.accentMid, marginTop: 2 }}>
-                {formatExpenseContext(e)}
-              </div>
-            )}
+        {splitMode === 'custom' && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {participants.map((p) => {
+              const on = splitIds.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onToggleSplitId(p.id)}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 14,
+                    fontSize: ts(11),
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: F,
+                    background: on ? T.accent : T.bg,
+                    color: on ? 'white' : T.textSub,
+                    border: `1.5px solid ${on ? T.accent : T.border}`,
+                  }}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
           </div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: T.text, flexShrink: 0 }}>{money(e.amount)}</div>
-          <DeleteX onClick={() => { removeExpense(trip.id, e.id); onTripUpdate?.(); }} />
-        </div>
-      ))}
+        )}
+        {splitMode === 'custom' && splitIds.length === 0 && (
+          <div style={{ fontSize: ts(11), color: '#8A5526', marginTop: 6 }}>Pick at least one person</div>
+        )}
+        {splitMode === 'custom' && (
+          <button type="button" onClick={onSelectAllSplit} style={{ ...ghostBtnStyle, marginTop: 6, padding: 0 }}>
+            Select all
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 8, lineHeight: 1.4 }}>{hint}</div>
     </div>
   );
 }
 
 function SplitModeChip({ active, label, onClick }) {
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
       style={{
         padding: '6px 12px',
         borderRadius: 14,
-        fontSize: 10.5,
+        fontSize: ts(11),
         fontWeight: 700,
         cursor: 'pointer',
+        fontFamily: F,
         background: active ? T.accentLight : T.bg,
         color: active ? T.accent : T.textSub,
         border: `1.5px solid ${active ? T.accent : T.border}`,
       }}
     >
       {label}
-    </div>
-  );
-}
-
-function Composer({ children }) {
-  return (
-    <div style={{ background: T.card, borderRadius: 14, padding: '12px 14px', border: `1px solid ${T.border}`, marginBottom: 16 }}>
-      {children}
-    </div>
-  );
-}
-
-function AddButton({ onClick }) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        flexShrink: 0, minWidth: 54, height: 38, borderRadius: 10, background: T.accent,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-      }}
-    >
-      <Ic d={ICONS.plus} size={16} color="white" sw={2.4} />
-    </div>
-  );
-}
-
-function DeleteX({ onClick }) {
-  return (
-    <div onClick={onClick} style={{ flexShrink: 0, color: T.textFaint, cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>
-      ✕
-    </div>
+    </button>
   );
 }
 
 function Empty({ text }) {
-  return <div style={{ textAlign: 'center', padding: '18px 10px', color: T.textFaint, fontSize: 11.5 }}>{text}</div>;
+  return (
+    <div style={{ textAlign: 'center', padding: '14px 10px', color: T.textFaint, fontSize: ts(12), lineHeight: 1.45 }}>
+      {text}
+    </div>
+  );
 }
 
+const composerStyle = {
+  background: T.card,
+  borderRadius: 12,
+  padding: '12px 14px',
+  border: `1px solid ${T.border}`,
+  marginBottom: 10,
+};
+
 const inputStyle = {
-  flex: 1, width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '9px 11px',
-  fontSize: 12.5, fontFamily: F, color: T.text, background: T.bg, outline: 'none', boxSizing: 'border-box',
+  flex: 1,
+  width: '100%',
+  border: `1.5px solid ${T.border}`,
+  borderRadius: 10,
+  padding: '9px 11px',
+  fontSize: ts(14),
+  fontFamily: F,
+  color: T.text,
+  background: T.bg,
+  outline: 'none',
+  boxSizing: 'border-box',
 };
 
 const selectStyle = {
-  flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '9px 8px',
-  fontSize: 11.5, fontFamily: F, color: T.text, background: T.bg, outline: 'none',
+  flex: 1,
+  border: `1.5px solid ${T.border}`,
+  borderRadius: 10,
+  padding: '9px 8px',
+  fontSize: ts(13),
+  fontFamily: F,
+  color: T.text,
+  background: T.bg,
+  outline: 'none',
 };
 
-const cardStyle = {
-  background: T.card, borderRadius: 12, padding: '10px 12px', marginBottom: 8,
-  border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10,
+const addTriggerStyle = {
+  width: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  border: `1px dashed ${T.border}`,
+  borderRadius: 10,
+  padding: '10px 12px',
+  background: T.bg,
+  color: T.accent,
+  fontSize: ts(13),
+  fontWeight: 700,
+  fontFamily: F,
+  cursor: 'pointer',
+  marginBottom: 8,
+};
+
+const breakdownBtnStyle = {
+  border: `1px solid ${T.accent}50`,
+  borderRadius: 10,
+  padding: '8px 12px',
+  background: T.card,
+  color: T.accent,
+  fontSize: ts(12),
+  fontWeight: 800,
+  fontFamily: F,
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
+const ghostBtnStyle = {
+  border: 'none',
+  background: 'transparent',
+  color: T.textSub,
+  fontSize: ts(12),
+  fontWeight: 700,
+  fontFamily: F,
+  cursor: 'pointer',
+};
+
+const viewAllStyle = {
+  width: '100%',
+  border: 'none',
+  background: 'transparent',
+  color: T.accent,
+  fontSize: ts(13),
+  fontWeight: 700,
+  fontFamily: F,
+  cursor: 'pointer',
+  padding: '10px 0 4px',
+  textAlign: 'center',
+};
+
+const breakdownLinkStyle = {
+  ...viewAllStyle,
+  color: T.textSub,
+};
+
+const addBtnStyle = {
+  flexShrink: 0,
+  width: 42,
+  height: 42,
+  borderRadius: 10,
+  border: 'none',
+  background: T.accent,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+};
+
+const expenseRowStyle = {
+  display: 'flex',
+  alignItems: 'stretch',
+  gap: 4,
+  marginBottom: 6,
+  background: T.card,
+  borderRadius: 10,
+  border: `1px solid ${T.border}`,
+  overflow: 'hidden',
+};
+
+const expenseMainBtnStyle = {
+  flex: 1,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  border: 'none',
+  background: 'transparent',
+  padding: '10px 12px',
+  cursor: 'pointer',
+  fontFamily: F,
+  minWidth: 0,
+};
+
+const deleteBtnStyle = {
+  border: 'none',
+  background: 'transparent',
+  color: T.textFaint,
+  cursor: 'pointer',
+  fontSize: ts(14),
+  padding: '0 10px',
+  flexShrink: 0,
+};
+
+const breakdownRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  padding: '10px 12px',
+  borderRadius: 10,
+  background: T.bg,
+  border: `1px solid ${T.border}`,
+};
+
+const settlementRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+  padding: '10px 12px',
+  borderRadius: 10,
+  background: '#F7F3ED',
+  border: `1px solid ${T.border}`,
 };

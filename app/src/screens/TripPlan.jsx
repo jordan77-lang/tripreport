@@ -143,7 +143,9 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
         {!editingTrip && tab === 'gear' && <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
         {!editingTrip && tab === 'meals' && <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
         {!editingTrip && tab === 'shopping' && <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />}
-        {!editingTrip && tab === 'expenses' && <TripExpenses trip={trip} onTripUpdate={onTripUpdate} scope="trip" />}
+        {!editingTrip && tab === 'expenses' && (
+          <TripExpenses trip={trip} onTripUpdate={onTripUpdate} scope="all" showTitle layout="full" />
+        )}
         {!editingTrip && tab === 'maps' && <OfflineMapsPanel trip={trip} onTripUpdate={onTripUpdate} />}
         <div style={{ height: 16 }} />
       </div>

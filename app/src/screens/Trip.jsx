@@ -710,7 +710,13 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         )}
 
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 12 }}>
-          <TripExpenses trip={trip} onTripUpdate={onTripUpdate} showTitle scope="all" />
+          <TripExpenses
+            trip={trip}
+            onTripUpdate={onTripUpdate}
+            scope="all"
+            layout="compact"
+            onOpenFull={() => onNav('plan')}
+          />
         </div>
 
         {trip?.coverPhoto && (
