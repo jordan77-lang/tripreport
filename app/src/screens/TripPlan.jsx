@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { Ic } from '../components/Ic';
 import { SyncChip } from '../components/SyncChip';
@@ -9,17 +9,21 @@ import { buildTripDraft, formatTripDateRange } from '../lib/tripEdit';
 import { savePlanningToCloud } from '../lib/planningSave';
 import {
   getCurrentUserId,
+  isTripOwner,
   addGearItem, updateGearItem, removeGearItem,
   addMeal, updateMeal, removeMeal,
   addShoppingItem, updateShoppingItem, removeShoppingItem,
   generateShoppingList,
 } from '../lib/storage';
+import { ParticipantsTab } from '../components/ParticipantsTab';
 import { TripExpenses } from '../components/TripExpenses';
 import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants } from '../lib/expenses';
+import { supabaseConfigured } from '../lib/supabase';
 
 const TABS = [
+  { id: 'participants', label: 'Crew' },
   { id: 'gear', label: 'Gear' },
   { id: 'meals', label: 'Meals' },
   { id: 'shopping', label: 'Shopping' },
@@ -37,11 +41,21 @@ const GEAR_STATUS_STYLE = {
 const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const SLOT_LABEL = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
 
-export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
-  const [tab, setTab] = useState('gear');
+export function TripPlan({
+  trip,
+  onNav,
+  onFab,
+  onBack,
+  onTripUpdate,
+  initialTab = null,
+  newTripInviteCode = null,
+  onDismissInvite,
+}) {
+  const [tab, setTab] = useState(initialTab || 'gear');
   const [editingTrip, setEditingTrip] = useState(false);
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const currentUserId = getCurrentUserId();
+  const canInvite = Boolean(supabaseConfigured && currentUserId && trip && isTripOwner(trip, currentUserId));
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const tripSyncState = useMemo(() => {
     if (!trip) return 'synced';
@@ -60,6 +74,10 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
     enabled: Boolean(trip?.id),
     onSynced: onTripUpdate,
   });
+
+  useEffect(() => {
+    if (initialTab) setTab(initialTab);
+  }, [initialTab]);
 
   function openTripEdit() {
     setTripDraft(buildTripDraft(trip));
@@ -129,11 +147,11 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
           </button>
           <SyncChip state={tripSyncState} compact />
         </div>
-        <div style={{ display: 'flex', gap: 2 }}>
+        <div style={{ display: 'flex', gap: 2, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {TABS.map((tb) => (
             <div key={tb.id} onClick={() => setTab(tb.id)}
-                 style={{ flex: 1, textAlign: 'center', padding: '10px 4px', cursor: 'pointer',
-                          fontSize: 12, fontWeight: 700,
+                 style={{ flex: '1 0 auto', minWidth: 52, textAlign: 'center', padding: '10px 6px', cursor: 'pointer',
+                          fontSize: 11.5, fontWeight: 700,
                           color: tab === tb.id ? T.accent : T.textFaint,
                           borderBottom: `2px solid ${tab === tb.id ? T.accent : 'transparent'}` }}>
               {tb.label}
@@ -153,6 +171,15 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
               onTripUpdate?.();
             }}
             onDraftChange={setTripDraft}
+          />
+        )}
+        {!editingTrip && tab === 'participants' && (
+          <ParticipantsTab
+            trip={trip}
+            canInvite={canInvite}
+            onTripUpdate={onTripUpdate}
+            newTripInviteCode={newTripInviteCode}
+            onDismissInvite={onDismissInvite}
           />
         )}
         {!editingTrip && tab === 'gear' && <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}

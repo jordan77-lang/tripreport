@@ -130,6 +130,36 @@ export function getPastTripParticipants({ excludeTripId = null } = {}) {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Add a name-only roster entry (gear/meals lists — not the same as a cloud invite). */
+export function addTripCollaborator(tripId, { name }) {
+  const label = (name || '').trim();
+  if (!label) return null;
+  return mutateTrip(tripId, (trip) => {
+    const key = label.toLowerCase();
+    const exists = (trip.collaborators || []).some(
+      (c) => (c.handle || c.name || '').toLowerCase() === key,
+    );
+    if (exists) return null;
+    const collab = {
+      id: crypto.randomUUID(),
+      handle: label,
+      name: label,
+      role: 'contributor',
+    };
+    trip.collaborators = [...(trip.collaborators || []), collab];
+    return collab;
+  });
+}
+
+export function removeTripCollaborator(tripId, collaboratorId) {
+  return mutateTrip(tripId, (trip) => {
+    const target = (trip.collaborators || []).find((c) => c.id === collaboratorId);
+    if (!target || target.userId) return null;
+    trip.collaborators = (trip.collaborators || []).filter((c) => c.id !== collaboratorId);
+    return true;
+  });
+}
+
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ''));
 }

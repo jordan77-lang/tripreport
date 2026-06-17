@@ -347,7 +347,7 @@ export function NewTrip({ onDone, onBack }) {
             <div style={{ marginBottom: 18 }}>
               <Label>Trip Participants</Label>
               <div style={{ fontSize: 11, color: T.textSub, marginBottom: 10, lineHeight: 1.45 }}>
-                Add names for your roster. After the trip is created you can email past crew, invite by email, or share a join code.
+                Add names for gear and meals. After creating the trip, Trip Plan → Crew is where you email invites or share a join code.
               </div>
 
               {pastCrew.length > 0 && (

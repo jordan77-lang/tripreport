@@ -479,7 +479,7 @@ export async function sendTripInviteByEmail(tripId, {
   }
 
   const { emailTripInvite } = await import('./inviteApi');
-  await emailTripInvite({
+  const emailResult = await emailTripInvite({
     tripId,
     tripName: trip.name,
     to,
@@ -487,7 +487,11 @@ export async function sendTripInviteByEmail(tripId, {
     inviteeName: inviteeName || null,
   });
 
-  return code;
+  return {
+    code,
+    emailId: emailResult?.id || null,
+    sandboxLimited: Boolean(emailResult?.sandboxLimited),
+  };
 }
 
 /** Pull cloud trips and push local changes after sign-in or on reconnect. */

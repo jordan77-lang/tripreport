@@ -75,15 +75,32 @@ async function handleInviteEmail(event) {
       <li>Tap <strong>Join trip</strong> and enter invite code: <strong>${escapeHtml(code)}</strong></li>
     </ol>
     <p>Invite code: <strong style="letter-spacing:2px">${escapeHtml(code)}</strong></p>
+    <p>Direct link: <a href="${escapeHtml(joinUrl)}">${escapeHtml(joinUrl)}</a></p>
     <p style="color:#666;font-size:13px">TripReport helps your crew plan gear, meals, and expenses — and log the trip together offline or online.</p>
   `;
+
+  const text = [
+    `Hi ${guest},`,
+    '',
+    `${inviter} invited you to join ${name} on TripReport.`,
+    '',
+    `1. Open ${joinUrl}`,
+    '2. Create an account or sign in',
+    `3. Tap Join trip and enter invite code: ${code}`,
+    '',
+    `Invite code: ${code}`,
+  ].join('\n');
+
+  const sandboxLimited = from.startsWith('onboarding@') || from.endsWith('@resend.dev');
 
   const resend = new Resend(resendKey);
   const { data, error } = await resend.emails.send({
     from,
     to: [recipient],
+    replyTo: user.email || undefined,
     subject: `You're invited to ${name} on TripReport`,
     html,
+    text,
   });
 
   if (error) {
@@ -94,7 +111,7 @@ async function handleInviteEmail(event) {
     });
   }
 
-  return json(200, { ok: true, id: data?.id });
+  return json(200, { ok: true, id: data?.id, sandboxLimited });
 }
 
 async function verifyTripOwner(tripId, userId, authHeader) {

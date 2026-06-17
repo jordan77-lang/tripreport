@@ -15,6 +15,17 @@ const MODES = [
   { id: 'code', label: 'Join code' },
 ];
 
+function inviteMailto(trip, code, to) {
+  const subject = encodeURIComponent(`Join ${trip?.name || 'our trip'} on TripReport`);
+  const body = encodeURIComponent(
+    `You're invited to ${trip?.name || 'our trip'} on TripReport.\n\n`
+    + `1. Open ${typeof window !== 'undefined' ? window.location.origin : 'https://tripreportapp.netlify.app'}\n`
+    + `2. Create an account or sign in\n`
+    + `3. Tap Join trip and enter invite code: ${code}\n`,
+  );
+  return `mailto:${encodeURIComponent(to)}?subject=${subject}&body=${body}`;
+}
+
 export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, initialCode = null, onDismissInitial }) {
   const [mode, setMode] = useState(initialCode ? 'code' : 'past');
   const [code, setCode] = useState(initialCode || null);
@@ -40,6 +51,20 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
     }
   }, [initialCode]);
 
+  useEffect(() => {
+    if (!selectedPast) {
+      setEmail('');
+      return;
+    }
+    if (selectedPast.userId) {
+      void fetchUserEmailForInvite(selectedPast.userId)
+        .then((lookedUp) => { if (lookedUp) setEmail(lookedUp); })
+        .catch(() => {});
+    } else {
+      setEmail('');
+    }
+  }, [selectedPast?.id, selectedPast?.userId]);
+
   async function ensureCode() {
     if (code) return code;
     setCodeBusy(true);
@@ -52,30 +77,35 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
     }
   }
 
+  function showEmailSuccess(result, to) {
+    setSuccess({
+      to,
+      code: result.code,
+      emailId: result.emailId,
+      sandboxLimited: result.sandboxLimited,
+    });
+  }
+
   async function invitePastCrew() {
     if (!selectedPast || busy) return;
+    const to = email.trim().toLowerCase();
+    if (!to) {
+      setError('Enter their email address below.');
+      return;
+    }
     setBusy(true);
     setError(null);
     setSuccess(null);
     try {
-      let to = email.trim().toLowerCase();
-      if (selectedPast.userId) {
-        const lookedUp = await fetchUserEmailForInvite(selectedPast.userId);
-        if (lookedUp) to = lookedUp.toLowerCase();
-      }
-      if (!to) {
-        setError(`${selectedPast.name} has no email on file. Switch to the Email tab and enter their address.`);
-        setMode('email');
-        return;
-      }
-      await sendTripInviteByEmail(trip.id, {
+      const result = await sendTripInviteByEmail(trip.id, {
         email: to,
         inviteeName: selectedPast.name,
         invitedUserId: selectedPast.userId || null,
       });
-      setCode(await getOrCreateTripInviteCode(trip.id));
-      setSuccess(`Invite emailed to ${to}`);
+      setCode(result.code);
+      showEmailSuccess(result, to);
       setPastId('');
+      setEmail('');
       onTripUpdate?.();
     } catch (e) {
       setError(e?.message || 'Could not send invite');
@@ -91,9 +121,9 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
     setError(null);
     setSuccess(null);
     try {
-      const inviteCode = await sendTripInviteByEmail(trip.id, { email: to });
-      setCode(inviteCode);
-      setSuccess(`Invite emailed to ${to}`);
+      const result = await sendTripInviteByEmail(trip.id, { email: to });
+      setCode(result.code);
+      showEmailSuccess(result, to);
       setEmail('');
       onTripUpdate?.();
     } catch (e) {
@@ -145,30 +175,38 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
     return (
       <div style={panelStyle}>
         <div style={{ fontSize: ts(13), color: T.textSub }}>
-          Cloud invites need Supabase configured. Add crew names locally from New Trip for now.
+          Cloud invites need Supabase configured. Add crew names on the roster above for now.
         </div>
       </div>
     );
   }
 
   return (
-    <div style={panelStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-        <div>
-          <div style={{ fontSize: ts(compact ? 13 : 14), fontWeight: 800, color: T.text }}>
-            {initialCode ? 'Trip created — invite your crew' : 'Invite participants'}
+    <div style={compact ? { ...panelStyle, marginBottom: 0, padding: 0, border: 'none', background: 'transparent' } : panelStyle}>
+      {!compact && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: ts(14), fontWeight: 800, color: T.text }}>
+              {initialCode ? 'Trip created — invite your crew' : 'Invite to the trip'}
+            </div>
+            <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 4, lineHeight: 1.45 }}>
+              Email past crew, invite someone new, or share a join code.
+            </div>
           </div>
-          <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 4, lineHeight: 1.45 }}>
-            Email past crew, invite someone new, or share a join code.
-          </div>
+          {onClose && (
+            <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', color: T.textFaint, cursor: 'pointer', fontSize: 18 }}>×</button>
+          )}
+          {!onClose && onDismissInitial && initialCode && (
+            <button type="button" onClick={onDismissInitial} style={{ border: 'none', background: 'transparent', color: T.textFaint, cursor: 'pointer', fontSize: 18 }}>×</button>
+          )}
         </div>
-        {onClose && (
-          <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', color: T.textFaint, cursor: 'pointer', fontSize: 18 }}>×</button>
-        )}
-        {!onClose && onDismissInitial && initialCode && (
-          <button type="button" onClick={onDismissInitial} style={{ border: 'none', background: 'transparent', color: T.textFaint, cursor: 'pointer', fontSize: 18 }}>×</button>
-        )}
-      </div>
+      )}
+
+      {compact && (
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>
+          Invite to the trip
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
         {MODES.map((m) => (
@@ -215,16 +253,23 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
                   </option>
                 ))}
               </select>
-              {selectedPast && !selectedPast.hasAccount && (
-                <div style={{ fontSize: ts(11), color: '#8A5526', marginTop: 8, lineHeight: 1.4 }}>
-                  This person was added by name only. Use the Email tab to enter their address.
-                </div>
+              {selectedPast && (
+                <>
+                  <label style={{ ...labelStyle, marginTop: 8 }}>Their email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="friend@example.com"
+                    style={inputStyle}
+                  />
+                </>
               )}
               <button
                 type="button"
-                disabled={!pastId || busy || (selectedPast && !selectedPast.hasAccount)}
+                disabled={!pastId || !email.trim() || busy}
                 onClick={() => void invitePastCrew()}
-                style={primaryBtn(!pastId || busy || (selectedPast && !selectedPast.hasAccount))}
+                style={primaryBtn(!pastId || !email.trim() || busy)}
               >
                 {busy ? 'Sending…' : 'Email invite'}
               </button>
@@ -244,7 +289,7 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
             style={inputStyle}
           />
           <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 8, lineHeight: 1.45 }}>
-            They will get instructions to create an account and join with your trip&apos;s invite code.
+            They get a link and your join code. If it does not arrive, check spam or use the join code tab.
           </div>
           <button
             type="button"
@@ -303,8 +348,24 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
       )}
 
       {!!success && (
-        <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 10, background: '#EBF5EB', color: '#2A6A14', fontSize: ts(12), fontWeight: 600 }}>
-          {success}
+        <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: '#EBF5EB', color: '#2A6A14', fontSize: ts(12), lineHeight: 1.5 }}>
+          <div style={{ fontWeight: 700 }}>Invite sent to {success.to}</div>
+          {success.sandboxLimited && (
+            <div style={{ marginTop: 6, color: '#5A4A14', background: '#FBF0E4', padding: '8px 10px', borderRadius: 8 }}>
+              Resend is in test mode (unverified sending domain). Mail is only delivered to the email on your Resend account until you verify a domain in Resend. Use the join code below, or verify your domain and set <code style={{ fontSize: 11 }}>REPORT_EMAIL_FROM</code> to that address.
+            </div>
+          )}
+          <div style={{ marginTop: 6, fontWeight: 500 }}>
+            Check spam and promotions. Work inboxes often block new senders — try personal email or share the join code.
+          </div>
+          {success.code && (
+            <a
+              href={inviteMailto(trip, success.code, success.to)}
+              style={{ display: 'inline-block', marginTop: 8, color: '#2A5C8E', fontWeight: 700 }}
+            >
+              Open in your mail app (backup)
+            </a>
+          )}
         </div>
       )}
       {!!error && (

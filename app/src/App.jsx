@@ -27,6 +27,7 @@ export default function App() {
   const [trip, setTrip]     = useState(() => getActiveTrip());
   const [allTrips, setAllTrips] = useState(() => getTrips());
   const [newTripInviteCode, setNewTripInviteCode] = useState(null);
+  const [planInitialTab, setPlanInitialTab] = useState(null);
   const [joinInviteCode, setJoinInviteCode] = useState('');
   const enrichmentRunningRef = useRef(false);
 
@@ -170,7 +171,13 @@ export default function App() {
   }, [syncPendingEntryEnrichment]);
 
   const onNav = (tab) => {
+    if (tab === 'plan-participants') {
+      setPlanInitialTab('participants');
+      setScreen('plan');
+      return;
+    }
     const map = { home: 'home', map: 'map', log: 'log', share: 'home', trip: 'trip', plan: 'plan' };
+    if (tab === 'plan') setPlanInitialTab(null);
     setScreen(map[tab] || 'home');
   };
 
@@ -218,18 +225,24 @@ export default function App() {
   }
 
   switch (screen) {
-    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onRiverIntel={() => setScreen('river')} onOpenTrip={() => setScreen('trip')} onStartTrip={handleStartTrip} onOpenPlan={() => setScreen('plan')} onJoinTrip={() => setScreen('join')} onOpenSettings={() => setScreen('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
+    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onRiverIntel={() => setScreen('river')} onOpenTrip={() => setScreen('trip')} onStartTrip={handleStartTrip} onOpenPlan={() => { setPlanInitialTab(null); setScreen('plan'); }} onJoinTrip={() => setScreen('join')} onOpenSettings={() => setScreen('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
     case 'settings': return <Settings onBack={() => setScreen('home')} auth={auth} />;
     case 'recap':   return <TripRecap trip={trip} onBack={() => setScreen('home')} onTripUpdate={refreshTrip} auth={auth} />;
     case 'trip':    return <Trip {...common} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
     case 'map':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <Navigator {...common} gps={gps} />;
     case 'log':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} />;
-    case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={() => setScreen('trip')} />;
+    case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={() => setScreen('trip')} initialTab={planInitialTab} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} />;
     case 'river':   return <RiverIntel onBack={() => setScreen('home')} />;
     case 'new-trip':
       return <NewTrip
         onBack={() => setScreen('home')}
-        onDone={(t, inviteCode) => { setTrip(t); refreshTrip(); setNewTripInviteCode(inviteCode || null); setScreen('trip'); }}
+        onDone={(t, inviteCode) => {
+          setTrip(t);
+          refreshTrip();
+          setNewTripInviteCode(inviteCode || null);
+          setPlanInitialTab('participants');
+          setScreen('plan');
+        }}
       />;
     case 'join':
       return <JoinTrip

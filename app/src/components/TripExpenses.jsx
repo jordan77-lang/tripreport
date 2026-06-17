@@ -6,14 +6,18 @@ import { getCurrentUserId, addExpense, removeExpense } from '../lib/storage';
 import { savePlanningToCloud } from '../lib/planningSave';
 import {
   buildTripParticipants,
+  buildParticipantAliasMap,
   computeBalances,
   computeParticipantBreakdown,
   computeSettlements,
+  expenseShareAmount,
   filterExpenses,
   formatExpenseContext,
   formatSplitLabel,
   labelFor,
   money,
+  resolveParticipantId,
+  resolveSplitIds,
 } from '../lib/expenses';
 
 /**
@@ -38,6 +42,7 @@ export function TripExpenses({
   onOpenFull,
 }) {
   const compact = layout === 'compact';
+  const embedCollapsed = scope === 'location' || scope === 'event';
   const currentUserId = getCurrentUserId();
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const [description, setDescription] = useState('');
@@ -46,7 +51,8 @@ export function TripExpenses({
   const [splitMode, setSplitMode] = useState('custom');
   const [splitIds, setSplitIds] = useState([]);
   const [panel, setPanel] = useState(compact ? 'summary' : 'ledger');
-  const [showAddForm, setShowAddForm] = useState(!compact);
+  const [sectionOpen, setSectionOpen] = useState(!embedCollapsed);
+  const [showAddForm, setShowAddForm] = useState(!compact && !embedCollapsed);
   const [showAllItems, setShowAllItems] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -57,10 +63,16 @@ export function TripExpenses({
     eventId: event?.id,
   }), [allExpenses, scope, location?.id, event?.id]);
 
+  const aliasMap = useMemo(
+    () => (trip ? buildParticipantAliasMap(trip, participants) : new Map()),
+    [trip, participants],
+  );
+
   useEffect(() => {
     setSplitIds(participants.map((p) => p.id));
+    const match = participants.find((p) => p.id === currentUserId);
     if (!participants.some((p) => p.id === paidBy)) {
-      setPaidBy(participants[0]?.id || currentUserId);
+      setPaidBy(match?.id || participants[0]?.id || currentUserId);
     }
     if (scope === 'event' || scope === 'location') {
       setSplitMode('custom');
@@ -77,6 +89,24 @@ export function TripExpenses({
     setSplitIds(participants.map((p) => p.id));
   }
 
+  function openAddForm() {
+    setSectionOpen(true);
+    setShowAddForm(true);
+    setPanel('ledger');
+  }
+
+  function closeAddForm() {
+    setShowAddForm(false);
+    if (embedCollapsed && visibleExpenses.length === 0) setSectionOpen(false);
+  }
+
+  function collapseSection() {
+    setSectionOpen(false);
+    setShowAddForm(false);
+    setPanel('ledger');
+    setExpandedId(null);
+  }
+
   async function save() {
     if (!trip?.id || saving) return;
     const value = parseFloat(amount);
@@ -84,7 +114,9 @@ export function TripExpenses({
     if (splitMode === 'custom' && splitIds.length === 0) return;
 
     const who = participants.find((p) => p.id === paidBy);
-    const splitAmong = splitMode === 'all' ? 'all' : [...splitIds];
+    const splitAmong = splitMode === 'all'
+      ? participants.map((p) => p.id)
+      : [...splitIds];
     const payload = {
       description,
       amount: value,
@@ -118,11 +150,14 @@ export function TripExpenses({
   }
 
   const total = visibleExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-  const balances = useMemo(() => computeBalances(visibleExpenses, participants), [visibleExpenses, participants]);
+  const balances = useMemo(
+    () => computeBalances(visibleExpenses, participants, { trip }),
+    [visibleExpenses, participants, trip],
+  );
   const settlements = useMemo(() => computeSettlements(balances), [balances]);
   const breakdown = useMemo(
-    () => computeParticipantBreakdown(visibleExpenses, participants),
-    [visibleExpenses, participants],
+    () => computeParticipantBreakdown(visibleExpenses, participants, { trip }),
+    [visibleExpenses, participants, trip],
   );
 
   if (!trip) return null;
@@ -149,8 +184,29 @@ export function TripExpenses({
   const listedExpenses = visibleExpenses.slice(0, listLimit);
   const unsettledCount = settlements.length;
 
+  if (embedCollapsed && !sectionOpen) {
+    return (
+      <CollapsedExpensesBar
+        title={title}
+        showTitle={showTitle}
+        total={total}
+        count={visibleExpenses.length}
+        unsettledCount={unsettledCount}
+        onExpand={() => setSectionOpen(true)}
+        onAdd={openAddForm}
+      />
+    );
+  }
+
   return (
     <div>
+      {embedCollapsed && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+          <button type="button" onClick={collapseSection} style={collapseBtnStyle}>
+            Hide expenses
+          </button>
+        </div>
+      )}
       {showTitle && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase' }}>
@@ -198,7 +254,7 @@ export function TripExpenses({
           {!showAddForm ? (
             <button
               type="button"
-              onClick={() => setShowAddForm(true)}
+              onClick={openAddForm}
               style={addTriggerStyle}
             >
               <Ic d={ICONS.plus} size={14} color={T.accent} sw={2.4} />
@@ -223,23 +279,30 @@ export function TripExpenses({
               onSelectAllSplit={selectAllSplit}
               onAdd={() => void save()}
               saving={saving}
-              onCancel={() => setShowAddForm(false)}
+              onCancel={closeAddForm}
             />
           )}
 
-          {visibleExpenses.length === 0 ? (
-            <Empty text={hint} />
-          ) : (
+          {visibleExpenses.length === 0 && !showAddForm ? (
+            <Empty text={hint} compact={embedCollapsed} />
+          ) : visibleExpenses.length === 0 ? null : (
             <div style={{ marginTop: compact ? 8 : 12 }}>
               {listedExpenses.map((e) => (
                 <ExpenseRow
                   key={e.id}
                   expense={e}
+                  trip={trip}
                   participants={participants}
+                  aliasMap={aliasMap}
                   scope={scope}
                   expanded={expandedId === e.id}
                   onToggle={() => setExpandedId((id) => (id === e.id ? null : e.id))}
-                  onDelete={() => { removeExpense(trip.id, e.id); onTripUpdate?.(); }}
+                  onDelete={async () => {
+                    await savePlanningToCloud(trip.id, () => {
+                      removeExpense(trip.id, e.id);
+                    });
+                    onTripUpdate?.();
+                  }}
                 />
               ))}
               {hiddenCount > 0 && (
@@ -270,6 +333,45 @@ export function TripExpenses({
           embedded
         />
       )}
+    </div>
+  );
+}
+
+function CollapsedExpensesBar({ title, showTitle, total, count, unsettledCount, onExpand, onAdd }) {
+  const status = count === 0
+    ? 'Tap to track costs'
+    : unsettledCount === 0
+      ? 'All settled up'
+      : `${unsettledCount} to settle`;
+
+  return (
+    <div style={collapsedBarStyle}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onExpand}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onExpand(); }}
+        style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+      >
+        {showTitle && (
+          <div style={{ fontSize: ts(10), fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 4 }}>
+            {title}
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: ts(18), fontWeight: 900, color: T.text, letterSpacing: -.3 }}>{money(total)}</span>
+          <span style={{ fontSize: ts(12), color: T.textSub }}>
+            {count === 0 ? status : `${count} item${count === 1 ? '' : 's'} · ${status}`}
+          </span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onAdd}
+        style={collapsedAddBtnStyle}
+      >
+        + Add
+      </button>
     </div>
   );
 }
@@ -409,8 +511,11 @@ function BreakdownPanel({ breakdown, settlements, participants, embedded = false
   );
 }
 
-function ExpenseRow({ expense, participants, scope, expanded, onToggle, onDelete }) {
-  const payer = expense.paidByLabel || labelFor(participants, expense.paidBy);
+function ExpenseRow({ expense, trip, participants, aliasMap, scope, expanded, onToggle, onDelete }) {
+  const participantIds = participants.map((p) => p.id);
+  const split = resolveSplitIds(expense, participantIds, aliasMap);
+  const shareEach = expenseShareAmount(expense, split);
+  const payer = expense.paidByLabel || labelFor(participants, resolveParticipantId(expense.paidBy, aliasMap, participantIds) || expense.paidBy);
   const context = scope === 'all' ? formatExpenseContext(expense) : null;
 
   return (
@@ -425,20 +530,23 @@ function ExpenseRow({ expense, participants, scope, expanded, onToggle, onDelete
           </div>
           {!expanded && (
             <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {payer}{context ? ` · ${context}` : ''}
+              {payer}{split.length > 0 ? ` · ${money(shareEach)} each` : ''}{context ? ` · ${context}` : ''}
             </div>
           )}
           {expanded && (
             <div style={{ marginTop: 6, fontSize: ts(12), color: T.textSub, lineHeight: 1.45 }}>
               <div>Paid by {payer}</div>
-              <div>Split: {formatSplitLabel(expense, participants)}</div>
+              <div>Split: {formatSplitLabel(expense, participants, trip)}</div>
+              {split.length > 0 && (
+                <div>{money(shareEach)} per person ({split.length} {split.length === 1 ? 'person' : 'people'})</div>
+              )}
               {!!context && <div style={{ color: T.accentMid }}>{context}</div>}
             </div>
           )}
         </div>
         <span style={{ fontSize: ts(11), color: T.textFaint, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : 'none' }}>›</span>
       </button>
-      <button type="button" onClick={onDelete} aria-label="Delete expense" style={deleteBtnStyle}>✕</button>
+      <button type="button" onClick={() => void onDelete()} aria-label="Delete expense" style={deleteBtnStyle}>✕</button>
     </div>
   );
 }
@@ -562,13 +670,49 @@ function SplitModeChip({ active, label, onClick }) {
   );
 }
 
-function Empty({ text }) {
+function Empty({ text, compact = false }) {
   return (
-    <div style={{ textAlign: 'center', padding: '14px 10px', color: T.textFaint, fontSize: ts(12), lineHeight: 1.45 }}>
+    <div style={{ textAlign: 'center', padding: compact ? '8px 6px' : '14px 10px', color: T.textFaint, fontSize: ts(12), lineHeight: 1.45 }}>
       {text}
     </div>
   );
 }
+
+const collapsedBarStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  background: T.card,
+  borderRadius: 12,
+  border: `1px solid ${T.border}`,
+  padding: '10px 12px',
+  cursor: 'pointer',
+  fontFamily: F,
+};
+
+const collapsedAddBtnStyle = {
+  flexShrink: 0,
+  border: `1px solid ${T.accent}50`,
+  borderRadius: 9,
+  padding: '7px 11px',
+  background: T.accentLight,
+  color: T.accent,
+  fontSize: ts(12),
+  fontWeight: 800,
+  fontFamily: F,
+  cursor: 'pointer',
+};
+
+const collapseBtnStyle = {
+  border: 'none',
+  background: 'transparent',
+  color: T.textFaint,
+  fontSize: ts(12),
+  fontWeight: 600,
+  fontFamily: F,
+  cursor: 'pointer',
+  padding: '2px 0',
+};
 
 const composerStyle = {
   background: T.card,

@@ -21,7 +21,6 @@ import { supabaseConfigured } from '../lib/supabase';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants, isJoinedMember, resolveUserDisplayName } from '../lib/expenses';
 import { LocationPage } from './LocationPage';
-import { TripInvitePanel } from '../components/TripInvitePanel';
 
 export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap, newTripInviteCode, onDismissInvite }) {
   const currentUserId = getCurrentUserId();
@@ -678,12 +677,36 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         <>
 
         {canInvite && (
-          <TripInvitePanel
-            trip={trip}
-            initialCode={newTripInviteCode}
-            onDismissInitial={onDismissInvite}
-            onTripUpdate={onTripUpdate}
-          />
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNav('plan-participants')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNav('plan-participants'); }}
+            style={{
+              background: newTripInviteCode ? '#EBF5EB' : T.card,
+              border: `1px solid ${newTripInviteCode ? '#B8D4B0' : T.border}`,
+              borderRadius: 12,
+              padding: '12px 14px',
+              marginBottom: 12,
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ fontSize: ts(14), fontWeight: 800, color: newTripInviteCode ? '#2A6A14' : T.text, marginBottom: 4 }}>
+              {newTripInviteCode ? 'Trip created — invite your crew' : 'Crew & invites'}
+            </div>
+            <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.45 }}>
+              Open Trip Plan → Crew to add roster names, email invites, or share a join code.
+            </div>
+            {newTripInviteCode && onDismissInvite && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onDismissInvite(); }}
+                style={{ marginTop: 8, border: 'none', background: 'transparent', color: T.textFaint, fontSize: ts(12), cursor: 'pointer', padding: 0, fontFamily: F }}
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
         )}
 
         {isPlanning && (
