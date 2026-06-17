@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { joinTripByCode, createTripInvite } from '../lib/tripCloud';
 import { T, F } from '../tokens';
 
-export function JoinTrip({ onJoined, onBack }) {
-  const [code, setCode] = useState('');
+export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
+  const [code, setCode] = useState(() => String(initialCode || '').trim().toUpperCase());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 

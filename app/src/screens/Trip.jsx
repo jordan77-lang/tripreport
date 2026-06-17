@@ -5,7 +5,7 @@ import { SyncChip } from '../components/SyncChip';
 import { TripExpenses } from '../components/TripExpenses';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { addLocation, finalizeTrip, getContacts, getCurrentUserId, isTripOwner, reopenTrip, saveContact, saveTrip, startGpsSession, startTrip, stopGpsSession } from '../lib/storage';
+import { addLocation, finalizeTrip, getContacts, getCurrentUserId, isTripMember, isTripOwner, reopenTrip, saveContact, saveTrip, startGpsSession, startTrip, stopGpsSession } from '../lib/storage';
 import { getSignedInUserId } from '../lib/authUser';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
@@ -21,12 +21,13 @@ import { supabaseConfigured } from '../lib/supabase';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants, isJoinedMember, resolveUserDisplayName } from '../lib/expenses';
 import { LocationPage } from './LocationPage';
-import { InviteCodePanel } from './JoinTrip';
+import { TripInvitePanel } from '../components/TripInvitePanel';
 
-export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap }) {
+export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap, newTripInviteCode, onDismissInvite }) {
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
   const canInvite = Boolean(supabaseConfigured && signedInUserId && trip && isTripOwner(trip, signedInUserId));
+  const canSyncTrip = Boolean(supabaseConfigured && signedInUserId && trip && isTripMember(trip, signedInUserId));
   const canDeleteTrip = Boolean(trip && isTripOwner(trip, signedInUserId || currentUserId));
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId, { withOwnerMeta: true }), [trip, currentUserId]);
   const [typeFilter, setTypeFilter] = useState('all');
@@ -48,6 +49,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     observedAt: toDatetimeLocal(new Date()),
     observedStartAt: toDatetimeLocal(new Date()),
     observedEndAt: toDatetimeLocal(addHours(new Date(), 1)),
+    customLat: '',
+    customLng: '',
   });
   const [locationPin, setLocationPin] = useState(null);
   const [locationSource, setLocationSource] = useState('map');
@@ -91,13 +94,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       { enableHighAccuracy: true, timeout: 8000 },
     );
   }, [addingLocation]);
-
-  function startAddLocation() {
-    setAddingLocation(true);
-    setLocationError(null);
-    setLocationSource('map');
-    setLocationPin(track[track.length - 1] ? { lng: track[track.length - 1].lng, lat: track[track.length - 1].lat } : null);
-  }
 
   function startAddLocationAt(pos) {
     setAddingLocation(true);
@@ -198,7 +194,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     { id: 'share', label: 'Share trip summary', icon: tripMenuIcon('share'), onClick: shareTrip },
     { id: 'gpx', label: 'Export GPX track', icon: tripMenuIcon('export'), onClick: () => exportGpx(trip) },
     { id: 'report', label: 'Export HTML report', icon: tripMenuIcon('export'), onClick: () => exportHtmlReport(trip) },
-    ...(supabaseConfigured ? [{ id: 'sync', label: 'Sync to cloud', icon: tripMenuIcon('sync'), onClick: () => void syncToCloud() }] : []),
+    ...(supabaseConfigured && canSyncTrip ? [{ id: 'sync', label: 'Sync to cloud', icon: tripMenuIcon('sync'), onClick: () => void syncToCloud() }] : []),
     { id: 'export', label: 'Export offline update', icon: tripMenuIcon('export'), onClick: exportOfflineUpdate },
     { id: 'import', label: 'Import offline update', icon: tripMenuIcon('import'), onClick: () => importUpdateRef.current?.click() },
     {
@@ -281,9 +277,28 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       setLocationError('Give this location a name.');
       return;
     }
-    const resolved = locationSource === 'current' ? currentPos : locationPin;
+    let resolved = null;
+    if (locationSource === 'current') {
+      resolved = currentPos;
+    } else if (locationSource === 'custom') {
+      const lat = parseFloat(locationDraft.customLat);
+      const lng = parseFloat(locationDraft.customLng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        setLocationError('Enter valid latitude and longitude.');
+        return;
+      }
+      resolved = { lat, lng };
+    } else {
+      resolved = locationPin;
+    }
     if (!resolved?.lat || !resolved?.lng) {
-      setLocationError(locationSource === 'current' ? 'Current GPS location is not available yet.' : 'Place a pin for this location on the map.');
+      setLocationError(
+        locationSource === 'current'
+          ? 'Current GPS location is not available yet.'
+          : locationSource === 'custom'
+            ? 'Enter coordinates for this custom location.'
+            : 'Tap the map to place a pin for this location.',
+      );
       return;
     }
     const created = addLocation(trip.id, {
@@ -319,6 +334,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         observedAt: toDatetimeLocal(new Date()),
         observedStartAt: toDatetimeLocal(new Date()),
         observedEndAt: toDatetimeLocal(addHours(new Date(), 1)),
+        customLat: '',
+        customLng: '',
       });
       setLocationPin(null);
       setLocCoverPhoto(null);
@@ -495,7 +512,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                 textAlign: 'left',
               }}
             >
-              {formatTripDateRange(trip.startDate, trip.endDate)} · Edit
+              {formatTripDateRange(trip.startDate, trip.endDate)} · Edit trip details
             </button>
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{
@@ -513,7 +530,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             <button
               type="button"
               onClick={openTripEdit}
-              aria-label="Edit trip"
+              aria-label="Edit trip details"
               style={{
                 height: 40,
                 padding: '0 12px',
@@ -527,7 +544,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                 fontFamily: F,
               }}
             >
-              Edit
+              Edit trip details
             </button>
             <TripOverflowMenu items={overflowItems} />
           </div>
@@ -661,7 +678,12 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         <>
 
         {canInvite && (
-          <InviteCodePanel tripId={trip.id} onTripUpdate={onTripUpdate} />
+          <TripInvitePanel
+            trip={trip}
+            initialCode={newTripInviteCode}
+            onDismissInitial={onDismissInvite}
+            onTripUpdate={onTripUpdate}
+          />
         )}
 
         {isPlanning && (
@@ -755,9 +777,14 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Trip Map</span>
-          <span onClick={() => onNav('map')} style={{ fontSize: 12, color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Open Map →</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>Trip Map</span>
+          <span onClick={() => onNav('map')} style={{ fontSize: ts(13), color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Open Map →</span>
+        </div>
+        <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, lineHeight: 1.45 }}>
+          {addingLocation
+            ? 'Adjust the pin on the map, name the location, then tap Save Location.'
+            : 'Tap the map to drop a pin and save a new location.'}
         </div>
         <div style={{ borderRadius: 14, overflow: 'hidden', height: 220, border: `1px solid ${T.border}`, marginBottom: 8 }}>
           <TripMap
@@ -784,28 +811,63 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           />
         </div>
         <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-          <span style={{ fontSize: 10.5, color: T.textFaint }}>{track.length} track points</span>
-          <span style={{ fontSize: 10.5, color: T.textFaint }}>{mapEntries.length} saved locations</span>
-          <span style={{ fontSize: 10.5, color: T.textFaint }}>{filteredEntries.length} entries</span>
-        </div>
-
-        <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase' }}>Locations</div>
-          </div>
-          <div onClick={startAddLocation}
-               style={{ marginTop: 8, height: 38, borderRadius: 10, border: `1px dashed ${T.border}`, background: T.card,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: T.textSub }}>Log New Location</span>
-          </div>
-          <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 8 }}>
-            Tip: click directly on the map to start a new location marker.
-          </div>
+          <span style={{ fontSize: ts(12), color: T.textFaint }}>{track.length} track points</span>
+          <span style={{ fontSize: ts(12), color: T.textFaint }}>{mapEntries.length} saved locations</span>
+          <span style={{ fontSize: ts(12), color: T.textFaint }}>{filteredEntries.length} entries</span>
         </div>
 
         {addingLocation && (
           <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '11px 12px', marginBottom: 12 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text, marginBottom: 8 }}>Create Location</div>
+            <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text, marginBottom: 8 }}>Save Location</div>
+            <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, fontWeight: 700 }}>Place on map</div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+              {[
+                { id: 'map', label: 'Map pin' },
+                { id: 'current', label: 'My GPS' },
+                { id: 'custom', label: 'Custom coords' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setLocationSource(opt.id);
+                    setLocationError(null);
+                    if (opt.id === 'current' && currentPos) setLocationPin(null);
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 14,
+                    cursor: 'pointer',
+                    fontSize: ts(12),
+                    fontWeight: 700,
+                    fontFamily: F,
+                    background: locationSource === opt.id ? '#2A5C8E' : T.bg,
+                    color: locationSource === opt.id ? 'white' : T.textSub,
+                    border: locationSource === opt.id ? 'none' : `1px solid ${T.border}`,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {locationSource === 'custom' && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <input
+                  value={locationDraft.customLat}
+                  onChange={(e) => setLocationDraft((d) => ({ ...d, customLat: e.target.value }))}
+                  placeholder="Latitude"
+                  inputMode="decimal"
+                  style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: ts(13), fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
+                />
+                <input
+                  value={locationDraft.customLng}
+                  onChange={(e) => setLocationDraft((d) => ({ ...d, customLng: e.target.value }))}
+                  placeholder="Longitude"
+                  inputMode="decimal"
+                  style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: ts(13), fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
+                />
+              </div>
+            )}
             <input
               value={locationDraft.name}
               onChange={(e) => setLocationDraft((d) => ({ ...d, name: e.target.value }))}
@@ -818,6 +880,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                 { id: 'river-feature', icon: '🌊', label: 'River Feature' },
                 { id: 'amazing-find', icon: '✨', label: 'Amazing Find' },
                 { id: 'hiking-location', icon: '🥾', label: 'Hiking Location' },
+                { id: 'custom', icon: '📌', label: 'Custom' },
               ].map((tp) => (
                 <div key={tp.id} onClick={() => setLocationDraft((d) => ({ ...d, type: tp.id }))}
                      style={{ flexShrink: 0, padding: '5px 9px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
@@ -917,12 +980,14 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 10.5, color: T.textFaint, marginBottom: 8 }}>
+            <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 8 }}>
               {locationSource === 'map'
-                ? (locationPin ? `Map pin: ${locationPin.lat.toFixed(5)}, ${locationPin.lng.toFixed(5)}` : 'Tap the map below to place this location pin.')
-                : (currentPos
-                  ? `Current GPS: ${currentPos.lat.toFixed(5)}, ${currentPos.lng.toFixed(5)}`
-                  : (currentPosError || 'Fetching current GPS...'))}
+                ? (locationPin ? `Pin: ${locationPin.lat.toFixed(5)}, ${locationPin.lng.toFixed(5)}` : 'Tap the map above to place your pin.')
+                : locationSource === 'current'
+                  ? (currentPos
+                    ? `GPS: ${currentPos.lat.toFixed(5)}, ${currentPos.lng.toFixed(5)}`
+                    : (currentPosError || 'Waiting for GPS…'))
+                  : 'Enter coordinates or tap the map to preview the pin.'}
             </div>
             {locationError && <div style={{ fontSize: 10.5, color: T.amber, marginBottom: 8 }}>{locationError}</div>}
             <div style={{ display: 'flex', gap: 8 }}>

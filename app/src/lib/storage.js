@@ -75,6 +75,65 @@ export function isTripOwner(trip, userId) {
   return false;
 }
 
+/** Owner or anyone who joined via invite / appears in trip collaborators. */
+export function isTripMember(trip, userId) {
+  if (!trip || !userId) return false;
+  if (isTripOwner(trip, userId)) return true;
+  if (trip.memberProfiles?.[userId]) return true;
+  return (trip.collaborators || []).some((c) => {
+    const id = c?.userId || c?.id;
+    return Boolean(id) && id === userId;
+  });
+}
+
+/** Names from past trips for quick re-invite when creating a new trip. */
+export function getPastTripParticipants({ excludeTripId = null } = {}) {
+  const seen = new Set();
+  const out = [];
+  const excludeMemberIds = new Set();
+
+  if (excludeTripId) {
+    const trip = getTrips().find((t) => t.id === excludeTripId);
+    if (trip?.ownerId) excludeMemberIds.add(trip.ownerId);
+    for (const c of trip?.collaborators || []) {
+      const id = c?.userId || c?.id;
+      if (id) excludeMemberIds.add(id);
+    }
+    for (const uid of Object.keys(trip?.memberProfiles || {})) {
+      excludeMemberIds.add(uid);
+    }
+  }
+
+  for (const trip of getTrips()) {
+    for (const c of trip.collaborators || []) {
+      const name = (c.handle || c.name || '').trim();
+      if (!name) continue;
+      const userId = c.userId || (isUuid(c.id) ? c.id : null);
+      if (userId && excludeMemberIds.has(userId)) continue;
+      const key = userId || name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: userId || c.id || key, name, userId, hasAccount: Boolean(userId) });
+    }
+    for (const [uid, name] of Object.entries(trip.memberProfiles || {})) {
+      if (uid === trip.ownerId) continue;
+      if (excludeMemberIds.has(uid)) continue;
+      const label = (name || '').trim();
+      if (!label) continue;
+      const key = uid;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: uid, name: label, userId: uid, hasAccount: true });
+    }
+  }
+
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
 export function getTrips() {
   try {
     const parsed = JSON.parse(localStorage.getItem(TRIPS_KEY) || '[]');
@@ -102,6 +161,15 @@ export function saveTrip(trip) {
     }
     throw e;
   }
+
+  if (nextTrip.syncState === 'pending' && nextTrip.id) {
+    queueMicrotask(() => {
+      import('./tripAutoSync.js')
+        .then((m) => m.scheduleTripCloudSync(nextTrip.id))
+        .catch(() => {});
+    });
+  }
+
   return nextTrip;
 }
 
@@ -513,6 +581,11 @@ function mutateTrip(tripId, fn) {
   trip.updatedAt = now;
   trip.syncState = 'pending';
   saveTrip(trip);
+  queueMicrotask(() => {
+    import('./tripAutoSync.js')
+      .then((m) => m.scheduleTripCloudSync(tripId, { debounceMs: 800 }))
+      .catch(() => {});
+  });
   return result;
 }
 

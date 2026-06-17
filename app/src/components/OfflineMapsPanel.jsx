@@ -39,7 +39,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
     const next = current.includes(regionId)
       ? current.filter((id) => id !== regionId)
       : [...current, regionId];
-    saveTrip({ ...trip, offlineRegions: next, updatedAt: Date.now() });
+    saveTrip({ ...trip, offlineRegions: next, updatedAt: Date.now(), syncState: 'pending' });
     onTripUpdate?.();
   }
 

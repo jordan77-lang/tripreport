@@ -18,15 +18,17 @@ export function ReportNarrativeEditor({ value, onChange, onBlurSave, trip }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {segments.map((seg, index) => {
         if (seg.type === 'photo') {
           const photo = seg.photoId ? photoById.get(seg.photoId) : null;
           return (
-            <PhotoPlaceholderCard
+            <InlinePhotoBlock
               key={`photo-${index}-${seg.photoId || seg.caption}`}
               photo={photo}
               caption={seg.caption}
+              onCaptionChange={(caption) => updateSegment(index, { ...seg, caption })}
+              onBlur={() => onBlurSave?.()}
             />
           );
         }
@@ -38,18 +40,18 @@ export function ReportNarrativeEditor({ value, onChange, onBlurSave, trip }) {
             onChange={(e) => updateSegment(index, { type: 'text', content: e.target.value })}
             onBlur={() => onBlurSave?.()}
             placeholder={index === 0 ? 'Generate a draft with AI, or write your trip story here…' : 'Continue your report…'}
-            rows={Math.max(4, Math.min(14, seg.content.split('\n').length + 1))}
+            rows={Math.max(4, Math.min(16, seg.content.split('\n').length + 1))}
             style={{
               width: '100%',
-              minHeight: 88,
-              border: `1.5px solid ${T.border}`,
-              borderRadius: 12,
-              padding: '12px 14px',
-              fontSize: ts(15),
-              lineHeight: 1.55,
+              minHeight: 96,
+              border: 'none',
+              borderBottom: `1px solid ${T.border}`,
+              padding: '14px 0',
+              fontSize: ts(16),
+              lineHeight: 1.65,
               fontFamily: F,
               color: T.text,
-              background: T.card,
+              background: 'transparent',
               boxSizing: 'border-box',
               outline: 'none',
               resize: 'vertical',
@@ -61,54 +63,56 @@ export function ReportNarrativeEditor({ value, onChange, onBlurSave, trip }) {
   );
 }
 
-function PhotoPlaceholderCard({ photo, caption }) {
+function InlinePhotoBlock({ photo, caption, onCaptionChange, onBlur }) {
   return (
-    <div
-      style={{
-        border: `1.5px dashed ${T.accent}`,
-        borderRadius: 12,
-        padding: 12,
-        background: T.accentLight,
-        display: 'flex',
-        gap: 12,
-        alignItems: 'center',
-      }}
-    >
-      <div
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: 8,
-          overflow: 'hidden',
-          flexShrink: 0,
-          background: T.border,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
+    <figure style={{ margin: '16px 0', padding: 0 }}>
+      <div style={{
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: '#F0EDE8',
+        border: `1px solid ${T.border}`,
+      }}>
         {photo?.media ? (
           <MediaThumb
             media={photo.media}
             alt={caption}
-            preferThumb
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{ width: '100%', maxHeight: 360, objectFit: 'cover', display: 'block' }}
           />
         ) : (
-          <span style={{ fontSize: ts(22) }} aria-hidden>🖼</span>
+          <div style={{
+            minHeight: 160,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: T.textFaint,
+            fontSize: ts(13),
+            padding: 20,
+            textAlign: 'center',
+          }}>
+            Photo will appear here in your Word download
+          </div>
         )}
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: ts(11), fontWeight: 800, color: T.accent, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>
-          Photo placeholder
-        </div>
-        <div style={{ fontSize: ts(14), fontWeight: 600, color: T.text, lineHeight: 1.4 }}>
-          {caption}
-        </div>
-        <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 4, lineHeight: 1.35 }}>
-          Embedded in the Word download at this spot in the story.
-        </div>
-      </div>
-    </div>
+      <figcaption style={{ marginTop: 8 }}>
+        <input
+          value={caption}
+          onChange={(e) => onCaptionChange(e.target.value)}
+          onBlur={onBlur}
+          placeholder="Photo caption — part of your story"
+          style={{
+            width: '100%',
+            border: 'none',
+            background: 'transparent',
+            fontSize: ts(14),
+            fontStyle: 'italic',
+            lineHeight: 1.5,
+            color: T.textSub,
+            fontFamily: F,
+            outline: 'none',
+            padding: 0,
+          }}
+        />
+      </figcaption>
+    </figure>
   );
 }

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { createTrip, getContacts, getTrip, saveContact, saveTrip } from '../lib/storage';
+import { createTrip, getContacts, getPastTripParticipants, getTrip, saveContact, saveTrip } from '../lib/storage';
 import { createCoverPhotoPreview, finalizeCoverPhotoPreview } from '../lib/media';
-import { pushTripToCloud } from '../lib/tripCloud';
+import { createTripInvite, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { listMapRegions, regionMatchesTripTypes } from '../lib/mapRegions';
 import { preloadMapRegions } from '../lib/offlineMaps';
@@ -31,6 +31,7 @@ export function NewTrip({ onDone, onBack }) {
   const [inviteInput, setInviteInput] = useState('');
   const [invites, setInvites] = useState([]);
   const [contacts, setContacts] = useState(() => getContacts());
+  const [pastCrew] = useState(() => getPastTripParticipants());
   const [coverPhoto, setCoverPhoto] = useState(null);
   // Map area state
   const [mapSearch, setMapSearch]     = useState('');
@@ -210,12 +211,19 @@ export function NewTrip({ onDone, onBack }) {
       try {
         await pushTripToCloud(trip);
         trip = getTrip(trip.id) || trip;
+        try {
+          const code = await createTripInvite(trip.id);
+          onDone(trip, code);
+          return;
+        } catch (e) {
+          console.warn('Could not create invite code', e);
+        }
       } catch (e) {
         console.error('Cloud sync failed — trip saved locally', e);
       }
     }
 
-    onDone(trip);
+    onDone(trip, null);
   }
 
   const willPlanAhead = resolveTripStatus() === 'planning';
@@ -338,6 +346,42 @@ export function NewTrip({ onDone, onBack }) {
           <>
             <div style={{ marginBottom: 18 }}>
               <Label>Trip Participants</Label>
+              <div style={{ fontSize: 11, color: T.textSub, marginBottom: 10, lineHeight: 1.45 }}>
+                Add names for your roster. After the trip is created you can email past crew, invite by email, or share a join code.
+              </div>
+
+              {pastCrew.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>
+                    Past crew
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {pastCrew.map((person) => {
+                      const added = invites.some((i) => (i.handle || i.name || '').toLowerCase() === person.name.toLowerCase());
+                      return (
+                        <div
+                          key={person.id}
+                          onClick={() => { if (!added) addInvite(person.name); }}
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: 14,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: added ? 'default' : 'pointer',
+                            background: added ? T.accentLight : T.bg,
+                            color: added ? T.accent : T.textSub,
+                            border: `1px solid ${added ? T.accent : T.border}`,
+                            opacity: added ? 0.7 : 1,
+                          }}
+                        >
+                          {added ? '✓ ' : '+ '}{person.name}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div style={{ position: 'relative', marginBottom: 10 }}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input

@@ -26,7 +26,19 @@ export default function App() {
   const [screen, setScreen] = useState('home');
   const [trip, setTrip]     = useState(() => getActiveTrip());
   const [allTrips, setAllTrips] = useState(() => getTrips());
+  const [newTripInviteCode, setNewTripInviteCode] = useState(null);
+  const [joinInviteCode, setJoinInviteCode] = useState('');
   const enrichmentRunningRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const join = params.get('join') || params.get('code');
+    if (join?.trim()) {
+      setJoinInviteCode(join.trim().toUpperCase());
+      setScreen('join');
+    }
+  }, []);
 
   const refreshTrip = useCallback(() => {
     setTrip(getActiveTrip());
@@ -209,7 +221,7 @@ export default function App() {
     case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onRiverIntel={() => setScreen('river')} onOpenTrip={() => setScreen('trip')} onStartTrip={handleStartTrip} onOpenPlan={() => setScreen('plan')} onJoinTrip={() => setScreen('join')} onOpenSettings={() => setScreen('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
     case 'settings': return <Settings onBack={() => setScreen('home')} auth={auth} />;
     case 'recap':   return <TripRecap trip={trip} onBack={() => setScreen('home')} onTripUpdate={refreshTrip} auth={auth} />;
-    case 'trip':    return <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
+    case 'trip':    return <Trip {...common} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
     case 'map':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <Navigator {...common} gps={gps} />;
     case 'log':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} />;
     case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={() => setScreen('trip')} />;
@@ -217,10 +229,11 @@ export default function App() {
     case 'new-trip':
       return <NewTrip
         onBack={() => setScreen('home')}
-        onDone={(t) => { setTrip(t); refreshTrip(); setScreen('trip'); }}
+        onDone={(t, inviteCode) => { setTrip(t); refreshTrip(); setNewTripInviteCode(inviteCode || null); setScreen('trip'); }}
       />;
     case 'join':
       return <JoinTrip
+        initialCode={joinInviteCode}
         onBack={() => setScreen('home')}
         onJoined={(tripId) => {
           setActiveTrip(tripId);

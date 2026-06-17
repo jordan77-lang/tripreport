@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { Ic } from '../components/Ic';
+import { SyncChip } from '../components/SyncChip';
 import { TripEditPanel } from '../components/TripEditPanel';
 import { T, F, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
 import { buildTripDraft, formatTripDateRange } from '../lib/tripEdit';
+import { savePlanningToCloud } from '../lib/planningSave';
 import {
   getCurrentUserId,
   addGearItem, updateGearItem, removeGearItem,
@@ -41,6 +43,17 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const currentUserId = getCurrentUserId();
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
+  const tripSyncState = useMemo(() => {
+    if (!trip) return 'synced';
+    if (trip.syncState === 'pending') return 'pending';
+    const planningPending = [
+      ...(trip.gearItems || []),
+      ...(trip.meals || []),
+      ...(trip.expenses || []),
+      ...(trip.shoppingItems || []),
+    ].some((item) => item?.syncState === 'pending');
+    return planningPending ? 'pending' : (trip.syncState || 'synced');
+  }, [trip]);
 
   useTripMembersSync({
     tripId: trip?.id,
@@ -91,12 +104,13 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
                 fontFamily: F,
               }}
             >
-              {formatTripDateRange(trip.startDate, trip.endDate)} · Edit trip
+              {formatTripDateRange(trip.startDate, trip.endDate)} · Edit trip details
             </button>
           </div>
           <button
             type="button"
             onClick={openTripEdit}
+            aria-label="Edit trip details"
             style={{
               height: 36,
               padding: '0 12px',
@@ -111,8 +125,9 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
               flexShrink: 0,
             }}
           >
-            Edit
+            Edit trip details
           </button>
+          <SyncChip state={tripSyncState} compact />
         </div>
         <div style={{ display: 'flex', gap: 2 }}>
           {TABS.map((tb) => (
@@ -159,21 +174,29 @@ function GearTab({ trip, participants, onTripUpdate }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('group');
   const [assignedTo, setAssignedTo] = useState('');
+  const [saving, setSaving] = useState(false);
   const gear = trip.gearItems || [];
 
-  function add() {
-    if (!name.trim()) return;
-    const who = participants.find((p) => p.id === assignedTo);
-    addGearItem(trip.id, {
-      name,
-      category,
-      assignedTo: assignedTo || null,
-      assignedToLabel: who?.label || null,
-      shared: category !== 'personal',
-    });
-    setName('');
-    setAssignedTo('');
-    onTripUpdate?.();
+  async function save() {
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    try {
+      const who = participants.find((p) => p.id === assignedTo);
+      await savePlanningToCloud(trip.id, () => {
+        addGearItem(trip.id, {
+          name,
+          category,
+          assignedTo: assignedTo || null,
+          assignedToLabel: who?.label || null,
+          shared: category !== 'personal',
+        });
+      });
+      setName('');
+      setAssignedTo('');
+      onTripUpdate?.();
+    } finally {
+      setSaving(false);
+    }
   }
 
   function cycleStatus(item) {
@@ -193,7 +216,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
   return (
     <div>
       <Composer>
-        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
                placeholder="Add gear (tent, stove, first-aid…)" style={inputStyle} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <select value={category} onChange={(e) => setCategory(e.target.value)} style={selectStyle}>
@@ -203,7 +226,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
             <option value="">Unassigned</option>
             {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
-          <AddButton onClick={add} />
+          <SaveButton onClick={() => void save()} busy={saving} />
         </div>
       </Composer>
 
@@ -244,19 +267,29 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   const [slot, setSlot] = useState('dinner');
   const [assignedTo, setAssignedTo] = useState('');
   const [ingredients, setIngredients] = useState('');
+  const [saving, setSaving] = useState(false);
   const meals = trip.meals || [];
 
-  function add() {
-    if (!name.trim()) return;
-    const who = participants.find((p) => p.id === assignedTo);
-    const ingList = ingredients.split(',').map((s) => s.trim()).filter(Boolean).map((n) => ({ name: n, qty: '' }));
-    addMeal(trip.id, {
-      name, dayIndex: Number(dayIndex) || 1, slot,
-      assignedTo: assignedTo || null, assignedToLabel: who?.label || null,
-      ingredients: ingList,
-    });
-    setName(''); setIngredients(''); setAssignedTo('');
-    onTripUpdate?.();
+  async function save() {
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    try {
+      const who = participants.find((p) => p.id === assignedTo);
+      const ingList = ingredients.split(',').map((s) => s.trim()).filter(Boolean).map((n) => ({ name: n, qty: '' }));
+      await savePlanningToCloud(trip.id, () => {
+        addMeal(trip.id, {
+          name, dayIndex: Number(dayIndex) || 1, slot,
+          assignedTo: assignedTo || null, assignedToLabel: who?.label || null,
+          ingredients: ingList,
+        });
+      });
+      setName('');
+      setIngredients('');
+      setAssignedTo('');
+      onTripUpdate?.();
+    } finally {
+      setSaving(false);
+    }
   }
 
   const byDay = useMemo(() => {
@@ -280,9 +313,9 @@ function MealsTab({ trip, participants, onTripUpdate }) {
             {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </div>
-        <input value={ingredients} onChange={(e) => setIngredients(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+        <input value={ingredients} onChange={(e) => setIngredients(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
                placeholder="Ingredients, comma separated" style={{ ...inputStyle, marginTop: 8 }} />
-        <div style={{ marginTop: 8 }}><AddButton onClick={add} wide label="Add Meal" /></div>
+        <div style={{ marginTop: 8 }}><SaveButton onClick={() => void save()} busy={saving} wide /></div>
       </Composer>
 
       {meals.length === 0 && <Empty text="Plan meals by day. Ingredients flow into the shopping list." />}
@@ -316,19 +349,37 @@ function ShoppingTab({ trip, onTripUpdate }) {
   const [name, setName] = useState('');
   const [qty, setQty] = useState('');
   const [note, setNote] = useState(null);
+  const [saving, setSaving] = useState(false);
   const items = trip.shoppingItems || [];
 
-  function add() {
-    if (!name.trim()) return;
-    addShoppingItem(trip.id, { name, qty });
-    setName(''); setQty('');
-    onTripUpdate?.();
+  async function save() {
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    try {
+      await savePlanningToCloud(trip.id, () => {
+        addShoppingItem(trip.id, { name, qty });
+      });
+      setName('');
+      setQty('');
+      onTripUpdate?.();
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function generate() {
-    const added = generateShoppingList(trip.id);
-    setNote(added > 0 ? `Added ${added} item${added === 1 ? '' : 's'} from meals.` : 'No new ingredients found in meals.');
-    onTripUpdate?.();
+  async function generate() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      let added = 0;
+      await savePlanningToCloud(trip.id, () => {
+        added = generateShoppingList(trip.id);
+      });
+      setNote(added > 0 ? `Added ${added} item${added === 1 ? '' : 's'} from meals.` : 'No new ingredients found in meals.');
+      onTripUpdate?.();
+    } finally {
+      setSaving(false);
+    }
   }
 
   function toggle(item) {
@@ -342,12 +393,12 @@ function ShoppingTab({ trip, onTripUpdate }) {
     <div>
       <Composer>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
                  placeholder="Add item" style={inputStyle} />
           <input value={qty} onChange={(e) => setQty(e.target.value)} placeholder="Qty" style={{ ...inputStyle, maxWidth: 70 }} />
-          <AddButton onClick={add} />
+          <SaveButton onClick={() => void save()} busy={saving} />
         </div>
-        <div onClick={generate}
+        <div onClick={() => { if (!saving) void generate(); }}
              style={{ marginTop: 8, height: 36, borderRadius: 10, border: `1px dashed ${T.accent}80`, background: T.accentLight,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                       fontSize: 11.5, fontWeight: 700, color: T.accent, gap: 6 }}>
@@ -392,14 +443,33 @@ function SectionLabel({ children }) {
   return <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 8 }}>{children}</div>;
 }
 
-function AddButton({ onClick, wide, label }) {
+function SaveButton({ onClick, busy = false, wide = false }) {
   return (
-    <div onClick={onClick}
-         style={{ flexShrink: 0, minWidth: wide ? '100%' : 54, height: 38, borderRadius: 10, background: T.accent,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                  color: 'white', fontSize: 12, fontWeight: 800, gap: 5 }}>
-      {wide ? (label || 'Add') : <Ic d={ICONS.plus} size={16} color="white" sw={2.4} />}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      aria-label="Save"
+      style={{
+        flexShrink: 0,
+        minWidth: wide ? '100%' : 72,
+        height: 38,
+        borderRadius: 10,
+        border: 'none',
+        background: busy ? '#7A9BB8' : T.accent,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: busy ? 'wait' : 'pointer',
+        color: 'white',
+        fontSize: 12,
+        fontWeight: 800,
+        fontFamily: F,
+        padding: wide ? 0 : '0 12px',
+      }}
+    >
+      {busy ? 'Saving…' : 'Save'}
+    </button>
   );
 }
 

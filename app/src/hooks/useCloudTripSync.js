@@ -1,26 +1,39 @@
 import { useEffect } from 'react';
-import { syncUserTripsWithCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
+import {
+  initPassiveCloudSync,
+  initTripAutoSync,
+  initTripCloudRealtime,
+  runFullCloudSync,
+  stopCloudSyncListeners,
+} from '../lib/tripAutoSync';
 
-/** After sign-in (and when back online), pull cloud trips and push local pending trips. */
+/** After sign-in: push on save, pull on interval/focus/realtime, and on reconnect. */
 export function useCloudTripSync({ enabled = true, onSynced } = {}) {
   useEffect(() => {
     if (!enabled || !supabaseConfigured) return undefined;
 
-    async function run() {
+    initTripAutoSync({ onSynced: () => onSynced?.() });
+    initPassiveCloudSync({ onSynced, intervalMs: 90_000 });
+    initTripCloudRealtime({ onSynced });
+
+    async function runFullSync() {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       try {
-        const result = await syncUserTripsWithCloud();
+        const result = await runFullCloudSync();
         if ((result.pulled || result.pushed) && onSynced) onSynced();
       } catch (e) {
         console.warn('Cloud trip sync failed', e);
       }
     }
 
-    const onOnline = () => { void run(); };
+    const onOnline = () => { void runFullSync(); };
     window.addEventListener('online', onOnline);
-    void run();
+    void runFullSync();
 
-    return () => window.removeEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      stopCloudSyncListeners();
+    };
   }, [enabled, onSynced]);
 }

@@ -4,9 +4,11 @@ import { ts } from '../lib/textScale';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from './MediaThumb';
 import { TRIP_TYPES, saveTripDetailsFromDraft } from '../lib/tripEdit';
+import { savePlanningToCloud } from '../lib/planningSave';
 
 export function TripEditPanel({ trip, draft, onCancel, onSaved, onDraftChange }) {
   const [coverBusy, setCoverBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
   const [error, setError] = useState(null);
 
   function updateDraft(next) {
@@ -34,13 +36,19 @@ export function TripEditPanel({ trip, draft, onCancel, onSaved, onDraftChange })
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
+    if (!trip?.id || saveBusy) return;
     setError(null);
+    setSaveBusy(true);
     try {
-      saveTripDetailsFromDraft(trip, draft);
+      await savePlanningToCloud(trip.id, () => {
+        saveTripDetailsFromDraft(trip, draft);
+      });
       onSaved?.();
     } catch (e) {
       setError(e?.message || 'Could not save trip.');
+    } finally {
+      setSaveBusy(false);
     }
   }
 
@@ -243,10 +251,11 @@ export function TripEditPanel({ trip, draft, onCancel, onSaved, onDraftChange })
         </button>
         <button
           type="button"
-          onClick={handleSave}
-          style={{ flex: 1, height: 40, borderRadius: 10, border: 'none', background: '#2A5C8E', fontSize: ts(14), fontWeight: 800, color: 'white', cursor: 'pointer', fontFamily: F }}
+          onClick={() => void handleSave()}
+          disabled={saveBusy}
+          style={{ flex: 1, height: 40, borderRadius: 10, border: 'none', background: saveBusy ? '#7A9BB8' : '#2A5C8E', fontSize: ts(14), fontWeight: 800, color: 'white', cursor: saveBusy ? 'wait' : 'pointer', fontFamily: F }}
         >
-          Save
+          {saveBusy ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>

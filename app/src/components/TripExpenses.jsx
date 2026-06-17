@@ -3,6 +3,7 @@ import { Ic } from './Ic';
 import { T, F, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
 import { getCurrentUserId, addExpense, removeExpense } from '../lib/storage';
+import { savePlanningToCloud } from '../lib/planningSave';
 import {
   buildTripParticipants,
   computeBalances,
@@ -48,6 +49,7 @@ export function TripExpenses({
   const [showAddForm, setShowAddForm] = useState(!compact);
   const [showAllItems, setShowAllItems] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const allExpenses = trip?.expenses || [];
   const visibleExpenses = useMemo(() => filterExpenses(allExpenses, scope, {
@@ -75,8 +77,8 @@ export function TripExpenses({
     setSplitIds(participants.map((p) => p.id));
   }
 
-  function add() {
-    if (!trip?.id) return;
+  async function save() {
+    if (!trip?.id || saving) return;
     const value = parseFloat(amount);
     if (!description.trim() || !Number.isFinite(value) || value <= 0) return;
     if (splitMode === 'custom' && splitIds.length === 0) return;
@@ -101,11 +103,18 @@ export function TripExpenses({
       payload.locationName = location.name;
     }
 
-    addExpense(trip.id, payload);
-    setDescription('');
-    setAmount('');
-    setShowAddForm(false);
-    onTripUpdate?.();
+    setSaving(true);
+    try {
+      await savePlanningToCloud(trip.id, () => {
+        addExpense(trip.id, payload);
+      });
+      setDescription('');
+      setAmount('');
+      setShowAddForm(false);
+      onTripUpdate?.();
+    } finally {
+      setSaving(false);
+    }
   }
 
   const total = visibleExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
@@ -212,7 +221,8 @@ export function TripExpenses({
               onSplitMode={setSplitMode}
               onToggleSplitId={toggleSplitId}
               onSelectAllSplit={selectAllSplit}
-              onAdd={add}
+              onAdd={() => void save()}
+              saving={saving}
               onCancel={() => setShowAddForm(false)}
             />
           )}
@@ -450,6 +460,7 @@ function AddExpenseForm({
   onToggleSplitId,
   onSelectAllSplit,
   onAdd,
+  saving = false,
   onCancel,
 }) {
   return (
@@ -475,8 +486,8 @@ function AddExpenseForm({
         <select value={paidBy} onChange={(e) => onPaidBy(e.target.value)} style={selectStyle}>
           {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
-        <button type="button" onClick={onAdd} style={addBtnStyle} aria-label="Add expense">
-          <Ic d={ICONS.plus} size={16} color="white" sw={2.4} />
+        <button type="button" onClick={onAdd} disabled={saving} style={{ ...addBtnStyle, width: 'auto', minWidth: 72, padding: '0 14px', opacity: saving ? 0.7 : 1, cursor: saving ? 'wait' : 'pointer' }} aria-label="Save expense">
+          <span style={{ color: 'white', fontSize: ts(12), fontWeight: 800, fontFamily: F }}>{saving ? 'Saving…' : 'Save'}</span>
         </button>
       </div>
 
