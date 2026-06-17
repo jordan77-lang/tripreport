@@ -10,7 +10,7 @@ const TRIP_TABS = [
 ];
 
 export function BottomNav({ active = 'home', onNav, trip }) {
-  const showFieldTabs = trip?.status === 'active';
+  const showFieldTabs = trip?.status !== 'completed';
   const tabs = trip
     ? [HOME_TAB, TRIP_TABS[0], ...(showFieldTabs ? TRIP_TABS.slice(1) : [])]
     : [HOME_TAB];

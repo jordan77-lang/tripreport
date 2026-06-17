@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { joinTripByCode, createTripInvite } from '../lib/tripCloud';
+import { joinTripByCode } from '../lib/tripCloud';
 import { T, F } from '../tokens';
 
 export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
@@ -63,112 +63,6 @@ export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
           </button>
         </form>
       </div>
-    </div>
-  );
-}
-
-export function InviteCodePanel({ tripId, onClose, onTripUpdate }) {
-  const [code, setCode] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [copied, setCopied] = useState(false);
-
-  async function generate() {
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await createTripInvite(tripId);
-      setCode(next);
-      onTripUpdate?.();
-    } catch (err) {
-      setError(err?.message || 'Could not create invite');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function copyCode() {
-    if (!code) return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(code);
-      } else {
-        const ta = document.createElement('textarea');
-        ta.value = code;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setError('Could not copy — select the code and copy manually.');
-    }
-  }
-
-  async function shareCode() {
-    if (!code || !navigator.share) return;
-    try {
-      await navigator.share({
-        title: 'TripReport invite',
-        text: `Join my trip on TripReport. Invite code: ${code}`,
-      });
-    } catch {
-      // user cancelled or share unavailable
-    }
-  }
-
-  return (
-    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>Invite crew</div>
-        {onClose && (
-          <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', color: T.textFaint, cursor: 'pointer', fontSize: 18 }}>×</button>
-        )}
-      </div>
-      <div style={{ fontSize: 11.5, color: T.textSub, marginBottom: 12 }}>
-        Share this code so others can join after they create an account.
-      </div>
-
-      {code ? (
-        <div>
-          <div
-            onClick={copyCode}
-            style={{
-              textAlign: 'center',
-              fontSize: 26,
-              fontWeight: 900,
-              letterSpacing: 4,
-              color: T.accent,
-              padding: '12px 8px',
-              background: T.accentLight,
-              borderRadius: 10,
-              cursor: 'pointer',
-            }}
-          >
-            {code}
-          </div>
-          <div style={{ fontSize: 10.5, color: T.textFaint, textAlign: 'center', marginTop: 6 }}>
-            {copied ? 'Copied!' : 'Tap to copy'}
-          </div>
-          {typeof navigator !== 'undefined' && navigator.share && (
-            <button type="button" onClick={shareCode} style={{ ...primaryBtn(false), marginTop: 10 }}>
-              Share invite code
-            </button>
-          )}
-        </div>
-      ) : (
-        <button type="button" onClick={generate} disabled={busy} style={primaryBtn(busy)}>
-          {busy ? 'Creating…' : 'Generate invite code'}
-        </button>
-      )}
-
-      {!!error && (
-        <div style={{ marginTop: 10, fontSize: 11.5, color: '#8A1414', fontWeight: 600 }}>{error}</div>
-      )}
     </div>
   );
 }

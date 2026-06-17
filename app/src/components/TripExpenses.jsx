@@ -42,7 +42,9 @@ export function TripExpenses({
   onOpenFull,
 }) {
   const compact = layout === 'compact';
+  const tripOverviewCompact = compact && scope === 'all';
   const embedCollapsed = scope === 'location' || scope === 'event';
+  const startsCollapsed = embedCollapsed || tripOverviewCompact;
   const currentUserId = getCurrentUserId();
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const [description, setDescription] = useState('');
@@ -51,7 +53,8 @@ export function TripExpenses({
   const [splitMode, setSplitMode] = useState('custom');
   const [splitIds, setSplitIds] = useState([]);
   const [panel, setPanel] = useState(compact ? 'summary' : 'ledger');
-  const [sectionOpen, setSectionOpen] = useState(!embedCollapsed);
+  const [sectionOpen, setSectionOpen] = useState(!startsCollapsed);
+  const [expensesOpen, setExpensesOpen] = useState(false);
   const [showAddForm, setShowAddForm] = useState(!compact && !embedCollapsed);
   const [showAllItems, setShowAllItems] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
@@ -91,20 +94,30 @@ export function TripExpenses({
 
   function openAddForm() {
     setSectionOpen(true);
+    setExpensesOpen(true);
     setShowAddForm(true);
     setPanel('ledger');
   }
 
   function closeAddForm() {
     setShowAddForm(false);
-    if (embedCollapsed && visibleExpenses.length === 0) setSectionOpen(false);
+    if (startsCollapsed && visibleExpenses.length === 0) {
+      setExpensesOpen(false);
+      setSectionOpen(false);
+    }
   }
 
   function collapseSection() {
     setSectionOpen(false);
+    setExpensesOpen(false);
     setShowAddForm(false);
     setPanel('ledger');
     setExpandedId(null);
+  }
+
+  function openExpensesList() {
+    setExpensesOpen(true);
+    setPanel('ledger');
   }
 
   async function save() {
@@ -184,11 +197,11 @@ export function TripExpenses({
   const listedExpenses = visibleExpenses.slice(0, listLimit);
   const unsettledCount = settlements.length;
 
-  if (embedCollapsed && !sectionOpen) {
+  if (startsCollapsed && !sectionOpen) {
     return (
       <CollapsedExpensesBar
         title={title}
-        showTitle={showTitle}
+        showTitle={showTitle || tripOverviewCompact}
         total={total}
         count={visibleExpenses.length}
         unsettledCount={unsettledCount}
@@ -200,7 +213,7 @@ export function TripExpenses({
 
   return (
     <div>
-      {embedCollapsed && (
+      {startsCollapsed && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
           <button type="button" onClick={collapseSection} style={collapseBtnStyle}>
             Hide expenses
@@ -226,7 +239,7 @@ export function TripExpenses({
         count={visibleExpenses.length}
         unsettledCount={unsettledCount}
         compact={compact}
-        onOpenBreakdown={() => setPanel('breakdown')}
+        onOpenBreakdown={() => { setPanel('breakdown'); setExpensesOpen(false); }}
       />
 
       {!compact && (
@@ -249,7 +262,27 @@ export function TripExpenses({
         />
       )}
 
-      {(panel === 'ledger' || compact) && panel !== 'breakdown' && (
+      {tripOverviewCompact && sectionOpen && panel !== 'breakdown' && !expensesOpen && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          {visibleExpenses.length > 0 ? (
+            <button type="button" onClick={openExpensesList} style={viewAllStyle}>
+              View {visibleExpenses.length} expense{visibleExpenses.length === 1 ? '' : 's'}
+            </button>
+          ) : (
+            <button type="button" onClick={openAddForm} style={addTriggerStyle}>
+              <Ic d={ICONS.plus} size={14} color={T.accent} sw={2.4} />
+              <span>Add expense</span>
+            </button>
+          )}
+          {onOpenFull && (
+            <button type="button" onClick={onOpenFull} style={viewAllStyle}>
+              Manage in Trip Plan →
+            </button>
+          )}
+        </div>
+      )}
+
+      {((panel === 'ledger' || (compact && panel !== 'breakdown')) && (!tripOverviewCompact || expensesOpen)) && (
         <>
           {!showAddForm ? (
             <button
@@ -401,9 +434,11 @@ function SummaryBar({ total, count, unsettledCount, compact, onOpenBreakdown }) 
             {count} item{count === 1 ? '' : 's'} · {status}
           </div>
         </div>
-        <button type="button" onClick={onOpenBreakdown} style={breakdownBtnStyle}>
-          Breakdown
-        </button>
+        {count > 0 && (
+          <button type="button" onClick={onOpenBreakdown} style={breakdownBtnStyle}>
+            Breakdown
+          </button>
+        )}
       </div>
     </div>
   );

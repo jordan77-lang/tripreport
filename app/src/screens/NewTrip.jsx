@@ -26,7 +26,6 @@ export function NewTrip({ onDone, onBack }) {
   const [types, setTypes]     = useState([]);
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState('');
-  const [planAhead, setPlanAhead] = useState(false);
   const [privacy, setPrivacy] = useState('friends');
   const [inviteInput, setInviteInput] = useState('');
   const [invites, setInvites] = useState([]);
@@ -144,18 +143,6 @@ export function NewTrip({ onDone, onBack }) {
     return opt ? opt.estimateMb : 35;
   }
 
-  function isFutureStartDate(dateStr) {
-    if (!dateStr) return false;
-    const start = new Date(`${dateStr}T00:00:00`);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return start.getTime() > today.getTime();
-  }
-
-  function resolveTripStatus() {
-    return planAhead || isFutureStartDate(startDate) ? 'planning' : 'active';
-  }
-
   function toggleOfflineRegion(id) {
     setSelectedOfflineRegions((prev) => (
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -163,7 +150,6 @@ export function NewTrip({ onDone, onBack }) {
   }
 
   async function handleLaunch() {
-    const status = resolveTripStatus();
     const offlineRegions = selectedOfflineRegions;
     const catalogRegion = offlineRegions.length === 1 ? listMapRegions().find((r) => r.id === offlineRegions[0]) : null;
 
@@ -173,7 +159,7 @@ export function NewTrip({ onDone, onBack }) {
       privacy,
       startDate: startDate || new Date().toISOString().slice(0, 10),
       endDate: endDate || null,
-      status,
+      status: 'planning',
       collaborators: invites,
       offlineRegions,
       gpsTrackingEnabled: false,
@@ -225,8 +211,6 @@ export function NewTrip({ onDone, onBack }) {
 
     onDone(trip, null);
   }
-
-  const willPlanAhead = resolveTripStatus() === 'planning';
 
   const privacyOpts = [
     { id: 'private', icon: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z', label: 'Private',    sub: 'Only you' },
@@ -322,21 +306,9 @@ export function NewTrip({ onDone, onBack }) {
                   <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle(T)} />
                 </div>
               </div>
-              <div onClick={() => setPlanAhead(v => !v)}
-                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', background: T.card, borderRadius: 12, cursor: 'pointer', border: `1.5px solid ${planAhead ? T.accent : T.border}`, boxShadow: planAhead ? `0 0 0 3px ${T.accent}14` : 'none' }}>
-                <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${planAhead ? T.accent : T.border}`, background: planAhead ? T.accent : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {planAhead && <Ic d="M20 6L9 17l-5-5" size={12} color="white" sw={3} />}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Plan ahead</div>
-                  <div style={{ fontSize: 11, color: T.textFaint, marginTop: 1 }}>Save as upcoming trip — start GPS and journal when you hit the road</div>
-                </div>
+              <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 8, lineHeight: 1.45 }}>
+                Plan gear, shopping, and invites anytime — even before trip dates. Open Trip for map, journal, and field logging whenever you need them.
               </div>
-              {(planAhead || isFutureStartDate(startDate)) && (
-                <div style={{ fontSize: 10.5, color: T.accentMid, marginTop: 8 }}>
-                  This trip will be saved under Upcoming until you start it.
-                </div>
-              )}
             </div>
           </>
         )}
@@ -570,9 +542,8 @@ export function NewTrip({ onDone, onBack }) {
         ) : (
           <div onClick={handleLaunch}
                style={{ background: T.accent, borderRadius: 14, padding: '16px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: `0 6px 22px ${T.accent}55`, cursor: 'pointer' }}>
-            {!willPlanAhead && <div style={{ width: 10, height: 10, borderRadius: 5, background: '#5DBE7E' }} />}
             <span style={{ fontSize: 16, fontWeight: 800, color: 'white', letterSpacing: -.3 }}>
-              {willPlanAhead ? 'Save Trip Plan' : 'Start Recording Trip'}
+              Create Trip
             </span>
           </div>
         )}

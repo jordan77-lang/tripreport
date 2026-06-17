@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import { T, F } from '../tokens';
 import { ts } from '../lib/textScale';
-import { getPastTripParticipants } from '../lib/storage';
+import { getPastTripParticipants, addTripCollaborator, getTrip } from '../lib/storage';
+import { savePlanningToCloud } from '../lib/planningSave';
 import {
   fetchUserEmailForInvite,
   getOrCreateTripInviteCode,
@@ -15,6 +16,19 @@ const MODES = [
   { id: 'code', label: 'Join code' },
 ];
 
+function personOnTrip(trip, person) {
+  if (!trip || !person) return false;
+  const nameKey = (person.name || '').trim().toLowerCase();
+  if (person.userId) {
+    if (trip.ownerId === person.userId) return true;
+    if (trip.memberProfiles?.[person.userId]) return true;
+    if ((trip.collaborators || []).some((c) => c.userId === person.userId)) return true;
+  }
+  return (trip.collaborators || []).some(
+    (c) => (c.handle || c.name || '').trim().toLowerCase() === nameKey,
+  );
+}
+
 function inviteMailto(trip, code, to) {
   const subject = encodeURIComponent(`Join ${trip?.name || 'our trip'} on TripReport`);
   const body = encodeURIComponent(
@@ -26,12 +40,24 @@ function inviteMailto(trip, code, to) {
   return `mailto:${encodeURIComponent(to)}?subject=${subject}&body=${body}`;
 }
 
-export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, initialCode = null, onDismissInitial }) {
-  const [mode, setMode] = useState(initialCode ? 'code' : 'past');
+export function TripInvitePanel({
+  trip,
+  onTripUpdate,
+  onClose,
+  compact = false,
+  initialCode = null,
+  onDismissInitial,
+  initialMode = null,
+  initialInviteeName = null,
+  focusToken = null,
+}) {
+  const [mode, setMode] = useState(initialCode ? 'code' : (initialMode || 'past'));
   const [code, setCode] = useState(initialCode || null);
   const [codeBusy, setCodeBusy] = useState(false);
   const [pastId, setPastId] = useState('');
   const [email, setEmail] = useState('');
+  const [inviteeName, setInviteeName] = useState(initialInviteeName || '');
+  const [savedToCrew, setSavedToCrew] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -52,18 +78,37 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
   }, [initialCode]);
 
   useEffect(() => {
+    if (focusToken == null) return;
+    if (initialMode) setMode(initialMode);
+    if (initialInviteeName != null) setInviteeName(initialInviteeName);
+    setEmail('');
+    setSavedToCrew(false);
+    setError(null);
+    setSuccess(null);
+  }, [focusToken, initialMode, initialInviteeName]);
+
+  function selectPastPerson(person) {
+    if (!person || personOnTrip(trip, person)) return;
+    setPastId(person.id);
+    setError(null);
+    setSuccess(null);
+  }
+
+  useEffect(() => {
     if (!selectedPast) {
       setEmail('');
+      setSavedToCrew(false);
       return;
     }
+    setSavedToCrew(personOnTrip(trip, selectedPast));
     if (selectedPast.userId) {
       void fetchUserEmailForInvite(selectedPast.userId)
-        .then((lookedUp) => { if (lookedUp) setEmail(lookedUp); })
-        .catch(() => {});
+        .then((lookedUp) => setEmail(lookedUp || ''))
+        .catch(() => setEmail(''));
     } else {
       setEmail('');
     }
-  }, [selectedPast?.id, selectedPast?.userId]);
+  }, [selectedPast?.id, selectedPast?.userId, trip]);
 
   async function ensureCode() {
     if (code) return code;
@@ -86,17 +131,42 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
     });
   }
 
+  async function savePastToCrew() {
+    if (!selectedPast || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await savePlanningToCloud(trip.id, () => {
+        if (!personOnTrip(getTrip(trip.id), selectedPast)) {
+          addTripCollaborator(trip.id, { name: selectedPast.name });
+        }
+      });
+      setSavedToCrew(true);
+      onTripUpdate?.();
+    } catch (e) {
+      setError(e?.message || 'Could not save to crew');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function invitePastCrew() {
     if (!selectedPast || busy) return;
     const to = email.trim().toLowerCase();
     if (!to) {
-      setError('Enter their email address below.');
+      setError('Enter their email, or save them to crew first and add email later.');
       return;
     }
     setBusy(true);
     setError(null);
     setSuccess(null);
     try {
+      if (!savedToCrew && !personOnTrip(getTrip(trip.id), selectedPast)) {
+        await savePlanningToCloud(trip.id, () => {
+          addTripCollaborator(trip.id, { name: selectedPast.name });
+        });
+        setSavedToCrew(true);
+      }
       const result = await sendTripInviteByEmail(trip.id, {
         email: to,
         inviteeName: selectedPast.name,
@@ -106,6 +176,7 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
       showEmailSuccess(result, to);
       setPastId('');
       setEmail('');
+      setSavedToCrew(false);
       onTripUpdate?.();
     } catch (e) {
       setError(e?.message || 'Could not send invite');
@@ -121,7 +192,7 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
     setError(null);
     setSuccess(null);
     try {
-      const result = await sendTripInviteByEmail(trip.id, { email: to });
+      const result = await sendTripInviteByEmail(trip.id, { email: to, inviteeName: inviteeName.trim() || null });
       setCode(result.code);
       showEmailSuccess(result, to);
       setEmail('');
@@ -240,22 +311,45 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
             </div>
           ) : (
             <>
-              <label style={labelStyle}>Past participant</label>
-              <select
-                value={pastId}
-                onChange={(e) => setPastId(e.target.value)}
-                style={selectStyle}
-              >
-                <option value="">Choose someone…</option>
-                {pastCrew.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}{p.hasAccount ? '' : ' (name only)'}
-                  </option>
-                ))}
-              </select>
+              <label style={labelStyle}>Past crew</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {pastCrew.map((p) => {
+                  const onTrip = personOnTrip(trip, p);
+                  const selected = pastId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={onTrip || busy}
+                      onClick={() => selectPastPerson(p)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 14,
+                        fontSize: ts(11),
+                        fontWeight: 700,
+                        cursor: onTrip ? 'default' : 'pointer',
+                        fontFamily: F,
+                        background: onTrip ? T.accentLight : selected ? '#E4EFF8' : T.bg,
+                        color: onTrip ? T.accent : selected ? '#2A5C8E' : T.textSub,
+                        border: `1.5px solid ${onTrip || selected ? T.accent : T.border}`,
+                        opacity: onTrip ? 0.75 : 1,
+                      }}
+                    >
+                      {onTrip ? '✓ ' : selected ? '• ' : '+ '}
+                      {p.name}
+                      {p.hasAccount ? '' : ' (name only)'}
+                    </button>
+                  );
+                })}
+              </div>
               {selectedPast && (
                 <>
-                  <label style={{ ...labelStyle, marginTop: 8 }}>Their email</label>
+                  <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, lineHeight: 1.45 }}>
+                    {savedToCrew
+                      ? `${selectedPast.name} is on your crew. Send an invite when ready.`
+                      : `Save ${selectedPast.name} to the crew, then send an invite email.`}
+                  </div>
+                  <label style={labelStyle}>Their email</label>
                   <input
                     type="email"
                     value={email}
@@ -263,16 +357,39 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
                     placeholder="friend@example.com"
                     style={inputStyle}
                   />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    {!savedToCrew && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void savePastToCrew()}
+                        style={secondaryActionBtn(busy)}
+                      >
+                        {busy ? '…' : 'Save to crew'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!email.trim() || busy}
+                      onClick={() => void invitePastCrew()}
+                      style={{ ...primaryBtn(!email.trim() || busy), flex: 1, marginTop: 0 }}
+                    >
+                      {busy
+                        ? 'Working…'
+                        : savedToCrew
+                          ? 'Send invite'
+                          : email.trim()
+                            ? 'Save & send invite'
+                            : 'Send invite'}
+                    </button>
+                  </div>
                 </>
               )}
-              <button
-                type="button"
-                disabled={!pastId || !email.trim() || busy}
-                onClick={() => void invitePastCrew()}
-                style={primaryBtn(!pastId || !email.trim() || busy)}
-              >
-                {busy ? 'Sending…' : 'Email invite'}
-              </button>
+              {!selectedPast && (
+                <div style={{ fontSize: ts(11), color: T.textFaint, lineHeight: 1.45 }}>
+                  Tap someone from a past trip. Save them to this crew, then send an invite email.
+                </div>
+              )}
             </>
           )}
         </div>
@@ -280,6 +397,11 @@ export function TripInvitePanel({ trip, onTripUpdate, onClose, compact = false, 
 
       {mode === 'email' && (
         <div>
+          {!!inviteeName && (
+            <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8 }}>
+              Inviting <strong style={{ color: T.text }}>{inviteeName}</strong>
+            </div>
+          )}
           <label style={labelStyle}>Email address</label>
           <input
             type="email"
@@ -406,10 +528,21 @@ const inputStyle = {
   outline: 'none',
 };
 
-const selectStyle = {
-  ...inputStyle,
-  marginBottom: 10,
-};
+function secondaryActionBtn(disabled) {
+  return {
+    flex: 1,
+    marginTop: 0,
+    border: `1px solid ${T.border}`,
+    borderRadius: 10,
+    padding: '11px 10px',
+    background: disabled ? T.bg : T.card,
+    color: disabled ? T.textFaint : T.text,
+    fontSize: ts(12),
+    fontWeight: 700,
+    cursor: disabled ? 'default' : 'pointer',
+    fontFamily: F,
+  };
+}
 
 function primaryBtn(disabled) {
   return {

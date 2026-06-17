@@ -10,6 +10,7 @@ import { savePlanningToCloud } from '../lib/planningSave';
 import {
   getCurrentUserId,
   isTripOwner,
+  isTripMember,
   addGearItem, updateGearItem, removeGearItem,
   addMeal, updateMeal, removeMeal,
   addShoppingItem, updateShoppingItem, removeShoppingItem,
@@ -21,6 +22,7 @@ import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants } from '../lib/expenses';
 import { supabaseConfigured } from '../lib/supabase';
+import { getSignedInUserId } from '../lib/authUser';
 
 const TABS = [
   { id: 'participants', label: 'Crew' },
@@ -55,7 +57,9 @@ export function TripPlan({
   const [editingTrip, setEditingTrip] = useState(false);
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const currentUserId = getCurrentUserId();
-  const canInvite = Boolean(supabaseConfigured && currentUserId && trip && isTripOwner(trip, currentUserId));
+  const signedInUserId = getSignedInUserId();
+  const canEditTrip = Boolean(trip && isTripMember(trip, signedInUserId || currentUserId));
+  const canInvite = Boolean(supabaseConfigured && signedInUserId && trip && isTripOwner(trip, signedInUserId));
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const tripSyncState = useMemo(() => {
     if (!trip) return 'synced';
@@ -107,6 +111,7 @@ export function TripPlan({
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -.4 }}>Trip Planning</div>
             <div style={{ fontSize: ts(13), color: T.textSub }}>{trip.name}</div>
+            {canEditTrip && (
             <button
               type="button"
               onClick={openTripEdit}
@@ -124,7 +129,9 @@ export function TripPlan({
             >
               {formatTripDateRange(trip.startDate, trip.endDate)} · Edit trip details
             </button>
+            )}
           </div>
+          {canEditTrip && (
           <button
             type="button"
             onClick={openTripEdit}
@@ -145,6 +152,7 @@ export function TripPlan({
           >
             Edit trip details
           </button>
+          )}
           <SyncChip state={tripSyncState} compact />
         </div>
         <div style={{ display: 'flex', gap: 2, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>

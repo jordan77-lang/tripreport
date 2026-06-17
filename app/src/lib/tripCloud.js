@@ -14,6 +14,7 @@ import {
   mergeCollaboratorsFromMembers,
   memberProfilesFromRows,
   collaboratorsChanged,
+  dedupeCollaborators,
 } from './tripParticipants';
 
 function randomInviteCode() {
@@ -209,7 +210,7 @@ export async function pushTripToCloud(localTrip) {
   return data;
 }
 
-/** Contributors merge journal data (locations, entries) into the shared trip payload. */
+/** Contributors merge journal data and may update shared trip details. */
 async function pushTripPayloadAsMember(localTrip, userId) {
   const supabase = requireSupabase();
   const payload = buildCloudPayload(localTrip);
@@ -217,7 +218,17 @@ async function pushTripPayloadAsMember(localTrip, userId) {
 
   const { data, error } = await supabase
     .from('trips')
-    .update({ payload, updated_at: updatedAt })
+    .update({
+      payload,
+      updated_at: updatedAt,
+      name: localTrip.name,
+      status: localTrip.status || 'planning',
+      start_date: localTrip.startDate || null,
+      end_date: localTrip.endDate || null,
+      types: localTrip.types || [],
+      location: localTrip.location || null,
+      privacy: localTrip.privacy || 'friends',
+    })
     .eq('id', localTrip.id)
     .select('updated_at')
     .single();
@@ -358,15 +369,18 @@ export async function refreshTripMembersFromCloud(tripId) {
   const trip = getTrip(tripId);
   if (!trip) return { trip: null, changed: false };
 
-  const nextCollaborators = mergeCollaboratorsFromMembers(trip, rows);
   const nextProfiles = memberProfilesFromRows(rows);
-  const changed = collaboratorsChanged(trip.collaborators, nextCollaborators)
+  const nextCollaborators = rows.length
+    ? mergeCollaboratorsFromMembers(trip, rows)
+    : dedupeCollaborators(trip.collaborators || [], { memberProfiles: nextProfiles });
+  const cleanedCollaborators = dedupeCollaborators(nextCollaborators, { memberProfiles: nextProfiles });
+  const changed = collaboratorsChanged(trip.collaborators, cleanedCollaborators)
     || JSON.stringify(trip.memberProfiles || {}) !== JSON.stringify(nextProfiles);
 
   if (changed) {
     saveTrip({
       ...trip,
-      collaborators: nextCollaborators,
+      collaborators: cleanedCollaborators,
       memberProfiles: nextProfiles,
       updatedAt: Date.now(),
       syncState: 'pending',
@@ -603,15 +617,25 @@ export async function joinTripByCode(code) {
   const trip = getTrip(tripId);
   if (trip && userId) {
     const label = getSignedInDisplayName() || 'Me';
-    const hasSelf = (trip.collaborators || []).some((c) => (c.userId || c.id) === userId);
+    const collaborators = [...(trip.collaborators || [])];
+    const hasSelf = collaborators.some((c) => (c.userId || c.id) === userId);
     if (!hasSelf) {
+      collaborators.push({
+        id: userId,
+        userId,
+        handle: label,
+        name: label,
+        role: 'contributor',
+        joinedViaInvite: true,
+      });
+    }
+    const memberProfiles = { ...(trip.memberProfiles || {}), [userId]: label };
+    const cleaned = dedupeCollaborators(collaborators, { memberProfiles });
+    if (!hasSelf || cleaned.length !== (trip.collaborators || []).length) {
       saveTrip({
-        ...getTrip(tripId),
-        collaborators: [
-          ...(getTrip(tripId)?.collaborators || []),
-          { id: userId, userId, handle: label, name: label, role: 'contributor', joinedViaInvite: true },
-        ],
-        memberProfiles: { ...(getTrip(tripId)?.memberProfiles || {}), [userId]: label },
+        ...trip,
+        collaborators: cleaned,
+        memberProfiles,
         syncState: 'pending',
         updatedAt: Date.now(),
       });

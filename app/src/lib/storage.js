@@ -6,6 +6,7 @@ const USER_KEY = 'tr_user_id';
 const CONTACTS_KEY = 'tr_contacts';
 
 import { getSignedInUserId, getSignedInDisplayName } from './authUser';
+import { defaultEventName } from './eventTypes';
 
 export function getContacts() {
   try {
@@ -88,9 +89,8 @@ export function isTripMember(trip, userId) {
 
 /** Names from past trips for quick re-invite when creating a new trip. */
 export function getPastTripParticipants({ excludeTripId = null } = {}) {
-  const seen = new Set();
-  const out = [];
   const excludeMemberIds = new Set();
+  const excludeNames = new Set();
 
   if (excludeTripId) {
     const trip = getTrips().find((t) => t.id === excludeTripId);
@@ -98,11 +98,17 @@ export function getPastTripParticipants({ excludeTripId = null } = {}) {
     for (const c of trip?.collaborators || []) {
       const id = c?.userId || c?.id;
       if (id) excludeMemberIds.add(id);
+      const name = (c.handle || c.name || '').trim().toLowerCase();
+      if (name) excludeNames.add(name);
     }
-    for (const uid of Object.keys(trip?.memberProfiles || {})) {
+    for (const [uid, name] of Object.entries(trip?.memberProfiles || {})) {
       excludeMemberIds.add(uid);
+      const label = (name || '').trim().toLowerCase();
+      if (label) excludeNames.add(label);
     }
   }
+
+  const candidates = [];
 
   for (const trip of getTrips()) {
     for (const c of trip.collaborators || []) {
@@ -110,24 +116,47 @@ export function getPastTripParticipants({ excludeTripId = null } = {}) {
       if (!name) continue;
       const userId = c.userId || (isUuid(c.id) ? c.id : null);
       if (userId && excludeMemberIds.has(userId)) continue;
-      const key = userId || name.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ id: userId || c.id || key, name, userId, hasAccount: Boolean(userId) });
+      if (!userId && excludeNames.has(name.toLowerCase())) continue;
+      candidates.push({
+        id: userId || c.id || name.toLowerCase(),
+        name,
+        userId,
+        hasAccount: Boolean(userId),
+      });
     }
     for (const [uid, name] of Object.entries(trip.memberProfiles || {})) {
       if (uid === trip.ownerId) continue;
       if (excludeMemberIds.has(uid)) continue;
       const label = (name || '').trim();
       if (!label) continue;
-      const key = uid;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ id: uid, name: label, userId: uid, hasAccount: true });
+      if (excludeNames.has(label.toLowerCase())) continue;
+      candidates.push({ id: uid, name: label, userId: uid, hasAccount: true });
     }
   }
 
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  return dedupePastCrew(candidates).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function dedupePastCrew(people) {
+  const seenUids = new Set();
+  const seenNames = new Set();
+  const out = [];
+
+  const list = [...people].sort((a, b) => (b.userId ? 1 : 0) - (a.userId ? 1 : 0));
+  for (const p of list) {
+    const nameKey = (p.name || '').trim().toLowerCase();
+    if (p.userId) {
+      if (seenUids.has(p.userId)) continue;
+      seenUids.add(p.userId);
+      if (nameKey) seenNames.add(nameKey);
+      out.push(p);
+      continue;
+    }
+    if (!nameKey || seenNames.has(nameKey)) continue;
+    seenNames.add(nameKey);
+    out.push(p);
+  }
+  return out;
 }
 
 /** Add a name-only roster entry (gear/meals lists — not the same as a cloud invite). */
@@ -139,7 +168,10 @@ export function addTripCollaborator(tripId, { name }) {
     const exists = (trip.collaborators || []).some(
       (c) => (c.handle || c.name || '').toLowerCase() === key,
     );
-    if (exists) return null;
+    const inProfiles = Object.values(trip.memberProfiles || {}).some(
+      (n) => (n || '').trim().toLowerCase() === key,
+    );
+    if (exists || inProfiles) return null;
     const collab = {
       id: crypto.randomUUID(),
       handle: label,
@@ -210,7 +242,7 @@ export function createTrip({
   startDate,
   endDate,
   privacy,
-  status = 'active',
+  status = 'planning',
   collaborators = [],
   offlineRegions = [],
   gpsTrackingEnabled = false,
@@ -263,11 +295,40 @@ export function createTrip({
   return trip;
 }
 
+function ensureEntryEvent(trip, entry) {
+  const direct = resolveEntryEvent(trip, entry.eventId);
+  if (direct) return direct;
+  const location = resolveEntryLocation(trip, entry.locationId);
+  if (!location) return null;
+  const entryType = entry.type || 'note';
+  const existing = (trip.events || []).find((e) => e.locationId === location.id && e.type === entryType);
+  if (existing) return existing;
+  const now = Date.now();
+  const created = {
+    id: crypto.randomUUID(),
+    locationId: location.id,
+    locationName: location.name,
+    type: entryType,
+    name: defaultEventName(entryType),
+    notes: '',
+    coverPhoto: null,
+    taggedParticipantId: null,
+    taggedParticipantLabel: null,
+    createdBy: getCurrentUserId(),
+    createdAt: now,
+    updatedAt: now,
+    syncState: 'pending',
+  };
+  if (!trip.events) trip.events = [];
+  trip.events.unshift(created);
+  return created;
+}
+
 export function addEntry(tripId, entry) {
   const trip = getTrip(tripId);
   if (!trip) return null;
   const now = Date.now();
-  const linkedEvent = resolveEntryEvent(trip, entry.eventId);
+  const linkedEvent = ensureEntryEvent(trip, entry);
   const linkedLocation = resolveEntryLocation(trip, linkedEvent?.locationId || entry.locationId);
   const full = {
     ...entry,
@@ -300,8 +361,9 @@ export function updateEntry(tripId, entryId, patch) {
 
   const now = Date.now();
   const existing = trip.entries[idx];
-  const requestedEventId = patch.eventId || existing.eventId;
-  const linkedEvent = resolveEntryEvent(trip, requestedEventId);
+  const merged = { ...existing, ...patch };
+  const linkedEvent = ensureEntryEvent(trip, merged);
+  const requestedEventId = linkedEvent?.id || patch.eventId || existing.eventId;
   const requestedLocationId = linkedEvent?.locationId || patch.locationId || existing.locationId;
   const linkedLocation = resolveEntryLocation(trip, requestedLocationId);
   const updated = {
@@ -486,6 +548,16 @@ export function updateLocation(tripId, locationId, patch) {
   return updated;
 }
 
+export function removeLocation(tripId, locationId) {
+  return mutateTrip(tripId, (trip) => {
+    const before = (trip.locations || []).length;
+    trip.locations = (trip.locations || []).filter((l) => l.id !== locationId);
+    trip.events = (trip.events || []).filter((e) => e.locationId !== locationId);
+    trip.entries = (trip.entries || []).filter((e) => e.locationId !== locationId);
+    return trip.locations.length < before;
+  });
+}
+
 export function addEvent(tripId, event) {
   const trip = getTrip(tripId);
   if (!trip) return null;
@@ -555,26 +627,22 @@ export function updateEvent(tripId, eventId, patch) {
   return updated;
 }
 
+export function removeEvent(tripId, eventId) {
+  return mutateTrip(tripId, (trip) => {
+    const before = (trip.events || []).length;
+    trip.events = (trip.events || []).filter((e) => e.id !== eventId);
+    trip.entries = (trip.entries || []).filter((e) => e.eventId !== eventId);
+    return trip.events.length < before;
+  });
+}
+
 export function getActiveTrip() {
   const id = localStorage.getItem(ACTIVE_KEY);
   return id ? getTrip(id) : null;
 }
 
-export function startTrip(tripId) {
-  const trip = getTrip(tripId);
-  if (!trip || trip.status === 'completed') return null;
-  if (trip.status === 'active') return trip;
-
-  const now = Date.now();
-  trip.status = 'active';
-  trip.startedAt = now;
-  if (!trip.startDate) {
-    trip.startDate = new Date(now).toISOString().slice(0, 10);
-  }
-  trip.updatedAt = now;
-  trip.syncState = 'pending';
-  saveTrip(trip);
-  return trip;
+export function isTripOpen(trip) {
+  return trip?.status === 'planning' || trip?.status === 'active';
 }
 
 export function finalizeTrip(tripId) {
@@ -593,8 +661,7 @@ export function reopenTrip(tripId) {
   const trip = getTrip(tripId);
   if (!trip) return null;
   const now = Date.now();
-  trip.status = 'active';
-  if (!trip.startedAt) trip.startedAt = now;
+  trip.status = 'planning';
   trip.updatedAt = now;
   trip.syncState = 'pending';
   saveTrip(trip);
@@ -851,14 +918,3 @@ function resolveEntryEvent(trip, eventId) {
   return (trip.events || []).find((e) => e.id === eventId) || null;
 }
 
-function defaultEventName(type) {
-  const map = {
-    food: 'Meal',
-    wildlife: 'Wildlife',
-    gauge: 'River Flow',
-    weather: 'Weather',
-    note: 'Event',
-    'custom-event': 'Custom Event',
-  };
-  return map[type] || 'Event';
-}

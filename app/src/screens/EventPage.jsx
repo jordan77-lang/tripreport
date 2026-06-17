@@ -5,7 +5,8 @@ import { Ic } from '../components/Ic';
 import { EntryForm } from './EntryForm';
 import { TripExpenses } from '../components/TripExpenses';
 import { T, F, ICONS } from '../tokens';
-import { addEntry, getCurrentUserId, updateEntry, updateEvent } from '../lib/storage';
+import { addEntry, getCurrentUserId, removeEvent, updateEntry, updateEvent } from '../lib/storage';
+import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
 import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
@@ -128,14 +129,29 @@ export function EventPage({
       return;
     }
     setEditEventError(null);
-    updateEvent(trip.id, event.id, {
-      name: eventDraft.name.trim(),
-      notes: eventDraft.notes,
-      type: eventDraft.type,
-      coverPhoto: eventDraft.coverPhoto,
+    void savePlanningToCloud(trip.id, () => {
+      updateEvent(trip.id, event.id, {
+        name: eventDraft.name.trim(),
+        notes: eventDraft.notes,
+        type: eventDraft.type,
+        coverPhoto: eventDraft.coverPhoto,
+      });
+    }).then(() => {
+      setEditingEvent(false);
+      onTripUpdate?.();
+    }).catch((e) => {
+      setEditEventError(e?.message || 'Could not save event.');
     });
-    setEditingEvent(false);
+  }
+
+  async function handleDeleteEvent() {
+    if (!canEditEvent || !trip || !event) return;
+    if (!window.confirm(`Delete "${event.name}" and all its entries?`)) return;
+    await savePlanningToCloud(trip.id, () => {
+      removeEvent(trip.id, event.id);
+    });
     onTripUpdate?.();
+    onBack();
   }
 
   async function onCoverSelected(files) {
@@ -318,15 +334,20 @@ export function EventPage({
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <div onClick={() => { setEditingEvent(false); setEditEventError(null); }}
-                     style={{ flex: 1, height: 36, borderRadius: 10, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: T.textSub }}>
-                  Cancel
+              <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div onClick={() => { setEditingEvent(false); setEditEventError(null); }}
+                       style={{ flex: 1, height: 36, borderRadius: 10, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: T.textSub }}>
+                    Cancel
+                  </div>
+                  <div onClick={() => void saveEventDetails()}
+                       style={{ flex: 1, height: 36, borderRadius: 10, background: accentCol, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'white' }}>
+                    Save
+                  </div>
                 </div>
-                <div onClick={saveEventDetails}
-                     style={{ flex: 1, height: 36, borderRadius: 10, background: accentCol, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'white' }}>
-                  Save
-                </div>
+                <button type="button" onClick={() => void handleDeleteEvent()} style={{ border: 'none', background: 'transparent', color: '#8A1414', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '2px 0', fontFamily: F }}>
+                  Delete event and its entries
+                </button>
               </div>
             </div>
           )}
@@ -385,7 +406,7 @@ export function EventPage({
           {contributeOpen && canAddToEvent && (
             <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase' }}>Add to Event</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase' }}>Add entry</div>
                 <div onClick={() => setContributeOpen(false)} style={{ fontSize: 10.5, color: T.textFaint, cursor: 'pointer' }}>Close</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -414,7 +435,7 @@ export function EventPage({
               <div style={{ fontSize: 13, color: T.textSub, fontWeight: 700, marginBottom: 4 }}>No entries yet</div>
               {canAddToEvent && (
                 <div style={{ fontSize: 11.5, color: T.textFaint }}>
-                  Tap <span style={{ color: accentCol, fontWeight: 700 }}>+ Add</span> to record the first entry
+                  Tap <span style={{ color: accentCol, fontWeight: 700 }}>+ Add</span> to capture photos, gauge readings, weather, and more
                 </div>
               )}
             </div>

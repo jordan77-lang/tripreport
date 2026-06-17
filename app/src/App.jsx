@@ -5,13 +5,12 @@ import { Navigator }    from './screens/Navigator';
 import { FieldJournal } from './screens/FieldJournal';
 import { TripPlan }     from './screens/TripPlan';
 import { NewTrip }      from './screens/NewTrip';
-import { RiverIntel }   from './screens/RiverIntel';
 import { AuthScreen }   from './screens/Auth';
 import { ProfileSetup } from './screens/ProfileSetup';
 import { JoinTrip }     from './screens/JoinTrip';
 import { TripRecap }    from './screens/TripRecap';
 import { useAuth } from './context/AuthContext';
-import { claimAnonymousTripsForUser, clearActiveTrip, getActiveTrip, getTrips, setActiveTrip, startTrip, updateEntry } from './lib/storage';
+import { claimAnonymousTripsForUser, clearActiveTrip, getActiveTrip, getTrips, isTripOpen, setActiveTrip, updateEntry } from './lib/storage';
 import { getSignedInUserId } from './lib/authUser';
 import { Settings } from './screens/Settings';
 import { useGPS } from './hooks/useGPS';
@@ -65,7 +64,7 @@ export default function App() {
     const claimed = claimAnonymousTripsForUser(userId);
     if (claimed > 0) refreshTrip();
   }, [auth.isSignedIn, refreshTrip]);
-  const gpsEnabled = trip?.status === 'active' && (
+  const gpsEnabled = isTripOpen(trip) && (
     Boolean(trip?.gpsSessionActive) ||
     (Boolean(trip?.gpsTrackingEnabled) && (screen === 'map' || Boolean(trip?.gpsBackgroundTracking)))
   );
@@ -190,15 +189,6 @@ export default function App() {
 
   const onFab = () => setScreen('new-trip');
 
-  const handleStartTrip = (tripId) => {
-    const id = tripId || trip?.id;
-    if (!id) return;
-    startTrip(id);
-    setActiveTrip(id);
-    refreshTrip();
-    setScreen('trip');
-  };
-
   const onOpenRecap = (tripId) => {
     if (tripId) setActiveTrip(tripId);
     refreshTrip();
@@ -225,14 +215,13 @@ export default function App() {
   }
 
   switch (screen) {
-    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onRiverIntel={() => setScreen('river')} onOpenTrip={() => setScreen('trip')} onStartTrip={handleStartTrip} onOpenPlan={() => { setPlanInitialTab(null); setScreen('plan'); }} onJoinTrip={() => setScreen('join')} onOpenSettings={() => setScreen('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
+    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onOpenTrip={() => setScreen('trip')} onOpenPlan={() => { setPlanInitialTab(null); setScreen('plan'); }} onJoinTrip={() => setScreen('join')} onOpenSettings={() => setScreen('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
     case 'settings': return <Settings onBack={() => setScreen('home')} auth={auth} />;
     case 'recap':   return <TripRecap trip={trip} onBack={() => setScreen('home')} onTripUpdate={refreshTrip} auth={auth} />;
-    case 'trip':    return <Trip {...common} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
-    case 'map':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <Navigator {...common} gps={gps} />;
-    case 'log':     return trip?.status === 'planning' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} />;
+    case 'trip':    return <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
+    case 'map':     return trip?.status === 'completed' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <Navigator {...common} gps={gps} />;
+    case 'log':     return trip?.status === 'completed' ? <Trip {...common} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} />;
     case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={() => setScreen('trip')} initialTab={planInitialTab} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} />;
-    case 'river':   return <RiverIntel onBack={() => setScreen('home')} />;
     case 'new-trip':
       return <NewTrip
         onBack={() => setScreen('home')}

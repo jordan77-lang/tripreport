@@ -7,6 +7,7 @@ import { fetchCurrentWeather } from '../lib/weather';
 import { getCurrentUserId } from '../lib/storage';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
+import { EmojiPicker } from '../components/EmojiPicker';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 import { ts } from '../lib/textScale';
 
@@ -353,18 +354,12 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
         )}
 
         <div style={{ marginBottom: 16 }}>
-          <Label>Map Tag Icon</Label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-            {['📍', '🌊', '⚠', '⛺', '🦌', '🛶', '📈', '📝'].map((s) => (
-              <div key={s} onClick={() => setMapTagSymbol(s)}
-                   style={{ width: 40, height: 40, borderRadius: 10, cursor: 'pointer',
-                            border: `2px solid ${mapTagSymbol === s ? userColor : T.border}`,
-                            background: mapTagSymbol === s ? `${userColor}22` : T.card,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: ts(18) }}>
-                {s}
-              </div>
-            ))}
-          </div>
+          <EmojiPicker
+            label="Map tag icon"
+            value={mapTagSymbol}
+            onChange={setMapTagSymbol}
+            accentColor={userColor}
+          />
           <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 4 }}>Tag color follows your user color.</div>
         </div>
 

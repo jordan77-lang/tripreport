@@ -3,9 +3,10 @@ import { BottomNav } from '../components/BottomNav';
 import { TripMap } from '../components/TripMap';
 import { SyncChip } from '../components/SyncChip';
 import { TripExpenses } from '../components/TripExpenses';
+import { TripCrewList } from '../components/TripCrewList';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { addLocation, finalizeTrip, getContacts, getCurrentUserId, isTripMember, isTripOwner, reopenTrip, saveContact, saveTrip, startGpsSession, startTrip, stopGpsSession } from '../lib/storage';
+import { addLocation, finalizeTrip, getCurrentUserId, isTripMember, isTripOwner, reopenTrip, saveTrip, startGpsSession, stopGpsSession } from '../lib/storage';
 import { getSignedInUserId } from '../lib/authUser';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
@@ -14,21 +15,22 @@ import { exportGpx, exportHtmlReport } from '../lib/export';
 import { exportTripUpdateFile, formatMergeSummary, mergeTripUpdate, readTripUpdateFile } from '../lib/offlineExchange';
 import { TripOverflowMenu, tripMenuIcon } from '../components/TripOverflowMenu';
 import { TripEditPanel } from '../components/TripEditPanel';
+import { LocationSaveForm } from '../components/LocationSaveForm';
+import { locationTypeLabel } from '../lib/locationTypes';
 import { buildTripDraft, formatTripDate, formatTripDateRange } from '../lib/tripEdit';
 import { ts } from '../lib/textScale';
 import { deleteTripCompletely, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
-import { buildTripParticipants, isJoinedMember, resolveUserDisplayName } from '../lib/expenses';
+import { resolveUserDisplayName } from '../lib/expenses';
 import { LocationPage } from './LocationPage';
 
-export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap, newTripInviteCode, onDismissInvite }) {
+export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap }) {
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
-  const canInvite = Boolean(supabaseConfigured && signedInUserId && trip && isTripOwner(trip, signedInUserId));
+  const canEditTrip = Boolean(trip && isTripMember(trip, signedInUserId || currentUserId));
   const canSyncTrip = Boolean(supabaseConfigured && signedInUserId && trip && isTripMember(trip, signedInUserId));
   const canDeleteTrip = Boolean(trip && isTripOwner(trip, signedInUserId || currentUserId));
-  const participants = useMemo(() => buildTripParticipants(trip, currentUserId, { withOwnerMeta: true }), [trip, currentUserId]);
   const [typeFilter, setTypeFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
@@ -59,8 +61,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   const [locationPageId, setLocationPageId] = useState(null);
   const [locationPageEventId, setLocationPageEventId] = useState(null);
   const [editingTrip, setEditingTrip] = useState(false);
-  const [participantInput, setParticipantInput] = useState('');
-  const [contacts, setContacts] = useState(() => getContacts());
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const [locCoverPhoto, setLocCoverPhoto] = useState(null);
   const [exchangeStatus, setExchangeStatus] = useState(null);
@@ -73,8 +73,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   const locations = useMemo(() => trip?.locations ?? [], [trip?.locations]);
   const track = useMemo(() => trip?.track ?? [], [trip?.track]);
   const tripSyncState = trip?.syncState || (entries.some(e => e.syncState === 'pending') ? 'pending' : 'synced');
-  const isPlanning = trip?.status === 'planning';
-  const isActive = trip?.status === 'active';
+  const isOpen = trip?.status !== 'completed';
   const isCompleted = trip?.status === 'completed';
 
   useTripMembersSync({
@@ -101,29 +100,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     setLocationPin(pos);
   }
 
-  function addParticipant(nameOverride) {
-    const name = (nameOverride || participantInput).trim();
-    if (!name || !trip) return;
-    const existing = trip.collaborators || [];
-    if (existing.some((c) => (c.handle || c.name || '').toLowerCase() === name.toLowerCase())) {
-      setParticipantInput('');
-      return;
-    }
-    saveTrip({ ...trip, collaborators: [...existing, { id: crypto.randomUUID(), handle: name, name, role: 'contributor' }], updatedAt: Date.now(), syncState: 'pending' });
-    saveContact(name);
-    setContacts(getContacts());
-    setParticipantInput('');
-    onTripUpdate?.();
-  }
-
-  function removeParticipant(id) {
-    if (!trip) return;
-    const target = (trip.collaborators || []).find((c) => (c.id || c.handle) === id);
-    if (target && isJoinedMember(target)) return;
-    saveTrip({ ...trip, collaborators: (trip.collaborators || []).filter((c) => (c.id || c.handle) !== id), updatedAt: Date.now(), syncState: 'pending' });
-    onTripUpdate?.();
-  }
-
   function openTripEdit() {
     setTripDraft(buildTripDraft(trip));
     setEditingTrip(true);
@@ -147,12 +123,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   function handleReopenTrip() {
     if (!trip?.id) return;
     reopenTrip(trip.id);
-    onTripUpdate?.();
-  }
-
-  function handleStartTrip() {
-    if (!trip?.id) return;
-    startTrip(trip.id);
     onTripUpdate?.();
   }
 
@@ -196,7 +166,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     ...(supabaseConfigured && canSyncTrip ? [{ id: 'sync', label: 'Sync to cloud', icon: tripMenuIcon('sync'), onClick: () => void syncToCloud() }] : []),
     { id: 'export', label: 'Export offline update', icon: tripMenuIcon('export'), onClick: exportOfflineUpdate },
     { id: 'import', label: 'Import offline update', icon: tripMenuIcon('import'), onClick: () => importUpdateRef.current?.click() },
-    {
+    ...(canEditTrip ? [{
       id: 'edit',
       label: editingTrip ? 'Close edit' : 'Edit trip details',
       icon: tripMenuIcon('edit'),
@@ -204,7 +174,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         if (editingTrip) closeTripEdit();
         else openTripEdit();
       },
-    },
+    }] : []),
     ...(canDeleteTrip ? [{
       id: 'delete',
       label: 'Delete trip',
@@ -377,8 +347,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     return [...locations].sort((a, b) => locationSortTs(a) - locationSortTs(b));
   }, [locations]);
 
-  const locationOptions = useMemo(() => orderedLocations.map((l) => l.id), [orderedLocations]);
-
   const locationEntryCount = useMemo(() => {
     const counts = new Map();
     for (const e of entries) {
@@ -495,6 +463,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: ts(22), fontWeight: 800, color: T.text, letterSpacing: -.4, lineHeight: 1.2 }}>{trip.name}</div>
             <div style={{ fontSize: ts(14), color: T.textSub, marginTop: 4 }}>{entries.length} entries · {track.length} GPS pts</div>
+            {canEditTrip && (
             <button
               type="button"
               onClick={openTripEdit}
@@ -513,19 +482,21 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             >
               {formatTripDateRange(trip.startDate, trip.endDate)} · Edit trip details
             </button>
+            )}
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{
                 fontSize: ts(13), fontWeight: 700,
-                color: isCompleted ? '#2E6D3A' : isPlanning ? '#2A5C8E' : '#2A5C8E',
-                background: isCompleted ? '#E5F4E8' : isPlanning ? '#E4EFF8' : '#E4EFF8',
+                color: isCompleted ? '#2E6D3A' : '#2A5C8E',
+                background: isCompleted ? '#E5F4E8' : '#E4EFF8',
                 borderRadius: 8, padding: '4px 8px',
               }}>
-                {isCompleted ? 'Completed' : isPlanning ? `Planning · ${formatTripDate(trip.startDate)}` : 'Active'}
+                {isCompleted ? 'Completed' : (trip.startDate ? `Starts ${formatTripDate(trip.startDate)}` : 'Open')}
               </span>
               <SyncChip state={tripSyncState} compact />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            {canEditTrip && (
             <button
               type="button"
               onClick={openTripEdit}
@@ -545,18 +516,13 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             >
               Edit trip details
             </button>
+            )}
             <TripOverflowMenu items={overflowItems} />
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-          {isPlanning && (
-            <button type="button" onClick={handleStartTrip}
-                 style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: 'white', cursor: 'pointer', background: T.accent }}>
-              Start Trip
-            </button>
-          )}
-          {isActive && (
+          {isOpen && (
             <button type="button" onClick={handleFinalizeTrip}
                  style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: '#8A5526', cursor: 'pointer', background: '#FFF1E4', border: '1px solid #E4C5A8' }}>
               Finish Trip
@@ -645,7 +611,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           </div>
         )}
 
-        {editingTrip && (
+        {canEditTrip && editingTrip && (
           <TripEditPanel
             trip={trip}
             draft={tripDraft}
@@ -655,106 +621,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           />
         )}
 
-        <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12, padding: 4 }}>
-          {[
-            { id: 'overview', label: 'Overview' },
-            { id: 'entries', label: `Entries (${entries.length})` },
-          ].map((tab) => (
-            <button key={tab.id} type="button" onClick={() => setTripSection(tab.id)}
-              style={{
-                flex: 1, border: 'none', borderRadius: 9, padding: '10px 12px', fontSize: ts(14),
-                fontWeight: tripSection === tab.id ? 800 : 600, fontFamily: F, cursor: 'pointer',
-                background: tripSection === tab.id ? T.card : 'transparent',
-                color: tripSection === tab.id ? T.text : T.textSub,
-                boxShadow: tripSection === tab.id ? '0 1px 4px rgba(0,0,0,.06)' : 'none',
-              }}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {tripSection === 'overview' && (
-        <>
-
-        {canInvite && (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => onNav('plan-participants')}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNav('plan-participants'); }}
-            style={{
-              background: newTripInviteCode ? '#EBF5EB' : T.card,
-              border: `1px solid ${newTripInviteCode ? '#B8D4B0' : T.border}`,
-              borderRadius: 12,
-              padding: '12px 14px',
-              marginBottom: 12,
-              cursor: 'pointer',
-            }}
-          >
-            <div style={{ fontSize: ts(14), fontWeight: 800, color: newTripInviteCode ? '#2A6A14' : T.text, marginBottom: 4 }}>
-              {newTripInviteCode ? 'Trip created — invite your crew' : 'Crew & invites'}
-            </div>
-            <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.45 }}>
-              Open Trip Plan → Crew to add roster names, email invites, or share a join code.
-            </div>
-            {newTripInviteCode && onDismissInvite && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onDismissInvite(); }}
-                style={{ marginTop: 8, border: 'none', background: 'transparent', color: T.textFaint, fontSize: ts(12), cursor: 'pointer', padding: 0, fontFamily: F }}
-              >
-                Dismiss
-              </button>
-            )}
-          </div>
-        )}
-
-        {isPlanning && (
-          <div style={{ background: '#E4EFF8', border: '1px solid #C7DDEF', borderRadius: 12, padding: '12px 14px', marginBottom: 12 }}>
-            <div style={{ fontSize: ts(14), fontWeight: 800, color: '#2A5C8E', marginBottom: 4 }}>Planning mode</div>
-            <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.45 }}>
-              Use Trip Plan for gear, meals, and expenses. Tap Start Trip in the header when you head out to unlock map and journal.
-            </div>
-          </div>
-        )}
-
-        {isActive && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-          <div onClick={() => onNav('map')}
-               style={{ background: T.card, borderRadius: 12, padding: '11px 12px', border: `1px solid ${T.border}`,
-                        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: '#E4EFF8',
-                           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Ic d={ICONS.map} d2={ICONS.map2} size={17} color="#2A5C8E" sw={1.9} />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>Live Map</div>
-              <div style={{ fontSize: 10, color: T.textFaint }}>GPS track & navigation</div>
-            </div>
-          </div>
-          <div onClick={() => onNav('log')}
-               style={{ background: T.card, borderRadius: 12, padding: '11px 12px', border: `1px solid ${T.border}`,
-                        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: T.accentLight,
-                           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Ic d={ICONS.journal} d2={ICONS.journal2} size={17} color={T.accent} sw={1.9} />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>Field Journal</div>
-              <div style={{ fontSize: 10, color: T.textFaint }}>Quick capture & entries</div>
-            </div>
-          </div>
-        </div>
-        )}
-
-        {isPlanning && (
-          <div style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 12, border: `1px dashed ${T.border}` }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: T.textSub, marginBottom: 4 }}>Field tools locked until start</div>
-            <div style={{ fontSize: 10.5, color: T.textFaint }}>Live Map and Field Journal unlock when you start this trip.</div>
-          </div>
-        )}
-
-        <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 12 }}>
+        <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 14 }}>
           <TripExpenses
             trip={trip}
             onTripUpdate={onTripUpdate}
@@ -764,50 +631,24 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           />
         </div>
 
-        {trip?.coverPhoto && (
-          <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: 8, marginBottom: 12 }}>
-            <MediaThumb media={trip.coverPhoto} alt="Trip cover" style={{ width: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 10, display: 'block', background: '#F0EDE8' }} />
-          </div>
-        )}
+        <TripCrewList
+          trip={trip}
+          currentUserId={currentUserId}
+          canManage={canEditTrip && isTripOwner(trip, signedInUserId || currentUserId)}
+          onManageCrew={() => onNav('plan-participants')}
+        />
 
-        {isCompleted && <TripSummaryCard trip={trip} entries={entries} locations={locations} track={track} />}
-
-        {isActive && (
-        <div style={{ background: trip.gpsSessionActive ? '#EAF3FB' : T.card, borderRadius: 12, border: `1px solid ${trip.gpsSessionActive ? '#BFD9EF' : T.border}`, padding: '10px 12px', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <div>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text }}>
-                {trip.gpsSessionActive ? 'Tracking Session Active' : 'Tracking Session Inactive'}
-              </div>
-              <div style={{ fontSize: 10.5, color: T.textFaint }}>
-                {trip.gpsSessionActive
-                  ? `${activeSessionPointCount} points · started ${new Date(activeSession?.startedAt || trip.gpsSessionStartedAt || 0).toLocaleTimeString()}`
-                  : 'Start when leaving a location, then stop at destination to capture a clean path.'}
-              </div>
-            </div>
-            {trip.gpsSessionActive ? (
-              <div onClick={() => handleStopTrackingSession(null)}
-                   style={{ background: '#FFEDE6', border: '1px solid #F2C8B4', borderRadius: 9, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#8A5526', cursor: 'pointer', flexShrink: 0 }}>
-                Stop Tracking
-              </div>
-            ) : (
-              <div onClick={handleStartTrackingSession}
-                   style={{ background: '#E5F4E8', border: '1px solid #A4CFAD', borderRadius: 9, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#2E6D3A', cursor: 'pointer', flexShrink: 0 }}>
-                Start Tracking
-              </div>
-            )}
-          </div>
-        </div>
-        )}
+        {tripSection === 'overview' && (
+        <>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>Trip Map</span>
-          <span onClick={() => onNav('map')} style={{ fontSize: ts(13), color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Open Map →</span>
+          <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>Map</span>
+          <span onClick={() => onNav('map')} style={{ fontSize: ts(12), color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Full map →</span>
         </div>
         <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, lineHeight: 1.45 }}>
           {addingLocation
-            ? 'Adjust the pin on the map, name the location, then tap Save Location.'
-            : 'Tap the map to drop a pin and save a new location.'}
+            ? 'Place the pin, name the spot, then save. Add events after you open the location.'
+            : 'Tap the map to log a new location, or open one below to add events.'}
         </div>
         <div style={{ borderRadius: 14, overflow: 'hidden', height: 220, border: `1px solid ${T.border}`, marginBottom: 8 }}>
           <TripMap
@@ -833,309 +674,125 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             }}
           />
         </div>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-          <span style={{ fontSize: ts(12), color: T.textFaint }}>{track.length} track points</span>
-          <span style={{ fontSize: ts(12), color: T.textFaint }}>{mapEntries.length} saved locations</span>
-          <span style={{ fontSize: ts(12), color: T.textFaint }}>{filteredEntries.length} entries</span>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: ts(11), color: T.textFaint }}>{locations.length} locations</span>
+          <span style={{ fontSize: ts(11), color: T.textFaint }}>{track.length} track pts</span>
+          {!addingLocation && isOpen && canEditTrip && (
+            <span onClick={() => { setAddingLocation(true); setLocationError(null); setLocationSource('map'); }} style={{ fontSize: ts(11), color: T.accent, fontWeight: 700, cursor: 'pointer' }}>
+              + Add location
+            </span>
+          )}
         </div>
 
         {addingLocation && (
-          <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '11px 12px', marginBottom: 12 }}>
-            <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text, marginBottom: 8 }}>Save Location</div>
-            <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, fontWeight: 700 }}>Place on map</div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-              {[
-                { id: 'map', label: 'Map pin' },
-                { id: 'current', label: 'My GPS' },
-                { id: 'custom', label: 'Custom coords' },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => {
-                    setLocationSource(opt.id);
-                    setLocationError(null);
-                    if (opt.id === 'current' && currentPos) setLocationPin(null);
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 14,
-                    cursor: 'pointer',
-                    fontSize: ts(12),
-                    fontWeight: 700,
-                    fontFamily: F,
-                    background: locationSource === opt.id ? '#2A5C8E' : T.bg,
-                    color: locationSource === opt.id ? 'white' : T.textSub,
-                    border: locationSource === opt.id ? 'none' : `1px solid ${T.border}`,
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            {locationSource === 'custom' && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input
-                  value={locationDraft.customLat}
-                  onChange={(e) => setLocationDraft((d) => ({ ...d, customLat: e.target.value }))}
-                  placeholder="Latitude"
-                  inputMode="decimal"
-                  style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: ts(13), fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-                />
-                <input
-                  value={locationDraft.customLng}
-                  onChange={(e) => setLocationDraft((d) => ({ ...d, customLng: e.target.value }))}
-                  placeholder="Longitude"
-                  inputMode="decimal"
-                  style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: ts(13), fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-                />
-              </div>
-            )}
-            <input
-              value={locationDraft.name}
-              onChange={(e) => setLocationDraft((d) => ({ ...d, name: e.target.value }))}
-              placeholder="Location name (Put-In, Camp 2, etc.)"
-              style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-            />
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, overflowX: 'auto' }}>
-              {[
-                { id: 'campsite', icon: '⛺', label: 'Campsite' },
-                { id: 'river-feature', icon: '🌊', label: 'River Feature' },
-                { id: 'amazing-find', icon: '✨', label: 'Amazing Find' },
-                { id: 'hiking-location', icon: '🥾', label: 'Hiking Location' },
-                { id: 'custom', icon: '📌', label: 'Custom' },
-              ].map((tp) => (
-                <div key={tp.id} onClick={() => setLocationDraft((d) => ({ ...d, type: tp.id }))}
-                     style={{ flexShrink: 0, padding: '5px 9px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                              background: locationDraft.type === tp.id ? '#3A72A8' : T.bg,
-                              color: locationDraft.type === tp.id ? 'white' : T.textSub,
-                              border: locationDraft.type === tp.id ? 'none' : `1px solid ${T.border}` }}>
-                  {tp.icon} {tp.label}
-                </div>
-              ))}
-            </div>
-            <div style={{ fontSize: 10.5, color: T.textSub, marginBottom: 6, fontWeight: 700 }}>Choose Icon</div>
-            <div style={{ display: 'flex', gap: 7, marginBottom: 8, flexWrap: 'wrap' }}>
-              {['📍', '⛺', '🌊', '✨', '🥾', '🦌', '📈', '⚠', '🍴', '🔥'].map((ic) => (
-                <div key={ic} onClick={() => setLocationDraft((d) => ({ ...d, icon: ic }))}
-                     style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              cursor: 'pointer', fontSize: 15,
-                              border: `2px solid ${locationDraft.icon === ic ? '#2A5C8E' : T.border}`,
-                              background: locationDraft.icon === ic ? '#E4EFF8' : T.bg }}>
-                  {ic}
-                </div>
-              ))}
-            </div>
-            <textarea
-              value={locationDraft.notes}
-              onChange={(e) => setLocationDraft((d) => ({ ...d, notes: e.target.value }))}
-              placeholder="Optional location notes"
-              rows={2}
-              style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg, resize: 'vertical' }}
-            />
-            <div style={{ fontSize: 10.5, color: T.textSub, marginBottom: 6, fontWeight: 700 }}>Location Cover Photo</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
-                Choose Photo
-                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onLocationCoverSelected(e.target.files)} />
-              </label>
-              {!!locCoverPhoto && (
-                <span onClick={() => setLocCoverPhoto(null)} style={{ fontSize: 10.5, color: T.textFaint, cursor: 'pointer' }}>Remove</span>
-              )}
-            </div>
-            {!!locCoverPhoto && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 9px', marginBottom: 8 }}>
-                {locCoverPhoto ? (
-                  <MediaThumb media={locCoverPhoto} alt="Location cover preview" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: 42, height: 42, borderRadius: 8, background: T.card, border: `1px solid ${T.border}` }} />
-                )}
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11, color: T.text, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{locCoverPhoto.name}</div>
-                  <div style={{ fontSize: 10, color: T.textFaint }}>{Math.round((locCoverPhoto.size || 0) / 1024)} KB</div>
-                </div>
-              </div>
-            )}
-            <div style={{ fontSize: 10.5, color: T.textSub, marginBottom: 6, fontWeight: 700 }}>Location Time</div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              {[{ id: 'current', label: 'Current Time' }, { id: 'custom', label: 'Custom Time' }, { id: 'range', label: 'Time Range' }].map((opt) => (
-                <div key={opt.id} onClick={() => setLocationDraft((d) => ({ ...d, timeMode: opt.id }))}
-                     style={{ padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                              background: locationDraft.timeMode === opt.id ? '#2A5C8E' : T.bg,
-                              color: locationDraft.timeMode === opt.id ? 'white' : T.textSub,
-                              border: locationDraft.timeMode === opt.id ? 'none' : `1px solid ${T.border}` }}>
-                  {opt.label}
-                </div>
-              ))}
-            </div>
-            {locationDraft.timeMode === 'custom' && (
-              <input
-                type="datetime-local"
-                value={locationDraft.observedAt}
-                onChange={(e) => setLocationDraft((d) => ({ ...d, observedAt: e.target.value }))}
-                style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-              />
-            )}
-            {locationDraft.timeMode === 'range' && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input
-                  type="datetime-local"
-                  value={locationDraft.observedStartAt}
-                  onChange={(e) => setLocationDraft((d) => ({ ...d, observedStartAt: e.target.value }))}
-                  style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-                />
-                <input
-                  type="datetime-local"
-                  value={locationDraft.observedEndAt}
-                  onChange={(e) => setLocationDraft((d) => ({ ...d, observedEndAt: e.target.value }))}
-                  style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-                />
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              {[{ id: 'map', label: 'Pick On Map' }, { id: 'current', label: 'Use Current Location' }].map((opt) => (
-                <div key={opt.id} onClick={() => setLocationSource(opt.id)}
-                     style={{ padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                              background: locationSource === opt.id ? '#2A5C8E' : T.bg,
-                              color: locationSource === opt.id ? 'white' : T.textSub,
-                              border: locationSource === opt.id ? 'none' : `1px solid ${T.border}` }}>
-                  {opt.label}
-                </div>
-              ))}
-            </div>
-            <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 8 }}>
-              {locationSource === 'map'
-                ? (locationPin ? `Pin: ${locationPin.lat.toFixed(5)}, ${locationPin.lng.toFixed(5)}` : 'Tap the map above to place your pin.')
-                : locationSource === 'current'
-                  ? (currentPos
-                    ? `GPS: ${currentPos.lat.toFixed(5)}, ${currentPos.lng.toFixed(5)}`
-                    : (currentPosError || 'Waiting for GPS…'))
-                  : 'Enter coordinates or tap the map to preview the pin.'}
-            </div>
-            {locationError && <div style={{ fontSize: 10.5, color: T.amber, marginBottom: 8 }}>{locationError}</div>}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div onClick={() => { setAddingLocation(false); setLocationError(null); setLocCoverPhoto(null); }}
-                   style={{ flex: 1, height: 34, borderRadius: 9, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: T.textSub }}>
-                Cancel
-              </div>
-              <div onClick={saveLocation}
-                   style={{ flex: 1, height: 34, borderRadius: 9, background: '#2A5C8E', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'white' }}>
-                Save Location
-              </div>
-            </div>
-          </div>
+          <LocationSaveForm
+            draft={locationDraft}
+            onDraftChange={setLocationDraft}
+            locationSource={locationSource}
+            onLocationSourceChange={(id) => {
+              setLocationSource(id);
+              setLocationError(null);
+              if (id === 'current' && currentPos) setLocationPin(null);
+            }}
+            locationPin={locationPin}
+            currentPos={currentPos}
+            currentPosError={currentPosError}
+            coverPhoto={locCoverPhoto}
+            onCoverPhotoChange={(files) => {
+              if (!files) { setLocCoverPhoto(null); return; }
+              void onLocationCoverSelected(files);
+            }}
+            error={locationError}
+            onCancel={() => { setAddingLocation(false); setLocationError(null); setLocCoverPhoto(null); }}
+            onSave={saveLocation}
+          />
         )}
 
-        <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 12 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 8 }}>Participants</div>
-          {supabaseConfigured && (
-            <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 8, lineHeight: 1.4 }}>
-              People who join with your invite code appear here automatically when you are online.
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-            {participants.map((p) => (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 14, fontSize: 10.5, fontWeight: 700, color: p.isOwner ? '#2E6D3A' : T.textSub, background: p.isOwner ? '#E5F4E8' : T.bg, border: `1px solid ${p.isOwner ? '#A4CFAD' : T.border}` }}>
-                {p.label}
-                {!p.isOwner && !p.joinedViaInvite && (
-                  <span onClick={() => removeParticipant(p.id)} style={{ marginLeft: 2, cursor: 'pointer', color: T.textFaint, fontSize: 10, lineHeight: 1 }}>✕</span>
-                )}
-              </div>
-            ))}
-            {participants.length === 0 && <span style={{ fontSize: 10.5, color: T.textFaint }}>No participants yet.</span>}
-          </div>
-          {(() => {
-            const currentCollaboratorNames = new Set((trip?.collaborators || []).map((c) => (c.handle || c.name || '').toLowerCase()));
-            const suggestions = contacts.filter((c) => {
-              if (currentCollaboratorNames.has(c.name.toLowerCase())) return false;
-              if (!participantInput.trim()) return true;
-              return c.name.toLowerCase().includes(participantInput.toLowerCase());
-            });
-            return (
-              <div style={{ position: 'relative' }}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input
-                    value={participantInput}
-                    onChange={(e) => setParticipantInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') addParticipant(); }}
-                    placeholder="Search or add by name"
-                    style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 9, padding: '7px 9px', fontSize: 11.5, fontFamily: F, boxSizing: 'border-box', outline: 'none', background: T.bg }}
-                  />
-                  <div onClick={() => addParticipant()} style={{ padding: '7px 12px', borderRadius: 9, background: T.accent, color: 'white', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Add</div>
-                </div>
-                {suggestions.length > 0 && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 48, background: T.card, border: `1px solid ${T.border}`, borderRadius: 9, marginTop: 3, zIndex: 20, boxShadow: '0 4px 12px rgba(0,0,0,.10)', overflow: 'hidden' }}>
-                    {suggestions.map((c) => (
-                      <div key={c.id} onClick={() => addParticipant(c.name)}
-                           style={{ padding: '8px 12px', fontSize: 12, color: T.text, cursor: 'pointer', borderBottom: `1px solid ${T.border}` }}
-                           onMouseEnter={(e) => e.currentTarget.style.background = T.bg}
-                           onMouseLeave={(e) => e.currentTarget.style.background = T.card}>
-                        {c.name}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8 }}>Trip Locations</div>
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 10 }}>
-          {locationOptions.map((id) => (
-            <div key={id} onClick={() => { setSelectedLocationId(id); setLocationPageId(id); }}
-                 style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 16, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                          background: selectedLocationId === id ? '#2A5C8E' : T.bg, color: selectedLocationId === id ? 'white' : T.textSub,
-                          border: selectedLocationId === id ? 'none' : `1px solid ${T.border}`,
-                          display: 'flex', alignItems: 'center', gap: 6 }}>
-              {(() => {
-                const loc = orderedLocations.find((l) => l.id === id);
-                const num = orderedLocations.findIndex((l) => l.id === id) + 1;
-                return (
-                  <>
-                    {loc?.coverPhoto && (
-                      <MediaThumb media={loc.coverPhoto} alt={loc.name || 'Location cover'} style={{ width: 20, height: 20, borderRadius: 6, objectFit: 'cover' }} />
-                    )}
-                    <span>{`${num}. ${loc?.icon || '📍'} ${loc?.name || 'Location'}`}</span>
-                  </>
-                );
-              })()}
-            </div>
-          ))}
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          {orderedLocations.length === 0 && (
-            <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 11px', fontSize: 11.5, color: T.textFaint }}>
-              No locations yet. Add your first location from the button above or by tapping the map.
+        <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text, marginBottom: 8 }}>Saved locations</div>
+        <div style={{ marginBottom: 14 }}>
+          {orderedLocations.length === 0 && !addingLocation && (
+            <div style={{ background: T.card, borderRadius: 12, border: `1px dashed ${T.border}`, padding: '16px 14px', textAlign: 'center' }}>
+              <div style={{ fontSize: ts(13), fontWeight: 700, color: T.textSub, marginBottom: 4 }}>No locations yet</div>
+              <div style={{ fontSize: ts(12), color: T.textFaint, lineHeight: 1.45 }}>Tap the map above to drop your first pin.</div>
             </div>
           )}
           {orderedLocations.map((loc, idx) => (
             <div key={loc.id} onClick={() => { setSelectedLocationId(loc.id); setLocationPageId(loc.id); }}
-                 style={{ background: T.card, borderRadius: 11, border: `1px solid ${selectedLocationId === loc.id ? '#2A5C8E' : T.border}`, padding: '9px 10px', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer' }}>
-              <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                 style={{ background: T.card, borderRadius: 11, border: `1px solid ${selectedLocationId === loc.id ? '#2A5C8E' : T.border}`, padding: '10px 11px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
                 {loc.coverPhoto ? (
-                  <MediaThumb media={loc.coverPhoto} alt={`${loc.name} cover`} style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+                  <MediaThumb media={loc.coverPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <div style={{ width: 34, height: 34, borderRadius: 8, background: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ fontSize: 14 }}>{loc.icon || '📍'}</span>
-                  </div>
+                  <span style={{ fontSize: 16 }}>{loc.icon || '📍'}</span>
                 )}
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {idx + 1}. {loc.icon || '📍'} {loc.name}
-                  </div>
-                  <div style={{ fontSize: 10.5, color: T.textFaint }}>{loc.type}</div>
-                  <div style={{ fontSize: 10, color: T.textFaint }}>Logged: {formatLocationLoggedAt(loc)}</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {idx + 1}. {loc.name}
+                </div>
+                <div style={{ fontSize: ts(11), color: T.textFaint }}>
+                  {locationTypeLabel(loc.type)}
+                  {' · '}{locationEventCount.get(loc.id) || 0} events
+                  {' · '}{locationEntryCount.get(loc.id) || 0} entries
                 </div>
               </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 10.5, color: T.textSub }}>{locationEntryCount.get(loc.id) || 0} entries</div>
-                <div style={{ fontSize: 10, color: T.textFaint }}>{locationEventCount.get(loc.id) || 0} events</div>
-              </div>
+              <Ic d="M9 18l6-6-6-6" size={16} color={T.textFaint} sw={2} />
             </div>
           ))}
         </div>
+
+        {entries.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setTripSection('entries')}
+            style={{
+              width: '100%',
+              border: `1px solid ${T.border}`,
+              borderRadius: 11,
+              padding: '11px 14px',
+              marginBottom: 14,
+              background: T.card,
+              fontSize: ts(13),
+              fontWeight: 700,
+              color: T.accent,
+              cursor: 'pointer',
+              fontFamily: F,
+              textAlign: 'left',
+            }}
+          >
+            All entries ({entries.length}) →
+          </button>
+        )}
+
+        {isCompleted && <TripSummaryCard trip={trip} entries={entries} locations={locations} track={track} />}
+
+        {isOpen && (
+        <div style={{ background: trip.gpsSessionActive ? '#EAF3FB' : T.card, borderRadius: 12, border: `1px solid ${trip.gpsSessionActive ? '#BFD9EF' : T.border}`, padding: '10px 12px', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text }}>
+                {trip.gpsSessionActive ? 'GPS tracking active' : 'GPS tracking'}
+              </div>
+              <div style={{ fontSize: 10.5, color: T.textFaint }}>
+                {trip.gpsSessionActive
+                  ? `${activeSessionPointCount} points · started ${new Date(activeSession?.startedAt || trip.gpsSessionStartedAt || 0).toLocaleTimeString()}`
+                  : 'Record your route between locations.'}
+              </div>
+            </div>
+            {trip.gpsSessionActive ? (
+              <div onClick={() => handleStopTrackingSession(null)}
+                   style={{ background: '#FFEDE6', border: '1px solid #F2C8B4', borderRadius: 9, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#8A5526', cursor: 'pointer', flexShrink: 0 }}>
+                Stop
+              </div>
+            ) : (
+              <div onClick={handleStartTrackingSession}
+                   style={{ background: '#E5F4E8', border: '1px solid #A4CFAD', borderRadius: 9, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#2E6D3A', cursor: 'pointer', flexShrink: 0 }}>
+                Start
+              </div>
+            )}
+          </div>
+        </div>
+        )}
 
         {canDeleteTrip && !deleteConfirm && (
           <div style={{ marginTop: 8, marginBottom: 4, paddingTop: 16, borderTop: `1px dashed ${T.border}` }}>
@@ -1154,6 +811,23 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
 
         {tripSection === 'entries' && (
         <>
+
+        <button
+          type="button"
+          onClick={() => setTripSection('overview')}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            padding: '0 0 10px',
+            fontSize: ts(13),
+            fontWeight: 700,
+            color: T.accent,
+            cursor: 'pointer',
+            fontFamily: F,
+          }}
+        >
+          ← Map & locations
+        </button>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontSize: ts(15), fontWeight: 700, color: T.text }}>Trip Entries</span>
@@ -1214,7 +888,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                   </div>
                 ))}
 
-                {[{ id: 'all', label: 'Any Link' }, { id: 'linked', label: 'Linked' }, { id: 'unlinked', label: 'Unlinked' }].map((l) => (
+                {[{ id: 'all', label: 'Any location' }, { id: 'linked', label: 'At location' }, { id: 'unlinked', label: 'No location' }].map((l) => (
                   <div key={l.id} onClick={() => setLocationFilter(l.id)}
                        style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 16, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
                                 background: locationFilter === l.id ? T.amber : T.bg, color: locationFilter === l.id ? 'white' : T.textSub,
@@ -1249,11 +923,21 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
 
         {filteredEntries.map((e, i) => {
           const entryLocationId = e.locationId || null;
-          const canView = !!e.eventId && !!entryLocationId;
+          const canViewEvent = !!e.eventId && !!entryLocationId;
+          const canViewLocation = !!entryLocationId;
+          const canNavigate = canViewEvent || canViewLocation;
           return (
             <div key={e.id || i}
-                 onClick={() => { if (canView) { setLocationPageEventId(e.eventId); setLocationPageId(entryLocationId); } }}
-                 style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1px solid ${T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start', cursor: canView ? 'pointer' : 'default' }}>
+                 onClick={() => {
+                   if (canViewEvent) {
+                     setLocationPageEventId(e.eventId);
+                     setLocationPageId(entryLocationId);
+                   } else if (canViewLocation) {
+                     setLocationPageEventId(null);
+                     setLocationPageId(entryLocationId);
+                   }
+                 }}
+                 style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1px solid ${T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start', cursor: canNavigate ? 'pointer' : 'default' }}>
               <div style={{ width: 34, height: 34, borderRadius: 9, background: `${entryColor(e.type)}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <span style={{ fontSize: 15 }}>{e.mapTagSymbol || defaultTagSymbol(e.type, e.featureType)}</span>
               </div>
@@ -1265,9 +949,11 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                 {e.observedAt && <div style={{ fontSize: 10.5, color: T.textFaint }}>Observed: {new Date(e.observedAt).toLocaleString()}</div>}
                 {e.lat && e.lng && <div style={{ fontSize: 10.5, color: T.textFaint }}>📍 {e.lat.toFixed(4)}, {e.lng.toFixed(4)}</div>}
                 {entryHasMedia(e) && <div style={{ fontSize: 10.5, color: T.textFaint }}>📷🎥🎙 media attached</div>}
-                {canView && (
+                {canNavigate && (
                   <div style={{ display: 'flex', gap: 12, marginTop: 5 }}>
-                    <span style={{ fontSize: 10.5, color: '#2A5C8E', fontWeight: 700 }}>View Event →</span>
+                    <span style={{ fontSize: 10.5, color: '#2A5C8E', fontWeight: 700 }}>
+                      {canViewEvent ? 'View event →' : 'View location →'}
+                    </span>
                   </div>
                 )}
               </div>

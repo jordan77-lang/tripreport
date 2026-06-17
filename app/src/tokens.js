@@ -39,13 +39,6 @@ export const ICONS = {
   gauge:    'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
 };
 
-export const KNOWN_GAUGES = [
-  { id: '09498500', name: 'Salt River above Canyon Lake, AZ' },
-  { id: '09380000', name: 'Colorado River at Lees Ferry, AZ' },
-  { id: '09402500', name: 'Little Colorado River, AZ' },
-  { id: '14138900', name: 'Sandy River near Marmot, OR' },
-];
-
 export const CAPTURE_MODES = {
   camping: [
     { icon: ICONS.mic,    label: 'Voice',  col: '#5B8DD9', type: 'voice' },
