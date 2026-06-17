@@ -9,7 +9,11 @@ import {
   deleteLocalTrip,
 } from './storage';
 import { syncTripMedia } from './mediaSync';
-import { markMediaRefsSynced } from './mediaRefs';
+import {
+  mergeCollaboratorsFromMembers,
+  memberProfilesFromRows,
+  collaboratorsChanged,
+} from './tripParticipants';
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -89,7 +93,14 @@ export async function pushTripToCloud(localTrip) {
   }
 
   const ownerId = resolveCloudOwnerId(localTrip, userId);
-  const payload = buildCloudPayload(localTrip);
+  let tripForPush = localTrip;
+  try {
+    const refreshed = await refreshTripMembersFromCloud(localTrip.id);
+    tripForPush = refreshed.trip || localTrip;
+  } catch (e) {
+    console.warn('Trip members refresh before push failed', e);
+  }
+  const payload = buildCloudPayload(tripForPush);
 
   const { data: updatedAt, error } = await supabase.rpc('upsert_trip_for_owner', {
     p_id: localTrip.id,
@@ -143,6 +154,11 @@ export async function pullTripFromCloud(tripId) {
   const local = cloudRowToLocalTrip(data);
   saveTrip(local);
   try {
+    await refreshTripMembersFromCloud(tripId);
+  } catch (e) {
+    console.warn('Trip members refresh after pull failed', e);
+  }
+  try {
     await syncTripMedia(tripId);
   } catch (e) {
     console.warn('Media download after trip pull failed', e);
@@ -160,6 +176,44 @@ export async function listCloudTrips() {
 
   if (error) throw error;
   return data || [];
+}
+
+/** Fetch trip_members joined with profile names (invite joiners). */
+export async function fetchTripMemberRows(tripId) {
+  if (!tripId || !supabaseConfigured) return [];
+  const supabase = requireSupabase();
+  const { data, error } = await supabase
+    .from('trip_members')
+    .select('user_id, role, profiles(display_name)')
+    .eq('trip_id', tripId);
+
+  if (error) throw error;
+  return data || [];
+}
+
+/** Merge Supabase trip_members into local collaborators for gear, meals, expenses. */
+export async function refreshTripMembersFromCloud(tripId) {
+  if (!tripId || !supabaseConfigured) return { trip: getTrip(tripId), changed: false };
+
+  const rows = await fetchTripMemberRows(tripId);
+  const trip = getTrip(tripId);
+  if (!trip) return { trip: null, changed: false };
+
+  const nextCollaborators = mergeCollaboratorsFromMembers(trip, rows);
+  const nextProfiles = memberProfilesFromRows(rows);
+  const changed = collaboratorsChanged(trip.collaborators, nextCollaborators)
+    || JSON.stringify(trip.memberProfiles || {}) !== JSON.stringify(nextProfiles);
+
+  if (changed) {
+    saveTrip({
+      ...trip,
+      collaborators: nextCollaborators,
+      memberProfiles: nextProfiles,
+      updatedAt: Date.now(),
+    });
+  }
+
+  return { trip: getTrip(tripId), changed };
 }
 
 export async function createTripInvite(tripId, { role = 'contributor', maxUses = null, expiresInDays = 90 } = {}) {
@@ -230,6 +284,13 @@ export async function syncUserTripsWithCloud() {
 
   try {
     const cloudList = await listCloudTrips();
+    for (const row of cloudList) {
+      try {
+        await refreshTripMembersFromCloud(row.id);
+      } catch (e) {
+        console.warn('Trip members refresh failed during cloud sync', row.id, e);
+      }
+    }
     for (const row of cloudList) {
       try {
         const local = getTrip(row.id);

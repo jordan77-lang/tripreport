@@ -18,6 +18,8 @@ import { buildTripDraft, formatTripDate, formatTripDateRange } from '../lib/trip
 import { ts } from '../lib/textScale';
 import { deleteTripCompletely, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
+import { useTripMembersSync } from '../hooks/useTripMembersSync';
+import { buildTripParticipants, isJoinedMember, resolveUserDisplayName } from '../lib/expenses';
 import { LocationPage } from './LocationPage';
 import { InviteCodePanel } from './JoinTrip';
 
@@ -26,7 +28,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   const signedInUserId = getSignedInUserId();
   const canInvite = Boolean(supabaseConfigured && signedInUserId && trip && isTripOwner(trip, signedInUserId));
   const canDeleteTrip = Boolean(trip && isTripOwner(trip, signedInUserId || currentUserId));
-  const participants = useMemo(() => buildParticipantOptions(trip, currentUserId), [trip, currentUserId]);
+  const participants = useMemo(() => buildTripParticipants(trip, currentUserId, { withOwnerMeta: true }), [trip, currentUserId]);
   const [typeFilter, setTypeFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
@@ -73,6 +75,12 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   const isActive = trip?.status === 'active';
   const isCompleted = trip?.status === 'completed';
 
+  useTripMembersSync({
+    tripId: trip?.id,
+    enabled: Boolean(trip?.id),
+    onSynced: onTripUpdate,
+  });
+
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -115,6 +123,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
 
   function removeParticipant(id) {
     if (!trip) return;
+    const target = (trip.collaborators || []).find((c) => (c.id || c.handle) === id);
+    if (target && isJoinedMember(target)) return;
     saveTrip({ ...trip, collaborators: (trip.collaborators || []).filter((c) => (c.id || c.handle) !== id), updatedAt: Date.now(), syncState: 'pending' });
     onTripUpdate?.();
   }
@@ -924,11 +934,16 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
 
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 12 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 8 }}>Participants</div>
+          {supabaseConfigured && (
+            <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 8, lineHeight: 1.4 }}>
+              People who join with your invite code appear here automatically when you are online.
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             {participants.map((p) => (
               <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 14, fontSize: 10.5, fontWeight: 700, color: p.isOwner ? '#2E6D3A' : T.textSub, background: p.isOwner ? '#E5F4E8' : T.bg, border: `1px solid ${p.isOwner ? '#A4CFAD' : T.border}` }}>
                 {p.label}
-                {!p.isOwner && (
+                {!p.isOwner && !p.joinedViaInvite && (
                   <span onClick={() => removeParticipant(p.id)} style={{ marginLeft: 2, cursor: 'pointer', color: T.textFaint, fontSize: 10, lineHeight: 1 }}>✕</span>
                 )}
               </div>
@@ -1121,7 +1136,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                        style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 16, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
                                 background: userFilter === uid ? '#2A5C8E' : T.bg, color: userFilter === uid ? 'white' : T.textSub,
                                 border: userFilter === uid ? 'none' : `1px solid ${T.border}` }}>
-                    {uid === 'all' ? 'Any User' : userLabel(uid, currentUserId)}
+                    {uid === 'all' ? 'Any User' : userLabel(uid, currentUserId, trip)}
                   </div>
                 ))}
 
@@ -1151,7 +1166,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{e.title || e.type}</div>
                 <div style={{ fontSize: 11, color: T.textFaint, textTransform: 'capitalize' }}>{e.type}</div>
-                <div style={{ fontSize: 10.5, color: authorColor(e.authorId || '') }}>By {userLabel(e.authorId, currentUserId)}</div>
+                <div style={{ fontSize: 10.5, color: authorColor(e.authorId || '') }}>By {userLabel(e.authorId, currentUserId, trip)}</div>
                 <div style={{ fontSize: 10.5, color: '#2A5C8E' }}>Location: {locationLabelForEntry(e, locations)}</div>
                 {e.observedAt && <div style={{ fontSize: 10.5, color: T.textFaint }}>Observed: {new Date(e.observedAt).toLocaleString()}</div>}
                 {e.lat && e.lng && <div style={{ fontSize: 10.5, color: T.textFaint }}>📍 {e.lat.toFixed(4)}, {e.lng.toFixed(4)}</div>}
@@ -1317,10 +1332,9 @@ function authorColor(authorId) {
   return palette[idx];
 }
 
-function userLabel(uid, currentUserId) {
+function userLabel(uid, currentUserId, trip) {
   if (!uid) return 'Unknown';
-  if (uid === currentUserId) return 'You';
-  return `User ${uid.slice(0, 6)}`;
+  return resolveUserDisplayName(trip, uid, currentUserId);
 }
 
 function entryHasMedia(e) {
@@ -1401,25 +1415,4 @@ function addHours(date, hours) {
   const d = new Date(date);
   d.setHours(d.getHours() + hours);
   return d;
-}
-
-function buildParticipantOptions(trip, currentUserId) {
-  if (!trip) return [];
-  const out = [];
-  const seen = new Set();
-
-  if (trip.ownerId) {
-    const ownerLabel = trip.ownerId === currentUserId ? 'You' : 'Trip Owner';
-    out.push({ id: trip.ownerId, label: ownerLabel, role: 'owner', isOwner: true });
-    seen.add(trip.ownerId);
-  }
-
-  for (const c of trip.collaborators || []) {
-    const id = c?.id || c?.handle;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push({ id, label: c.handle || 'Participant', role: c.role || 'contributor', isOwner: false });
-  }
-
-  return out;
 }

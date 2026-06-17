@@ -5,7 +5,7 @@ const ACTIVE_KEY = 'tr_active_trip_id';
 const USER_KEY = 'tr_user_id';
 const CONTACTS_KEY = 'tr_contacts';
 
-import { getSignedInUserId } from './authUser';
+import { getSignedInUserId, getSignedInDisplayName } from './authUser';
 
 export function getContacts() {
   try {
@@ -123,6 +123,7 @@ export function createTrip({
 }) {
   const now = Date.now();
   const ownerId = getCurrentUserId();
+  const ownerName = getSignedInDisplayName();
   const tripStatus = status === 'planning' ? 'planning' : 'active';
   const trip = {
     id: crypto.randomUUID(),
@@ -135,6 +136,7 @@ export function createTrip({
     status: tripStatus,
     startedAt: tripStatus === 'active' ? now : null,
     ownerId,
+    memberProfiles: ownerId && ownerName ? { [ownerId]: ownerName } : {},
     createdAt: now,
     updatedAt: now,
     syncState: 'pending',

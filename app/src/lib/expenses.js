@@ -1,19 +1,4 @@
-export function buildTripParticipants(trip, currentUserId) {
-  if (!trip) return [];
-  const out = [];
-  const seen = new Set();
-  if (trip.ownerId) {
-    out.push({ id: trip.ownerId, label: trip.ownerId === currentUserId ? 'You' : 'Owner' });
-    seen.add(trip.ownerId);
-  }
-  for (const c of trip.collaborators || []) {
-    const id = c?.id || c?.handle;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push({ id, label: c.handle || c.name || 'Participant' });
-  }
-  return out;
-}
+export { buildTripParticipants, isJoinedMember, resolveUserDisplayName, formatOwnerParticipantLabel } from './tripParticipants';
 
 export function resolveSplitIds(expense, participantIds) {
   if (!expense) return [];

@@ -14,6 +14,8 @@ import {
 } from '../lib/storage';
 import { TripExpenses } from '../components/TripExpenses';
 import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
+import { useTripMembersSync } from '../hooks/useTripMembersSync';
+import { buildTripParticipants } from '../lib/expenses';
 
 const TABS = [
   { id: 'gear', label: 'Gear' },
@@ -38,7 +40,13 @@ export function TripPlan({ trip, onNav, onFab, onBack, onTripUpdate }) {
   const [editingTrip, setEditingTrip] = useState(false);
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const currentUserId = getCurrentUserId();
-  const participants = useMemo(() => buildParticipants(trip, currentUserId), [trip, currentUserId]);
+  const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
+
+  useTripMembersSync({
+    tripId: trip?.id,
+    enabled: Boolean(trip?.id),
+    onSynced: onTripUpdate,
+  });
 
   function openTripEdit() {
     setTripDraft(buildTripDraft(trip));
@@ -417,23 +425,6 @@ const cardStyle = {
 };
 
 // ── Helpers ──
-
-function buildParticipants(trip, currentUserId) {
-  if (!trip) return [];
-  const out = [];
-  const seen = new Set();
-  if (trip.ownerId) {
-    out.push({ id: trip.ownerId, label: trip.ownerId === currentUserId ? 'You' : 'Owner' });
-    seen.add(trip.ownerId);
-  }
-  for (const c of trip.collaborators || []) {
-    const id = c?.id || c?.handle;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push({ id, label: c.handle || c.name || 'Participant' });
-  }
-  return out;
-}
 
 function groupBy(list, keyFn) {
   const out = {};

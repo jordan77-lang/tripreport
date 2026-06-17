@@ -5,6 +5,7 @@ import { TripMap } from '../components/TripMap';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { addEntry, addEvent, getCurrentUserId, updateEntry, updateLocation } from '../lib/storage';
+import { buildTripParticipants } from '../lib/expenses';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
@@ -19,7 +20,10 @@ const EVENT_COLORS  = { food: '#B06030', wildlife: '#4A7A34', gauge: '#2A5C8E', 
 
 export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdate, initialEventId }) {
   const currentUserId = getCurrentUserId();
-  const participantOptions = useMemo(() => buildParticipantOptions(trip), [trip]);
+  const participantOptions = useMemo(() => {
+    const people = buildTripParticipants(trip, currentUserId);
+    return [{ id: 'everyone', label: 'Everyone on the trip' }, ...people];
+  }, [trip, currentUserId]);
   const [editingLocation, setEditingLocation] = useState(false);
   const [composerType, setComposerType] = useState(null);
   const [editingEntry, setEditingEntry] = useState(null);
@@ -1065,26 +1069,6 @@ function quickBtnStyle(T) {
     textAlign: 'center',
     cursor: 'pointer',
   };
-}
-
-function buildParticipantOptions(trip) {
-  if (!trip) return [];
-  const out = [{ id: 'everyone', label: 'Everyone on the trip' }];
-  const seen = new Set();
-
-  if (trip.ownerId) {
-    out.push({ id: trip.ownerId, label: 'Trip Owner', role: 'owner' });
-    seen.add(trip.ownerId);
-  }
-
-  for (const c of trip.collaborators || []) {
-    const id = c?.id || c?.handle;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push({ id, label: c.handle || c.name || 'Participant', role: c.role || 'contributor' });
-  }
-
-  return out;
 }
 
 function calcMiles(lat1, lng1, lat2, lng2) {
