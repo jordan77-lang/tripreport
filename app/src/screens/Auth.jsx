@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { InstallAppCard } from '../components/InstallAppCard';
 import { T, F } from '../tokens';
 
 export function AuthScreen() {
@@ -134,6 +135,8 @@ export function AuthScreen() {
             Email links work best with service. For the river, create an account with password while you still have Wi‑Fi.
           </div>
         )}
+
+        <InstallAppCard />
       </div>
     </div>
   );

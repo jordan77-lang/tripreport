@@ -56,6 +56,13 @@ export function Home({ trip, allTrips = [], onNav, onFab, onOpenTrip, onSelectTr
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {onFab && (
+              <button type="button" onClick={onFab}
+                style={{ background: T.accent, border: 'none', borderRadius: 9, padding: '7px 11px', fontSize: ts(12), fontWeight: 800, color: 'white', cursor: 'pointer', fontFamily: F, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Ic d={ICONS.plus} size={14} color="white" sw={2.4} />
+                New Trip
+              </button>
+            )}
             {auth?.configured && onJoinTrip && (
               <div onClick={onJoinTrip}
                    style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 9, padding: '7px 10px', fontSize: ts(12), fontWeight: 700, color: T.accent, cursor: 'pointer' }}>
@@ -238,7 +245,7 @@ export function Home({ trip, allTrips = [], onNav, onFab, onOpenTrip, onSelectTr
         <div style={{ height: 16 }} />
       </div>
 
-      <BottomNav active="home" onNav={onNav} onFab={onFab} trip={currentTrip} />
+      <BottomNav active="home" onNav={onNav} trip={currentTrip} />
     </div>
   );
 }

@@ -3,17 +3,10 @@ import { T, F, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
 
 const HOME_TAB = { id: 'home', label: 'Home', d: ICONS.home, d2: ICONS.home2 };
-const TRIP_TABS = [
-  { id: 'trip', label: 'Trip', d: ICONS.tent, d2: 'M12 3v14' },
-  { id: 'map', label: 'Map', d: ICONS.map, d2: ICONS.map2 },
-  { id: 'log', label: 'Journal', d: ICONS.journal, d2: ICONS.journal2 },
-];
+const TRIP_TAB = { id: 'trip', label: 'Trip', d: ICONS.tent, d2: 'M12 3v14' };
 
 export function BottomNav({ active = 'home', onNav, trip }) {
-  const showFieldTabs = trip?.status !== 'completed';
-  const tabs = trip
-    ? [HOME_TAB, TRIP_TABS[0], ...(showFieldTabs ? TRIP_TABS.slice(1) : [])]
-    : [HOME_TAB];
+  const tabs = trip && trip.status !== 'completed' ? [HOME_TAB, TRIP_TAB] : [HOME_TAB];
 
   return (
     <div style={{ height: 68, background: T.card, borderTop: `1px solid ${T.border}`,
