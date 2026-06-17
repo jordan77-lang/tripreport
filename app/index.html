@@ -2,8 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#2C5F3E" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -11,8 +12,38 @@
     <meta name="apple-mobile-web-app-title" content="TripReport" />
     <link rel="manifest" href="/manifest.json" />
     <title>TripReport</title>
+    <style>
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #F5F4F0;
+      }
+      #app-splash img {
+        width: 128px;
+        height: 128px;
+        border-radius: 28px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+      }
+      #app-splash span {
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        font-size: 22px;
+        font-weight: 800;
+        color: #2A2825;
+        letter-spacing: -0.4px;
+      }
+    </style>
   </head>
   <body>
+    <div id="app-splash" aria-hidden="true">
+      <img src="/splash-logo.png" width="128" height="128" alt="" />
+      <span>TripReport</span>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
     <script>

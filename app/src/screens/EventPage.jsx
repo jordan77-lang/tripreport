@@ -11,6 +11,7 @@ import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
 import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
 import { buildTripParticipants, labelFor } from '../lib/expenses';
+import { mediaCaptureLabel } from '../lib/featureFlags';
 
 const ENTRY_COLORS = {
   campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',

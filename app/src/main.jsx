@@ -7,6 +7,10 @@ import App from './App.jsx';
 
 initTextScale();
 
+function removeSplash() {
+  document.getElementById('app-splash')?.remove();
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
@@ -14,3 +18,5 @@ createRoot(document.getElementById('root')).render(
     </AuthProvider>
   </StrictMode>,
 );
+
+removeSplash();

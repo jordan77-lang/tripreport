@@ -1,8 +1,11 @@
-const CACHE = 'tripreport-v1';
+const CACHE = 'tripreport-v2';
 
 const PRECACHE = [
   '/',
   '/index.html',
+  '/splash-logo.png',
+  '/icon-192.png',
+  '/icon-512.png',
 ];
 
 self.addEventListener('install', (e) => {
@@ -21,29 +24,31 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// Network-first for same-origin nav; cache-first for assets; passthrough for external APIs.
+// Network-first for same-origin nav and hashed build assets; cache-first for other static files.
 self.addEventListener('fetch', (e) => {
   const { request } = e;
   const url = new URL(request.url);
 
-  // Let external API calls (USGS, Open-Meteo, Mapbox) go straight to network.
   if (url.origin !== self.location.origin) return;
 
-  // Navigation requests: network-first, fall back to cached index.html.
-  if (request.mode === 'navigate') {
+  const isBuildAsset = url.pathname.startsWith('/assets/');
+  const isNavigate = request.mode === 'navigate';
+
+  if (isNavigate || isBuildAsset) {
     e.respondWith(
       fetch(request)
         .then((res) => {
-          const clone = res.clone();
-          caches.open(CACHE).then((c) => c.put(request, clone));
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE).then((c) => c.put(request, clone));
+          }
           return res;
         })
-        .catch(() => caches.match('/index.html'))
+        .catch(() => (isNavigate ? caches.match('/index.html') : caches.match(request)))
     );
     return;
   }
 
-  // Static assets: cache-first.
   e.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
