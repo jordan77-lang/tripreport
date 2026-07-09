@@ -16,6 +16,7 @@ import {
   collaboratorsChanged,
   dedupeCollaborators,
 } from './tripParticipants';
+import { mergeRemotePayloadIntoTrip } from './offlineExchange';
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -188,10 +189,11 @@ export async function pushTripToCloud(localTrip) {
   if (error) throw new Error(formatSupabaseError(error, 'Could not sync trip to cloud'));
 
   const data = { id: trip.id, updated_at: updatedAt };
+  const serverUpdatedAt = Date.parse(data.updated_at) || Date.now();
 
   const saved = getTrip(trip.id);
   if (saved) {
-    saveTrip({ ...saved, ownerId, syncState: 'synced', updatedAt: Date.now() });
+    saveTrip({ ...saved, ownerId, syncState: 'synced', updatedAt: serverUpdatedAt });
   }
 
   try {
@@ -237,7 +239,8 @@ async function pushTripPayloadAsMember(localTrip, userId) {
 
   const trip = getTrip(localTrip.id);
   if (trip) {
-    saveTrip({ ...trip, syncState: 'synced', updatedAt: Date.now() });
+    const serverUpdatedAt = Date.parse(data?.updated_at) || Date.now();
+    saveTrip({ ...trip, syncState: 'synced', updatedAt: serverUpdatedAt });
   }
 
   try {
@@ -257,6 +260,58 @@ async function pushTripPayloadAsMember(localTrip, userId) {
 }
 
 /** Pull cloud trip into local storage. */
+function mergeCloudRowIntoLocal(localTrip, row) {
+  const p = row.payload || {};
+  const cloudUpdated = Date.parse(row.updated_at) || 0;
+  const localUpdated = localTrip.updatedAt || 0;
+  const cloudNewer = cloudUpdated > localUpdated;
+  const cloudOnly = cloudRowToLocalTrip(row);
+
+  const { trip: merged, summary } = mergeRemotePayloadIntoTrip(localTrip, {
+    ...p,
+    trip: {
+      name: row.name,
+      types: row.types || [],
+      location: row.location,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      privacy: row.privacy,
+      status: row.status,
+      updatedAt: cloudUpdated,
+    },
+  }, { remoteUpdatedAt: cloudUpdated });
+
+  const hasLocalOnly = (summary.localOnlyCount || 0) > 0;
+
+  return {
+    ...merged,
+    id: row.id,
+    name: cloudNewer ? row.name : merged.name,
+    types: cloudNewer ? (row.types || []) : merged.types,
+    location: cloudNewer ? row.location : merged.location,
+    startDate: cloudNewer ? row.start_date : merged.startDate,
+    endDate: cloudNewer ? row.end_date : merged.endDate,
+    privacy: cloudNewer ? row.privacy : merged.privacy,
+    status: row.status || merged.status,
+    ownerId: row.owner_id,
+    createdAt: localTrip.createdAt || cloudOnly.createdAt,
+    coverPhoto: cloudNewer ? cloudOnly.coverPhoto : (merged.coverPhoto ?? cloudOnly.coverPhoto),
+    mapArea: cloudNewer ? cloudOnly.mapArea : (merged.mapArea ?? cloudOnly.mapArea),
+    offlineRegions: cloudNewer ? cloudOnly.offlineRegions : (merged.offlineRegions ?? cloudOnly.offlineRegions),
+    gpsTrackingEnabled: cloudNewer ? cloudOnly.gpsTrackingEnabled : merged.gpsTrackingEnabled,
+    gpsBackgroundTracking: cloudNewer ? cloudOnly.gpsBackgroundTracking : merged.gpsBackgroundTracking,
+    gpsIntervalMs: cloudNewer ? cloudOnly.gpsIntervalMs : merged.gpsIntervalMs,
+    startedAt: cloudNewer ? cloudOnly.startedAt : merged.startedAt,
+    endedAt: cloudNewer ? cloudOnly.endedAt : merged.endedAt,
+    gpsSessionActive: cloudNewer ? cloudOnly.gpsSessionActive : merged.gpsSessionActive,
+    gpsSessionId: cloudNewer ? cloudOnly.gpsSessionId : merged.gpsSessionId,
+    gpsSessionStartedAt: cloudNewer ? cloudOnly.gpsSessionStartedAt : merged.gpsSessionStartedAt,
+    recap: cloudNewer ? cloudOnly.recap : (merged.recap ?? cloudOnly.recap),
+    updatedAt: Math.max(localUpdated, cloudUpdated),
+    syncState: hasLocalOnly ? 'pending' : 'synced',
+  };
+}
+
 export async function pullTripFromCloud(tripId) {
   const supabase = requireSupabase();
   const { data, error } = await supabase
@@ -268,7 +323,8 @@ export async function pullTripFromCloud(tripId) {
   if (error) throw error;
   if (!data) throw new Error('Trip not found in cloud');
 
-  const local = cloudRowToLocalTrip(data);
+  const existing = getTrip(tripId);
+  const local = existing ? mergeCloudRowIntoLocal(existing, data) : cloudRowToLocalTrip(data);
   saveTrip(local);
   try {
     await refreshTripMembersFromCloud(tripId);

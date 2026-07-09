@@ -5,7 +5,7 @@ const FILE_MIME = 'application/json';
 
 const COLLECTIONS = [
   'locations', 'events', 'entries', 'track', 'trackSessions', 'collaborators',
-  'gearItems', 'meals', 'expenses', 'shoppingItems',
+  'gearItems', 'meals', 'expenses', 'expenseGroups', 'shoppingItems',
 ];
 
 export async function exportTripUpdateFile(trip, sourceUserId) {
@@ -57,6 +57,7 @@ export function createTripUpdate(trip, sourceUserId) {
       gearItems: trip.gearItems || [],
       meals: trip.meals || [],
       expenses: trip.expenses || [],
+      expenseGroups: trip.expenseGroups || [],
       shoppingItems: trip.shoppingItems || [],
     }),
   };
@@ -75,20 +76,23 @@ export async function readTripUpdateFile(file) {
   return parsed;
 }
 
-export function mergeTripUpdate(localTrip, update) {
-  validateTripUpdate(update);
-  if (!localTrip?.id) throw new Error('Open a trip before importing an update.');
-  if (localTrip.id !== update.tripId) {
-    throw new Error(`This update belongs to a different trip: ${update.tripName || update.tripId}.`);
-  }
-
-  const payload = update.payload || {};
+/** Merge remote payload collections into a local trip without dropping local-only rows. */
+export function mergeRemotePayloadIntoTrip(localTrip, remotePayload, { remoteUpdatedAt = 0 } = {}) {
+  const payload = remotePayload || {};
   const summary = {
     added: 0,
     updated: 0,
     ignored: 0,
+    localOnlyCount: 0,
     byCollection: {},
   };
+
+  const remoteIdsByCollection = {};
+  for (const name of COLLECTIONS) {
+    remoteIdsByCollection[name] = new Set(
+      (payload[name] || []).map((item) => item?.id).filter(Boolean),
+    );
+  }
 
   const merged = { ...localTrip };
   for (const name of COLLECTIONS) {
@@ -102,16 +106,39 @@ export function mergeTripUpdate(localTrip, update) {
       updated: result.updated,
       ignored: result.ignored,
     };
+    for (const item of localTrip[name] || []) {
+      if (item?.id && !remoteIdsByCollection[name].has(item.id)) {
+        summary.localOnlyCount += 1;
+      }
+    }
   }
 
   const remoteTrip = payload.trip || {};
-  if (remoteTrip.updatedAt && (!localTrip.updatedAt || remoteTrip.updatedAt > localTrip.updatedAt)) {
-    for (const field of ['name', 'types', 'location', 'startDate', 'endDate', 'privacy']) {
+  const remoteTripUpdated = remoteTrip.updatedAt || remoteUpdatedAt || 0;
+  if (remoteTripUpdated && (!localTrip.updatedAt || remoteTripUpdated > localTrip.updatedAt)) {
+    for (const field of ['name', 'types', 'location', 'startDate', 'endDate', 'privacy', 'status']) {
       if (remoteTrip[field] !== undefined) merged[field] = remoteTrip[field];
     }
   }
 
-  merged.updatedAt = Math.max(localTrip.updatedAt || 0, remoteTrip.updatedAt || 0, update.exportedAt || 0, Date.now());
+  merged.updatedAt = Math.max(localTrip.updatedAt || 0, remoteTripUpdated, Date.now());
+
+  return { trip: merged, summary };
+}
+
+export function mergeTripUpdate(localTrip, update) {
+  validateTripUpdate(update);
+  if (!localTrip?.id) throw new Error('Open a trip before importing an update.');
+  if (localTrip.id !== update.tripId) {
+    throw new Error(`This update belongs to a different trip: ${update.tripName || update.tripId}.`);
+  }
+
+  const payload = update.payload || {};
+  const { trip: merged, summary } = mergeRemotePayloadIntoTrip(localTrip, payload, {
+    remoteUpdatedAt: update.exportedAt || 0,
+  });
+
+  merged.updatedAt = Math.max(merged.updatedAt, update.exportedAt || 0);
   merged.syncState = 'pending';
 
   return {
