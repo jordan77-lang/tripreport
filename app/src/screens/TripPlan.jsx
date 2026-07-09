@@ -174,29 +174,57 @@ function GearTab({ trip, participants, onTripUpdate }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('group');
   const [assignedTo, setAssignedTo] = useState('');
+  const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const gear = trip.gearItems || [];
+
+  function resetForm() {
+    setEditingId(null);
+    setName('');
+    setCategory('group');
+    setAssignedTo('');
+  }
+
+  function startEdit(item) {
+    setEditingId(item.id);
+    setName(item.name || '');
+    setCategory(item.category || 'group');
+    setAssignedTo(item.assignedTo || '');
+  }
 
   async function save() {
     if (!name.trim() || saving) return;
     setSaving(true);
     try {
       const who = participants.find((p) => p.id === assignedTo);
+      const payload = {
+        name: name.trim(),
+        category,
+        assignedTo: assignedTo || null,
+        assignedToLabel: who?.label || null,
+        shared: category !== 'personal',
+      };
       await savePlanningToCloud(trip.id, () => {
-        addGearItem(trip.id, {
-          name,
-          category,
-          assignedTo: assignedTo || null,
-          assignedToLabel: who?.label || null,
-          shared: category !== 'personal',
-        });
+        if (editingId) {
+          updateGearItem(trip.id, editingId, payload);
+        } else {
+          addGearItem(trip.id, payload);
+        }
       });
-      setName('');
-      setAssignedTo('');
+      resetForm();
       onTripUpdate?.();
     } finally {
       setSaving(false);
     }
+  }
+
+  async function removeItem(item) {
+    if (!window.confirm(`Delete "${item.name}"?`)) return;
+    await savePlanningToCloud(trip.id, () => {
+      removeGearItem(trip.id, item.id);
+    });
+    if (editingId === item.id) resetForm();
+    onTripUpdate?.();
   }
 
   function cycleStatus(item) {
@@ -215,7 +243,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
 
   return (
     <div>
-      <Composer>
+      <Composer title={editingId ? 'Edit gear' : 'Add gear'} onCancel={editingId ? resetForm : null}>
         <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
                placeholder="Add gear (tent, stove, first-aid…)" style={inputStyle} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -226,7 +254,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
             <option value="">Unassigned</option>
             {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
-          <SaveButton onClick={() => void save()} busy={saving} />
+          <SaveButton onClick={() => void save()} busy={saving} label={editingId ? 'Update' : 'Save'} />
         </div>
       </Composer>
 
@@ -238,7 +266,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
           {items.map((item) => {
             const st = GEAR_STATUS_STYLE[item.status] || GEAR_STATUS_STYLE.needed;
             return (
-              <div key={item.id} style={cardStyle}>
+              <div key={item.id} style={{ ...cardStyle, borderColor: editingId === item.id ? T.accent : T.border }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{item.name}</div>
                   <select value={item.assignedTo || ''} onChange={(e) => reassign(item, e.target.value)}
@@ -251,7 +279,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
                      style={{ flexShrink: 0, background: st.bg, color: st.color, borderRadius: 8, padding: '4px 9px', fontSize: 10, fontWeight: 800, cursor: 'pointer' }}>
                   {st.label}
                 </div>
-                <DeleteX onClick={() => { removeGearItem(trip.id, item.id); onTripUpdate?.(); }} />
+                <RowActions onEdit={() => startEdit(item)} onDelete={() => void removeItem(item)} />
               </div>
             );
           })}
@@ -267,8 +295,27 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   const [slot, setSlot] = useState('dinner');
   const [assignedTo, setAssignedTo] = useState('');
   const [ingredients, setIngredients] = useState('');
+  const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const meals = trip.meals || [];
+
+  function resetForm() {
+    setEditingId(null);
+    setName('');
+    setDayIndex(1);
+    setSlot('dinner');
+    setAssignedTo('');
+    setIngredients('');
+  }
+
+  function startEdit(meal) {
+    setEditingId(meal.id);
+    setName(meal.name || '');
+    setDayIndex(meal.dayIndex || 1);
+    setSlot(meal.slot || 'dinner');
+    setAssignedTo(meal.assignedTo || '');
+    setIngredients((meal.ingredients || []).map((i) => i.name).join(', '));
+  }
 
   async function save() {
     if (!name.trim() || saving) return;
@@ -276,20 +323,35 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     try {
       const who = participants.find((p) => p.id === assignedTo);
       const ingList = ingredients.split(',').map((s) => s.trim()).filter(Boolean).map((n) => ({ name: n, qty: '' }));
+      const payload = {
+        name: name.trim(),
+        dayIndex: Number(dayIndex) || 1,
+        slot,
+        assignedTo: assignedTo || null,
+        assignedToLabel: who?.label || null,
+        ingredients: ingList,
+      };
       await savePlanningToCloud(trip.id, () => {
-        addMeal(trip.id, {
-          name, dayIndex: Number(dayIndex) || 1, slot,
-          assignedTo: assignedTo || null, assignedToLabel: who?.label || null,
-          ingredients: ingList,
-        });
+        if (editingId) {
+          updateMeal(trip.id, editingId, payload);
+        } else {
+          addMeal(trip.id, payload);
+        }
       });
-      setName('');
-      setIngredients('');
-      setAssignedTo('');
+      resetForm();
       onTripUpdate?.();
     } finally {
       setSaving(false);
     }
+  }
+
+  async function removeItem(meal) {
+    if (!window.confirm(`Delete "${meal.name}"?`)) return;
+    await savePlanningToCloud(trip.id, () => {
+      removeMeal(trip.id, meal.id);
+    });
+    if (editingId === meal.id) resetForm();
+    onTripUpdate?.();
   }
 
   const byDay = useMemo(() => {
@@ -299,7 +361,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
 
   return (
     <div>
-      <Composer>
+      <Composer title={editingId ? 'Edit meal' : 'Add meal'} onCancel={editingId ? resetForm : null}>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Meal name (chili, oatmeal…)" style={inputStyle} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <select value={dayIndex} onChange={(e) => setDayIndex(e.target.value)} style={selectStyle}>
@@ -315,7 +377,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
         </div>
         <input value={ingredients} onChange={(e) => setIngredients(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
                placeholder="Ingredients, comma separated" style={{ ...inputStyle, marginTop: 8 }} />
-        <div style={{ marginTop: 8 }}><SaveButton onClick={() => void save()} busy={saving} wide /></div>
+        <div style={{ marginTop: 8 }}><SaveButton onClick={() => void save()} busy={saving} wide label={editingId ? 'Update meal' : 'Save'} /></div>
       </Composer>
 
       {meals.length === 0 && <Empty text="Plan meals by day. Ingredients flow into the shopping list." />}
@@ -324,7 +386,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
         <div key={day} style={{ marginBottom: 14 }}>
           <SectionLabel>Day {day}</SectionLabel>
           {dayMeals.sort((a, b) => MEAL_SLOTS.indexOf(a.slot) - MEAL_SLOTS.indexOf(b.slot)).map((m) => (
-            <div key={m.id} style={{ ...cardStyle, alignItems: 'flex-start' }}>
+            <div key={m.id} style={{ ...cardStyle, alignItems: 'flex-start', borderColor: editingId === m.id ? T.accent : T.border }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
                   <span style={{ color: T.accent, fontSize: 10.5, fontWeight: 800 }}>{SLOT_LABEL[m.slot]} · </span>{m.name}
@@ -336,7 +398,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                   </div>
                 )}
               </div>
-              <DeleteX onClick={() => { removeMeal(trip.id, m.id); onTripUpdate?.(); }} />
+              <RowActions onEdit={() => startEdit(m)} onDelete={() => void removeItem(m)} />
             </div>
           ))}
         </div>
@@ -349,22 +411,48 @@ function ShoppingTab({ trip, onTripUpdate }) {
   const [name, setName] = useState('');
   const [qty, setQty] = useState('');
   const [note, setNote] = useState(null);
+  const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const items = trip.shoppingItems || [];
+
+  function resetForm() {
+    setEditingId(null);
+    setName('');
+    setQty('');
+  }
+
+  function startEdit(item) {
+    setEditingId(item.id);
+    setName(item.name || '');
+    setQty(item.qty || '');
+  }
 
   async function save() {
     if (!name.trim() || saving) return;
     setSaving(true);
     try {
+      const payload = { name: name.trim(), qty };
       await savePlanningToCloud(trip.id, () => {
-        addShoppingItem(trip.id, { name, qty });
+        if (editingId) {
+          updateShoppingItem(trip.id, editingId, payload);
+        } else {
+          addShoppingItem(trip.id, payload);
+        }
       });
-      setName('');
-      setQty('');
+      resetForm();
       onTripUpdate?.();
     } finally {
       setSaving(false);
     }
+  }
+
+  async function removeItem(item) {
+    if (!window.confirm(`Delete "${item.name}"?`)) return;
+    await savePlanningToCloud(trip.id, () => {
+      removeShoppingItem(trip.id, item.id);
+    });
+    if (editingId === item.id) resetForm();
+    onTripUpdate?.();
   }
 
   async function generate() {
@@ -391,19 +479,21 @@ function ShoppingTab({ trip, onTripUpdate }) {
 
   return (
     <div>
-      <Composer>
+      <Composer title={editingId ? 'Edit item' : 'Add item'} onCancel={editingId ? resetForm : null}>
         <div style={{ display: 'flex', gap: 8 }}>
           <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
                  placeholder="Add item" style={inputStyle} />
           <input value={qty} onChange={(e) => setQty(e.target.value)} placeholder="Qty" style={{ ...inputStyle, maxWidth: 70 }} />
-          <SaveButton onClick={() => void save()} busy={saving} />
+          <SaveButton onClick={() => void save()} busy={saving} label={editingId ? 'Update' : 'Save'} />
         </div>
-        <div onClick={() => { if (!saving) void generate(); }}
-             style={{ marginTop: 8, height: 36, borderRadius: 10, border: `1px dashed ${T.accent}80`, background: T.accentLight,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                      fontSize: 11.5, fontWeight: 700, color: T.accent, gap: 6 }}>
-          <Ic d={ICONS.plus} size={14} color={T.accent} sw={2.2} /> Generate from meal ingredients
-        </div>
+        {!editingId && (
+          <div onClick={() => { if (!saving) void generate(); }}
+               style={{ marginTop: 8, height: 36, borderRadius: 10, border: `1px dashed ${T.accent}80`, background: T.accentLight,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                        fontSize: 11.5, fontWeight: 700, color: T.accent, gap: 6 }}>
+            <Ic d={ICONS.plus} size={14} color={T.accent} sw={2.2} /> Generate from meal ingredients
+          </div>
+        )}
         {note && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 6 }}>{note}</div>}
       </Composer>
 
@@ -414,7 +504,7 @@ function ShoppingTab({ trip, onTripUpdate }) {
       )}
 
       {items.map((item) => (
-        <div key={item.id} style={cardStyle}>
+        <div key={item.id} style={{ ...cardStyle, borderColor: editingId === item.id ? T.accent : T.border }}>
           <div onClick={() => toggle(item)} style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, cursor: 'pointer',
                        border: `2px solid ${item.checked ? T.accent : T.border}`, background: item.checked ? T.accent : 'transparent',
                        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -426,7 +516,7 @@ function ShoppingTab({ trip, onTripUpdate }) {
             </div>
             {item.source === 'meal' && <div style={{ fontSize: 9.5, color: T.textFaint }}>from meals</div>}
           </div>
-          <DeleteX onClick={() => { removeShoppingItem(trip.id, item.id); onTripUpdate?.(); }} />
+          <RowActions onEdit={() => startEdit(item)} onDelete={() => void removeItem(item)} />
         </div>
       ))}
     </div>
@@ -435,21 +525,33 @@ function ShoppingTab({ trip, onTripUpdate }) {
 
 // ── Shared UI bits ──
 
-function Composer({ children }) {
-  return <div style={{ background: T.card, borderRadius: 14, padding: '12px 14px', border: `1px solid ${T.border}`, marginBottom: 16 }}>{children}</div>;
+function Composer({ title, onCancel, children }) {
+  return (
+    <div style={{ background: T.card, borderRadius: 14, padding: '12px 14px', border: `1px solid ${T.border}`, marginBottom: 16 }}>
+      {title && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{title}</div>
+          {onCancel && (
+            <button type="button" onClick={onCancel} style={ghostBtnStyle}>Cancel</button>
+          )}
+        </div>
+      )}
+      {children}
+    </div>
+  );
 }
 
 function SectionLabel({ children }) {
   return <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 8 }}>{children}</div>;
 }
 
-function SaveButton({ onClick, busy = false, wide = false }) {
+function SaveButton({ onClick, busy = false, wide = false, label = 'Save' }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={busy}
-      aria-label="Save"
+      aria-label={label}
       style={{
         flexShrink: 0,
         minWidth: wide ? '100%' : 72,
@@ -468,14 +570,41 @@ function SaveButton({ onClick, busy = false, wide = false }) {
         padding: wide ? 0 : '0 12px',
       }}
     >
-      {busy ? 'Saving…' : 'Save'}
+      {busy ? 'Saving…' : label}
     </button>
   );
 }
 
-function DeleteX({ onClick }) {
-  return <div onClick={onClick} style={{ flexShrink: 0, color: T.textFaint, cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</div>;
+function RowActions({ onEdit, onDelete }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+      <button type="button" onClick={onEdit} style={rowActionBtnStyle}>Edit</button>
+      <button type="button" onClick={onDelete} style={{ ...rowActionBtnStyle, color: '#8A1414' }}>Delete</button>
+    </div>
+  );
 }
+
+const ghostBtnStyle = {
+  border: 'none',
+  background: 'transparent',
+  color: T.textSub,
+  fontSize: 11,
+  fontWeight: 700,
+  fontFamily: F,
+  cursor: 'pointer',
+  padding: 0,
+};
+
+const rowActionBtnStyle = {
+  border: 'none',
+  background: 'transparent',
+  color: T.accent,
+  fontSize: 11,
+  fontWeight: 700,
+  fontFamily: F,
+  cursor: 'pointer',
+  padding: 0,
+};
 
 function Empty({ text }) {
   return <div style={{ textAlign: 'center', padding: '18px 10px', color: T.textFaint, fontSize: 11.5 }}>{text}</div>;
