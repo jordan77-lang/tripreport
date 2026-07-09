@@ -12,6 +12,8 @@ import { MediaThumb } from '../components/MediaThumb';
 import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
 import { buildTripParticipants, labelFor } from '../lib/expenses';
 import { mediaCaptureLabel } from '../lib/featureFlags';
+import { buildCustomEventDraft, pickEventWeatherFields, resolveObservedAtIso } from '../lib/eventWeather';
+import { EventWeatherEditSection, EventWeatherSummary } from '../components/EventWeatherPanel';
 
 const ENTRY_COLORS = {
   campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
@@ -62,19 +64,22 @@ export function EventPage({
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const coverRef = useRef(null);
 
-  const [activeFormType, setActiveFormType] = useState(initialAddType);
+  const [activeFormType, setActiveFormType] = useState(
+    initialAddType && initialAddType !== 'custom-event' ? initialAddType : null,
+  );
   const [editingEntry, setEditingEntry] = useState(null);
-  const [editingEvent, setEditingEvent] = useState(initialEdit);
+  const [editingEvent, setEditingEvent] = useState(initialEdit || initialAddType === 'custom-event');
   const [editEventError, setEditEventError] = useState(null);
   const [contributeOpen, setContributeOpen] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
-  const [eventDraft, setEventDraft] = useState({
+  const [eventDraft, setEventDraft] = useState(() => ({
     name: event?.name || '',
     notes: event?.notes || '',
     type: event?.type || 'note',
     coverPhoto: event?.coverPhoto,
     memberIds: event?.memberIds || [],
-  });
+    ...buildCustomEventDraft(event),
+  }));
 
   useEffect(() => {
     setEventDraft({
@@ -83,8 +88,9 @@ export function EventPage({
       type: event?.type || 'note',
       coverPhoto: event?.coverPhoto,
       memberIds: event?.memberIds || [],
+      ...buildCustomEventDraft(event),
     });
-  }, [event?.id, event?.name, event?.notes, event?.type, event?.coverPhoto, event?.memberIds]);
+  }, [event?.id, event?.name, event?.notes, event?.type, event?.coverPhoto, event?.memberIds, event?.observedAt, event?.weatherSummary, event?.weatherTempC, event?.weatherSyncPending, event?.weatherObservation]);
 
   const entries = useMemo(() => {
     const list = (trip?.entries || []).filter((e) => e.eventId === event?.id);
@@ -142,6 +148,13 @@ export function EventPage({
       return;
     }
     setEditEventError(null);
+    const observedAt = eventDraft.type === 'custom-event'
+      ? resolveObservedAtIso(eventDraft)
+      : event?.observedAt;
+    const weatherPatch = eventDraft.type === 'custom-event'
+      ? pickEventWeatherFields({ ...eventDraft, observedAt })
+      : {};
+
     void savePlanningToCloud(trip.id, () => {
       updateEvent(trip.id, event.id, {
         name: eventDraft.name.trim(),
@@ -149,6 +162,7 @@ export function EventPage({
         type: eventDraft.type,
         coverPhoto: eventDraft.coverPhoto,
         memberIds: eventDraft.memberIds,
+        ...weatherPatch,
       });
     }).then(() => {
       setEditingEvent(false);
@@ -335,6 +349,13 @@ export function EventPage({
                 rows={2}
                 style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg, resize: 'vertical' }}
               />
+              {eventDraft.type === 'custom-event' && (
+                <EventWeatherEditSection
+                  draft={eventDraft}
+                  setDraft={setEventDraft}
+                  location={location}
+                />
+              )}
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Expense crew (who shares costs for this event)</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -430,6 +451,9 @@ export function EventPage({
                   <Ic d={ICONS.users} size={12} color={T.textFaint} sw={1.8} />
                   <span>{event.taggedParticipantLabel}</span>
                 </div>
+              )}
+              {event.type === 'custom-event' && (
+                <EventWeatherSummary event={event} />
               )}
               {entries.length > 0 && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}`, flexWrap: 'wrap' }}>

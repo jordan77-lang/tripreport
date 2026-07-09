@@ -10,7 +10,7 @@ import { ProfileSetup } from './screens/ProfileSetup';
 import { JoinTrip }     from './screens/JoinTrip';
 import { TripRecap }    from './screens/TripRecap';
 import { useAuth } from './context/AuthContext';
-import { claimAnonymousTripsForUser, clearActiveTrip, getActiveTrip, getTrips, isTripOpen, setActiveTrip, updateEntry } from './lib/storage';
+import { claimAnonymousTripsForUser, clearActiveTrip, getActiveTrip, getTrips, isTripOpen, setActiveTrip, updateEntry, updateEvent } from './lib/storage';
 import { getSignedInUserId } from './lib/authUser';
 import { Settings } from './screens/Settings';
 import { useGPS } from './hooks/useGPS';
@@ -19,6 +19,7 @@ import { useTripMediaSync } from './hooks/useTripMediaSync';
 import { useCloudTripSync } from './hooks/useCloudTripSync';
 import { fetchGauge, fetchNearbyGaugesByGps, findNearbyKnownGauges } from './lib/usgs';
 import { fetchWeatherAtTime } from './lib/weather';
+import { weatherFieldsFromSnapshot } from './lib/eventWeather';
 
 export default function App() {
   const auth = useAuth();
@@ -147,6 +148,24 @@ export default function App() {
           } catch {
             // Leave pending for next reconnect.
           }
+        }
+      }
+
+      for (const evt of active.events || []) {
+        if (evt.type !== 'custom-event' || !evt.weatherSyncPending) continue;
+        const loc = (active.locations || []).find((l) => l.id === evt.locationId);
+        if (loc?.lat == null || loc?.lng == null) continue;
+
+        try {
+          const when = evt.observedAt || new Date().toISOString();
+          const weather = await fetchWeatherAtTime(loc.lat, loc.lng, when);
+          updateEvent(active.id, evt.id, {
+            ...weatherFieldsFromSnapshot(weather),
+            weatherSyncPending: false,
+          });
+          changed = true;
+        } catch {
+          // Leave pending for next reconnect.
         }
       }
 

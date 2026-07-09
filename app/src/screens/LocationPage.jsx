@@ -95,6 +95,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
       locationId: location.id,
       type,
       name: defaultEventName(type),
+      observedAt: type === 'custom-event' ? new Date().toISOString() : undefined,
     });
     if (!created) return;
     onTripUpdate?.();

@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TripMap } from '../components/TripMap';
 import { BottomNav } from '../components/BottomNav';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
+import { getTripOfflineMapReadiness } from '../lib/offlineMaps';
 
 export function Navigator({ trip, onNav, onFab, gps }) {
   const [mapStyle, setMapStyle] = useState('outdoors-v12');
+  const [offlineReadiness, setOfflineReadiness] = useState(null);
   const { position, tracking, error } = gps || {};
 
   const track = trip?.track ?? [];
@@ -19,6 +21,24 @@ export function Navigator({ trip, onNav, onFab, gps }) {
       .map(e => ({ ...e, col: entryColor(e.type) }));
 
   const stats = computeStats(track);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      void getTripOfflineMapReadiness(trip).then((result) => {
+        if (!cancelled) setOfflineReadiness(result);
+      });
+    };
+    load();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [trip?.id, trip?.offlineRegions]);
 
   return (
     <div style={{ height: '100%', background: '#000', display: 'flex', flexDirection: 'column', fontFamily: F }}>
@@ -69,9 +89,37 @@ export function Navigator({ trip, onNav, onFab, gps }) {
           </div>
         </div>
 
+        {/* Offline map status */}
+        {offlineReadiness?.configured && (
+          <div style={{
+            position: 'absolute',
+            top: 62,
+            left: 12,
+            right: 12,
+            zIndex: 10,
+            background: offlineReadiness.ready ? 'rgba(235,245,235,0.96)' : 'rgba(251,240,228,0.96)',
+            borderRadius: 10,
+            padding: '7px 11px',
+            fontSize: 10.5,
+            fontWeight: 700,
+            color: offlineReadiness.ready ? '#2A6A14' : '#8A5526',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            boxShadow: '0 2px 10px rgba(0,0,0,.08)',
+          }}>
+            <Ic d={offlineReadiness.ready ? 'M20 6L9 17l-5-5' : ICONS.compass} size={13} color={offlineReadiness.ready ? '#2A6A14' : '#8A5526'} sw={offlineReadiness.ready ? 3 : 1.8} />
+            <span>
+              {offlineReadiness.ready
+                ? 'Offline map on this device'
+                : 'Offline map not downloaded — open Trip Plan → Maps'}
+            </span>
+          </div>
+        )}
+
         {/* GPS error */}
         {error && (
-          <div style={{ position: 'absolute', top: 70, left: 12, right: 12, zIndex: 10,
+          <div style={{ position: 'absolute', top: offlineReadiness?.configured ? 98 : 70, left: 12, right: 12, zIndex: 10,
                         background: '#FBF0E4', borderRadius: 10, padding: '8px 12px',
                         fontSize: 11, color: T.amber, fontWeight: 600 }}>
             GPS: {error}

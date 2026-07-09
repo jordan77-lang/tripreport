@@ -35,6 +35,8 @@ const TABS = [
 ];
 
 const GEAR_CATEGORIES = ['group', 'shelter', 'cooking', 'safety', 'personal'];
+const GEAR_NEED_LABEL = 'To bring';
+const GEAR_READY_LABEL = 'Ready';
 const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const SLOT_LABEL = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
 
@@ -250,11 +252,85 @@ function GearTab({ trip, participants, onTripUpdate }) {
     onTripUpdate?.();
   }
 
-  const grouped = useMemo(() => {
+  const { toBring, ready } = useMemo(() => {
     const visible = editingId ? gear.filter((g) => g.id !== editingId) : gear;
-    return groupBy(visible, (g) => normalizeGearCategory(g.category));
+    const need = [];
+    const done = [];
+    for (const item of visible) {
+      (isGearComplete(item) ? done : need).push(item);
+    }
+    return { toBring: need, ready: done };
   }, [gear, editingId]);
-  const gearReady = gear.filter(isGearComplete).length;
+
+  const groupedNeed = useMemo(
+    () => groupBy(toBring, (g) => normalizeGearCategory(g.category)),
+    [toBring],
+  );
+  const gearReady = ready.length;
+
+  function renderGearItem(item) {
+    const done = isGearComplete(item);
+    return (
+      <div
+        key={item.id}
+        style={{
+          ...cardStyle,
+          borderColor: editingId === item.id ? T.accent : T.border,
+          opacity: done ? 0.72 : 1,
+        }}
+      >
+        <CompletionCheck
+          checked={done}
+          label={done ? `Move ${item.name} back to ${GEAR_NEED_LABEL}` : `Mark ${item.name} as ${GEAR_READY_LABEL.toLowerCase()}`}
+          onToggle={() => void toggleGearComplete(item)}
+        />
+        <div
+          style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+          onClick={() => void toggleGearComplete(item)}
+        >
+          <div style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: done ? T.textFaint : T.text,
+            textDecoration: done ? 'line-through' : 'none',
+          }}>
+            {item.name}
+          </div>
+          {!done ? (
+            <select
+              value={item.assignedTo || ''}
+              onChange={(e) => reassign(item, e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                marginTop: 4,
+                fontSize: 10.5,
+                color: T.textSub,
+                border: `1px solid ${T.border}`,
+                borderRadius: 7,
+                padding: '2px 5px',
+                background: T.bg,
+                fontFamily: F,
+              }}
+            >
+              <option value="">Who brings it?</option>
+              {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          ) : (
+            item.assignedToLabel && (
+              <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
+                {item.assignedToLabel}
+              </div>
+            )
+          )}
+        </div>
+        <RowActions
+          itemName={item.name}
+          onEdit={() => startEdit(item)}
+          onDelete={() => void removeItem(item)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -275,80 +351,37 @@ function GearTab({ trip, participants, onTripUpdate }) {
         </div>
       </Composer>
 
-      {gear.length === 0 && <Empty text="No gear yet. Add shared and personal items, then tap the circle when you have each one." />}
+      {gear.length === 0 && <Empty text="No gear yet. Add items to your list, then check them off as you pack or obtain each one." />}
 
       {gear.length > 0 && (
         <ListProgress done={gearReady} total={gear.length} label="ready" />
       )}
 
-      {Object.entries(grouped).map(([cat, items]) => (
-        <div key={cat} style={{ marginBottom: 14 }}>
-          <SectionLabel>{capitalize(cat)}</SectionLabel>
-          {[...items].sort((a, b) => Number(isGearComplete(a)) - Number(isGearComplete(b))).map((item) => {
-            const done = isGearComplete(item);
-            return (
-              <div
-                key={item.id}
-                style={{
-                  ...cardStyle,
-                  borderColor: editingId === item.id ? T.accent : T.border,
-                  opacity: done ? 0.72 : 1,
-                }}
-              >
-                <CompletionCheck
-                  checked={done}
-                  label={`Mark ${item.name} as ${done ? 'still needed' : 'ready'}`}
-                  onToggle={() => void toggleGearComplete(item)}
-                />
-                <div
-                  style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-                  onClick={() => void toggleGearComplete(item)}
-                >
-                  <div style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: done ? T.textFaint : T.text,
-                    textDecoration: done ? 'line-through' : 'none',
-                  }}>
-                    {item.name}
-                  </div>
-                  {!done ? (
-                    <select
-                      value={item.assignedTo || ''}
-                      onChange={(e) => reassign(item, e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        marginTop: 4,
-                        fontSize: 10.5,
-                        color: T.textSub,
-                        border: `1px solid ${T.border}`,
-                        borderRadius: 7,
-                        padding: '2px 5px',
-                        background: T.bg,
-                        fontFamily: F,
-                      }}
-                    >
-                      <option value="">Who brings it?</option>
-                      {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                    </select>
-                  ) : (
-                    item.assignedToLabel && (
-                      <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
-                        {item.assignedToLabel}
-                      </div>
-                    )
-                  )}
+      {toBring.length > 0 && (
+        <>
+          <SectionLabel>{GEAR_NEED_LABEL}</SectionLabel>
+          {Object.entries(groupedNeed).map(([cat, items]) => (
+            <div key={cat} style={{ marginBottom: 14 }}>
+              {Object.keys(groupedNeed).length > 1 && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textFaint, marginBottom: 6, textTransform: 'capitalize' }}>
+                  {capitalize(cat)}
                 </div>
-                <RowActions
-                  itemName={item.name}
-                  onEdit={() => startEdit(item)}
-                  onDelete={() => void removeItem(item)}
-                />
-              </div>
-            );
-          })}
+              )}
+              {items.map(renderGearItem)}
+            </div>
+          ))}
+        </>
+      )}
+
+      {toBring.length === 0 && ready.length > 0 && (
+        <div style={{ fontSize: 11.5, color: T.textSub, marginBottom: 10, textAlign: 'center' }}>
+          Everything is {GEAR_READY_LABEL.toLowerCase()}.
         </div>
-      ))}
+      )}
+
+      <CollapsibleSection title={GEAR_READY_LABEL} count={ready.length} defaultOpen={false}>
+        {ready.map(renderGearItem)}
+      </CollapsibleSection>
     </div>
   );
 }
@@ -631,10 +664,9 @@ function ShoppingTab({ trip, onTripUpdate }) {
       )}
 
       {purchased.length > 0 && (
-        <div style={{ marginTop: toBuy.length ? 10 : 0 }}>
-          <SectionLabel>Purchased</SectionLabel>
+        <CollapsibleSection title="Purchased" count={purchased.length} defaultOpen={false}>
           {purchased.map(renderShoppingItem)}
-        </div>
+        </CollapsibleSection>
       )}
     </div>
   );
@@ -726,6 +758,52 @@ function Composer({ title, onCancel, children }) {
 
 function SectionLabel({ children }) {
   return <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 8 }}>{children}</div>;
+}
+
+function CollapsibleSection({ title, count, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!count) return null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          width: '100%',
+          border: `1px solid ${T.border}`,
+          borderRadius: 12,
+          background: T.card,
+          padding: '10px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          fontFamily: F,
+        }}
+      >
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+          {title}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint }}>{count}</span>
+          <span style={{
+            display: 'flex',
+            transform: open ? 'rotate(90deg)' : 'none',
+            transition: 'transform 0.15s ease',
+          }}>
+            <Ic d={ICONS.chevR} size={14} color={T.textFaint} sw={2.2} />
+          </span>
+        </span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 8 }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SaveButton({ onClick, busy = false, wide = false, label = 'Save' }) {

@@ -25,13 +25,45 @@ function writeStatusMap(map) {
 
 export function getRegionDownloadStatus(regionId) {
   const map = readStatusMap();
-  return map[regionId] || { state: 'idle', progress: 0, updatedAt: null, bytes: 0 };
+  return map[regionId] || { state: 'idle', progress: 0, updatedAt: null, bytes: 0, verifiedAt: null };
 }
 
 function setRegionDownloadStatus(regionId, patch) {
   const map = readStatusMap();
   map[regionId] = { ...getRegionDownloadStatus(regionId), ...patch, updatedAt: Date.now() };
   writeStatusMap(map);
+}
+
+export function formatMapBytes(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  return `${(n / (1024 * 1024)).toFixed(n >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+}
+
+/** Re-check the Cache API and refresh stored status for one region. */
+export async function verifyRegionDownload(regionId) {
+  const cached = await isRegionCached(regionId);
+  const prev = getRegionDownloadStatus(regionId);
+  if (cached) {
+    setRegionDownloadStatus(regionId, {
+      state: 'ready',
+      progress: 100,
+      verifiedAt: Date.now(),
+      bytes: prev.bytes || null,
+    });
+    return {
+      ok: true,
+      cached: true,
+      bytes: prev.bytes || null,
+      verifiedAt: Date.now(),
+    };
+  }
+  setRegionDownloadStatus(regionId, {
+    state: prev.state === 'downloading' ? 'downloading' : 'idle',
+    verifiedAt: null,
+  });
+  return { ok: false, cached: false };
 }
 
 export async function isRegionCached(regionId) {
@@ -64,7 +96,7 @@ export async function preloadMapRegion(regionId, { onProgress } = {}) {
   if (!url) throw new Error('This region has no map file configured');
 
   if (await isRegionCached(regionId)) {
-    setRegionDownloadStatus(regionId, { state: 'ready', progress: 100 });
+    setRegionDownloadStatus(regionId, { state: 'ready', progress: 100, verifiedAt: Date.now() });
     return { regionId, cached: true };
   }
 
@@ -82,7 +114,7 @@ export async function preloadMapRegion(regionId, { onProgress } = {}) {
 
     if (!reader) {
       await cache.put(url, response.clone());
-      setRegionDownloadStatus(regionId, { state: 'ready', progress: 100, bytes: total || null });
+      setRegionDownloadStatus(regionId, { state: 'ready', progress: 100, bytes: total || null, verifiedAt: Date.now() });
       return { regionId, cached: false };
     }
 
@@ -107,7 +139,7 @@ export async function preloadMapRegion(regionId, { onProgress } = {}) {
       },
     }));
 
-    setRegionDownloadStatus(regionId, { state: 'ready', progress: 100, bytes: blob.size });
+    setRegionDownloadStatus(regionId, { state: 'ready', progress: 100, bytes: blob.size, verifiedAt: Date.now() });
     return { regionId, cached: false, bytes: blob.size };
   } catch (e) {
     setRegionDownloadStatus(regionId, { state: 'error', progress: 0, error: e?.message || 'Download failed' });
@@ -149,4 +181,33 @@ export function pickMapRegionForTrip(trip) {
   const ids = trip?.offlineRegions || [];
   if (!ids.length) return null;
   return getMapRegion(ids[0]);
+}
+
+/** Whether trip's selected offline packs are actually on this device. */
+export async function getTripOfflineMapReadiness(trip) {
+  const ids = trip?.offlineRegions || [];
+  if (!ids.length) {
+    return { configured: false, ready: false, anyCached: false, regions: [] };
+  }
+
+  const regions = [];
+  for (const id of ids) {
+    const region = getMapRegion(id);
+    const cached = await isRegionCached(id);
+    const status = getRegionDownloadStatus(id);
+    regions.push({
+      id,
+      name: region?.name || id,
+      cached,
+      bytes: status.bytes || null,
+      verifiedAt: status.verifiedAt || (cached ? status.updatedAt : null),
+    });
+  }
+
+  return {
+    configured: true,
+    ready: regions.length > 0 && regions.every((r) => r.cached),
+    anyCached: regions.some((r) => r.cached),
+    regions,
+  };
 }
