@@ -716,7 +716,7 @@ export function addGearItem(tripId, item) {
       shared: item.shared !== false,
       assignedTo: item.assignedTo || null,
       assignedToLabel: item.assignedToLabel || null,
-      status: item.status || 'needed', // needed | claimed | packed
+      status: item.status || 'needed', // needed | have (legacy: claimed, packed)
       notes: item.notes || '',
       createdBy: item.createdBy || getCurrentUserId(),
       createdAt: now,

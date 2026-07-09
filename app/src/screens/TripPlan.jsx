@@ -35,14 +35,22 @@ const TABS = [
 ];
 
 const GEAR_CATEGORIES = ['group', 'shelter', 'cooking', 'safety', 'personal'];
-const GEAR_STATUS = ['needed', 'claimed', 'packed'];
-const GEAR_STATUS_STYLE = {
-  needed: { bg: '#FBF0E4', color: '#8A5526', label: 'Needed' },
-  claimed: { bg: '#E4EFF8', color: '#2A5C8E', label: 'Claimed' },
-  packed: { bg: '#EBF5EB', color: '#2A6A14', label: 'Packed' },
-};
 const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const SLOT_LABEL = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
+
+function isGearComplete(item) {
+  const s = item?.status;
+  return s === 'have' || s === 'claimed' || s === 'packed';
+}
+
+function normalizeGearCategory(category) {
+  const key = String(category || 'group').toLowerCase();
+  return GEAR_CATEGORIES.includes(key) ? key : 'group';
+}
+
+function confirmRemoveItem(name, listLabel) {
+  return window.confirm(`Remove "${name}" from your ${listLabel}?`);
+}
 
 export function TripPlan({
   trip,
@@ -188,7 +196,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
   function startEdit(item) {
     setEditingId(item.id);
     setName(item.name || '');
-    setCategory(item.category || 'group');
+    setCategory(normalizeGearCategory(item.category));
     setAssignedTo(item.assignedTo || '');
   }
 
@@ -197,12 +205,13 @@ function GearTab({ trip, participants, onTripUpdate }) {
     setSaving(true);
     try {
       const who = participants.find((p) => p.id === assignedTo);
+      const cat = normalizeGearCategory(category);
       const payload = {
         name: name.trim(),
-        category,
+        category: cat,
         assignedTo: assignedTo || null,
         assignedToLabel: who?.label || null,
-        shared: category !== 'personal',
+        shared: cat !== 'personal',
       };
       await savePlanningToCloud(trip.id, () => {
         if (editingId) {
@@ -219,7 +228,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
   }
 
   async function removeItem(item) {
-    if (!window.confirm(`Delete "${item.name}"?`)) return;
+    if (!confirmRemoveItem(item.name, 'gear list')) return;
     await savePlanningToCloud(trip.id, () => {
       removeGearItem(trip.id, item.id);
     });
@@ -227,9 +236,11 @@ function GearTab({ trip, participants, onTripUpdate }) {
     onTripUpdate?.();
   }
 
-  function cycleStatus(item) {
-    const next = GEAR_STATUS[(GEAR_STATUS.indexOf(item.status) + 1) % GEAR_STATUS.length];
-    updateGearItem(trip.id, item.id, { status: next });
+  async function toggleGearComplete(item) {
+    const next = isGearComplete(item) ? 'needed' : 'have';
+    await savePlanningToCloud(trip.id, () => {
+      updateGearItem(trip.id, item.id, { status: next });
+    });
     onTripUpdate?.();
   }
 
@@ -239,47 +250,100 @@ function GearTab({ trip, participants, onTripUpdate }) {
     onTripUpdate?.();
   }
 
-  const grouped = useMemo(() => groupBy(gear, (g) => g.category), [gear]);
+  const grouped = useMemo(() => {
+    const visible = editingId ? gear.filter((g) => g.id !== editingId) : gear;
+    return groupBy(visible, (g) => normalizeGearCategory(g.category));
+  }, [gear, editingId]);
+  const gearReady = gear.filter(isGearComplete).length;
 
   return (
     <div>
       <Composer title={editingId ? 'Edit gear' : 'Add gear'} onCancel={editingId ? resetForm : null}>
         <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
                placeholder="Add gear (tent, stove, first-aid…)" style={inputStyle} />
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <select value={category} onChange={(e) => setCategory(e.target.value)} style={selectStyle}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...selectStyle, width: '100%', flex: 'none' }}>
             {GEAR_CATEGORIES.map((c) => <option key={c} value={c}>{capitalize(c)}</option>)}
           </select>
-          <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={selectStyle}>
-            <option value="">Unassigned</option>
-            {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-          <SaveButton onClick={() => void save()} busy={saving} label={editingId ? 'Update' : 'Save'} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={{ ...selectStyle, flex: 1, minWidth: 0 }}>
+              <option value="">Unassigned</option>
+              {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+            <SaveButton onClick={() => void save()} busy={saving} label={editingId ? 'Update' : 'Save'} />
+          </div>
         </div>
       </Composer>
 
-      {gear.length === 0 && <Empty text="No gear yet. Add shared and personal items, then assign who brings what." />}
+      {gear.length === 0 && <Empty text="No gear yet. Add shared and personal items, then tap the circle when you have each one." />}
+
+      {gear.length > 0 && (
+        <ListProgress done={gearReady} total={gear.length} label="ready" />
+      )}
 
       {Object.entries(grouped).map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 14 }}>
           <SectionLabel>{capitalize(cat)}</SectionLabel>
-          {items.map((item) => {
-            const st = GEAR_STATUS_STYLE[item.status] || GEAR_STATUS_STYLE.needed;
+          {[...items].sort((a, b) => Number(isGearComplete(a)) - Number(isGearComplete(b))).map((item) => {
+            const done = isGearComplete(item);
             return (
-              <div key={item.id} style={{ ...cardStyle, borderColor: editingId === item.id ? T.accent : T.border }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{item.name}</div>
-                  <select value={item.assignedTo || ''} onChange={(e) => reassign(item, e.target.value)}
-                          style={{ marginTop: 4, fontSize: 10.5, color: T.textSub, border: `1px solid ${T.border}`, borderRadius: 7, padding: '2px 5px', background: T.bg, fontFamily: F }}>
-                    <option value="">Unassigned</option>
-                    {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
+              <div
+                key={item.id}
+                style={{
+                  ...cardStyle,
+                  borderColor: editingId === item.id ? T.accent : T.border,
+                  opacity: done ? 0.72 : 1,
+                }}
+              >
+                <CompletionCheck
+                  checked={done}
+                  label={`Mark ${item.name} as ${done ? 'still needed' : 'ready'}`}
+                  onToggle={() => void toggleGearComplete(item)}
+                />
+                <div
+                  style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                  onClick={() => void toggleGearComplete(item)}
+                >
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: done ? T.textFaint : T.text,
+                    textDecoration: done ? 'line-through' : 'none',
+                  }}>
+                    {item.name}
+                  </div>
+                  {!done ? (
+                    <select
+                      value={item.assignedTo || ''}
+                      onChange={(e) => reassign(item, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        marginTop: 4,
+                        fontSize: 10.5,
+                        color: T.textSub,
+                        border: `1px solid ${T.border}`,
+                        borderRadius: 7,
+                        padding: '2px 5px',
+                        background: T.bg,
+                        fontFamily: F,
+                      }}
+                    >
+                      <option value="">Who brings it?</option>
+                      {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                  ) : (
+                    item.assignedToLabel && (
+                      <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
+                        {item.assignedToLabel}
+                      </div>
+                    )
+                  )}
                 </div>
-                <div onClick={() => cycleStatus(item)}
-                     style={{ flexShrink: 0, background: st.bg, color: st.color, borderRadius: 8, padding: '4px 9px', fontSize: 10, fontWeight: 800, cursor: 'pointer' }}>
-                  {st.label}
-                </div>
-                <RowActions onEdit={() => startEdit(item)} onDelete={() => void removeItem(item)} />
+                <RowActions
+                  itemName={item.name}
+                  onEdit={() => startEdit(item)}
+                  onDelete={() => void removeItem(item)}
+                />
               </div>
             );
           })}
@@ -346,7 +410,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   }
 
   async function removeItem(meal) {
-    if (!window.confirm(`Delete "${meal.name}"?`)) return;
+    if (!confirmRemoveItem(meal.name, 'meal plan')) return;
     await savePlanningToCloud(trip.id, () => {
       removeMeal(trip.id, meal.id);
     });
@@ -355,9 +419,10 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   }
 
   const byDay = useMemo(() => {
-    const map = groupBy(meals, (m) => String(m.dayIndex || 1));
+    const visible = editingId ? meals.filter((m) => m.id !== editingId) : meals;
+    const map = groupBy(visible, (m) => String(m.dayIndex || 1));
     return Object.entries(map).sort((a, b) => Number(a[0]) - Number(b[0]));
-  }, [meals]);
+  }, [meals, editingId]);
 
   return (
     <div>
@@ -398,7 +463,11 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                   </div>
                 )}
               </div>
-              <RowActions onEdit={() => startEdit(m)} onDelete={() => void removeItem(m)} />
+              <RowActions
+                itemName={m.name}
+                onEdit={() => startEdit(m)}
+                onDelete={() => void removeItem(m)}
+              />
             </div>
           ))}
         </div>
@@ -447,7 +516,7 @@ function ShoppingTab({ trip, onTripUpdate }) {
   }
 
   async function removeItem(item) {
-    if (!window.confirm(`Delete "${item.name}"?`)) return;
+    if (!confirmRemoveItem(item.name, 'shopping list')) return;
     await savePlanningToCloud(trip.id, () => {
       removeShoppingItem(trip.id, item.id);
     });
@@ -470,12 +539,63 @@ function ShoppingTab({ trip, onTripUpdate }) {
     }
   }
 
-  function toggle(item) {
-    updateShoppingItem(trip.id, item.id, { checked: !item.checked });
+  async function toggle(item) {
+    await savePlanningToCloud(trip.id, () => {
+      updateShoppingItem(trip.id, item.id, { checked: !item.checked });
+    });
     onTripUpdate?.();
   }
 
-  const remaining = items.filter((i) => !i.checked).length;
+  const { toBuy, purchased } = useMemo(() => {
+    const buy = [];
+    const got = [];
+    for (const item of items) {
+      if (item.id === editingId) continue;
+      (item.checked ? got : buy).push(item);
+    }
+    return { toBuy: buy, purchased: got };
+  }, [items, editingId]);
+
+  const purchasedCount = purchased.length;
+
+  function renderShoppingItem(item) {
+    const done = Boolean(item.checked);
+    return (
+      <div
+        key={item.id}
+        style={{
+          ...cardStyle,
+          borderColor: editingId === item.id ? T.accent : T.border,
+          opacity: done ? 0.72 : 1,
+        }}
+      >
+        <CompletionCheck
+          checked={done}
+          label={`Mark ${item.name} as ${done ? 'not purchased' : 'purchased'}`}
+          onToggle={() => void toggle(item)}
+        />
+        <div
+          style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+          onClick={() => void toggle(item)}
+        >
+          <div style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: done ? T.textFaint : T.text,
+            textDecoration: done ? 'line-through' : 'none',
+          }}>
+            {item.name}{item.qty ? ` · ${item.qty}` : ''}
+          </div>
+          {item.source === 'meal' && <div style={{ fontSize: 9.5, color: T.textFaint }}>from meals</div>}
+        </div>
+        <RowActions
+          itemName={item.name}
+          onEdit={() => startEdit(item)}
+          onDelete={() => void removeItem(item)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -500,30 +620,93 @@ function ShoppingTab({ trip, onTripUpdate }) {
       {items.length === 0 && <Empty text="Build a shared shopping list. Generate from meals or add items by hand." />}
 
       {items.length > 0 && (
-        <div style={{ fontSize: 10.5, color: T.textFaint, marginBottom: 8 }}>{remaining} of {items.length} remaining</div>
+        <ListProgress done={purchasedCount} total={items.length} label="in cart" />
       )}
 
-      {items.map((item) => (
-        <div key={item.id} style={{ ...cardStyle, borderColor: editingId === item.id ? T.accent : T.border }}>
-          <div onClick={() => toggle(item)} style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, cursor: 'pointer',
-                       border: `2px solid ${item.checked ? T.accent : T.border}`, background: item.checked ? T.accent : 'transparent',
-                       display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {item.checked && <Ic d="M20 6L9 17l-5-5" size={12} color="white" sw={3} />}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: item.checked ? T.textFaint : T.text, textDecoration: item.checked ? 'line-through' : 'none' }}>
-              {item.name}{item.qty ? ` · ${item.qty}` : ''}
-            </div>
-            {item.source === 'meal' && <div style={{ fontSize: 9.5, color: T.textFaint }}>from meals</div>}
-          </div>
-          <RowActions onEdit={() => startEdit(item)} onDelete={() => void removeItem(item)} />
+      {toBuy.length > 0 && (
+        <>
+          <SectionLabel>To buy</SectionLabel>
+          {toBuy.map(renderShoppingItem)}
+        </>
+      )}
+
+      {purchased.length > 0 && (
+        <div style={{ marginTop: toBuy.length ? 10 : 0 }}>
+          <SectionLabel>Purchased</SectionLabel>
+          {purchased.map(renderShoppingItem)}
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
 // ── Shared UI bits ──
+
+function ListProgress({ done, total, label = 'done' }) {
+  if (!total) return null;
+  const pct = Math.round((done / total) * 100);
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{done} of {total} {label}</span>
+        <span style={{ fontSize: 11, color: T.textFaint }}>{pct}%</span>
+      </div>
+      <div style={{ height: 5, borderRadius: 99, background: T.border, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%',
+          width: `${pct}%`,
+          background: done === total ? '#2A6A14' : T.accent,
+          borderRadius: 99,
+          transition: 'width 0.25s ease',
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function CompletionCheck({ checked, onToggle, label }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      style={{
+        flexShrink: 0,
+        width: 44,
+        height: 44,
+        margin: -10,
+        marginRight: 0,
+        padding: 0,
+        border: 'none',
+        background: 'transparent',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <span style={{
+        width: 24,
+        height: 24,
+        borderRadius: '50%',
+        border: `2px solid ${checked ? '#2A6A14' : T.border}`,
+        background: checked ? '#2A6A14' : T.card,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: checked ? '0 0 0 3px #EBF5EB' : 'none',
+        transition: 'background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
+      }}>
+        {checked && <Ic d="M20 6L9 17l-5-5" size={13} color="white" sw={3} />}
+      </span>
+    </button>
+  );
+}
 
 function Composer({ title, onCancel, children }) {
   return (
@@ -575,11 +758,25 @@ function SaveButton({ onClick, busy = false, wide = false, label = 'Save' }) {
   );
 }
 
-function RowActions({ onEdit, onDelete }) {
+function RowActions({ itemName, onEdit, onDelete }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-      <button type="button" onClick={onEdit} style={rowActionBtnStyle}>Edit</button>
-      <button type="button" onClick={onDelete} style={{ ...rowActionBtnStyle, color: '#8A1414' }}>Delete</button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={itemName ? `Edit ${itemName}` : 'Edit'}
+        style={iconActionBtnStyle}
+      >
+        <Ic d={ICONS.note} size={17} color={T.textSub} sw={2} />
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        aria-label={itemName ? `Remove ${itemName}` : 'Remove'}
+        style={iconActionBtnStyle}
+      >
+        <Ic d={ICONS.close} size={17} color="#C05050" sw={2.5} />
+      </button>
     </div>
   );
 }
@@ -595,15 +792,18 @@ const ghostBtnStyle = {
   padding: 0,
 };
 
-const rowActionBtnStyle = {
+const iconActionBtnStyle = {
   border: 'none',
   background: 'transparent',
-  color: T.accent,
-  fontSize: 11,
-  fontWeight: 700,
-  fontFamily: F,
+  width: 36,
+  height: 36,
+  borderRadius: 8,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   cursor: 'pointer',
   padding: 0,
+  flexShrink: 0,
 };
 
 function Empty({ text }) {
