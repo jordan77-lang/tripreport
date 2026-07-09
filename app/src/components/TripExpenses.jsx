@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ic } from './Ic';
 import { T, F, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
@@ -70,6 +70,7 @@ export function TripExpenses({
   const [showAllItems, setShowAllItems] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const formRef = useRef(null);
 
   const allExpenses = trip?.expenses || [];
   const visibleExpenses = useMemo(() => filterExpenses(allExpenses, scope, {
@@ -174,6 +175,9 @@ export function TripExpenses({
     setShowAddForm(true);
     setPanel('ledger');
     setExpandedId(null);
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   function splitIsValid() {
@@ -389,6 +393,7 @@ export function TripExpenses({
               <span>Add expense</span>
             </button>
           ) : (
+            <div ref={formRef}>
             <AddExpenseForm
               description={description}
               amount={amount}
@@ -423,6 +428,7 @@ export function TripExpenses({
               splitValid={splitIsValid()}
               onCancel={closeAddForm}
             />
+            </div>
           )}
 
           {visibleExpenses.length === 0 && !showAddForm ? (
@@ -677,18 +683,38 @@ function ExpenseRow({ expense, trip, participants, aliasMap, scope, expanded, ed
                 <div>{money(shareEach)} per person ({split.length} {split.length === 1 ? 'person' : 'people'})</div>
               )}
               {!!context && <div style={{ color: T.accentMid }}>{context}</div>}
-              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                <button type="button" onClick={(ev) => { ev.stopPropagation(); onEdit(); }} style={rowActionBtnStyle}>
-                  Edit
-                </button>
-                <button type="button" onClick={(ev) => { ev.stopPropagation(); void onDelete(); }} style={{ ...rowActionBtnStyle, color: '#8A1414' }}>
-                  Delete
-                </button>
-              </div>
             </div>
           )}
         </div>
         <span style={{ fontSize: ts(11), color: T.textFaint, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : 'none' }}>›</span>
+      </button>
+      <ExpenseRowActions
+        itemName={expense.description}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+    </div>
+  );
+}
+
+function ExpenseRowActions({ itemName, onEdit, onDelete }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexShrink: 0, paddingRight: 4 }}>
+      <button
+        type="button"
+        onClick={(ev) => { ev.stopPropagation(); onEdit(); }}
+        aria-label={itemName ? `Edit ${itemName}` : 'Edit expense'}
+        style={expenseIconBtnStyle}
+      >
+        <Ic d={ICONS.note} size={16} color={T.textSub} sw={2} />
+      </button>
+      <button
+        type="button"
+        onClick={(ev) => { ev.stopPropagation(); void onDelete(); }}
+        aria-label={itemName ? `Remove ${itemName}` : 'Remove expense'}
+        style={expenseIconBtnStyle}
+      >
+        <Ic d={ICONS.close} size={16} color="#C05050" sw={2.5} />
       </button>
     </div>
   );
@@ -903,7 +929,7 @@ function AddExpenseForm({
           {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
         <button type="button" onClick={onAdd} disabled={saving || !splitValid} style={{ ...addBtnStyle, width: 'auto', minWidth: 72, padding: '0 14px', opacity: saving || !splitValid ? 0.7 : 1, cursor: saving ? 'wait' : 'pointer' }} aria-label={editing ? 'Save expense changes' : 'Save expense'}>
-          <span style={{ color: 'white', fontSize: ts(12), fontWeight: 800, fontFamily: F }}>{saving ? 'Saving…' : 'Save'}</span>
+          <span style={{ color: 'white', fontSize: ts(12), fontWeight: 800, fontFamily: F }}>{saving ? 'Saving…' : (editing ? 'Update' : 'Save')}</span>
         </button>
       </div>
 
@@ -1160,6 +1186,20 @@ const expenseMainBtnStyle = {
   cursor: 'pointer',
   fontFamily: F,
   minWidth: 0,
+};
+
+const expenseIconBtnStyle = {
+  border: 'none',
+  background: 'transparent',
+  width: 34,
+  height: 34,
+  borderRadius: 8,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  padding: 0,
+  flexShrink: 0,
 };
 
 const rowActionBtnStyle = {
