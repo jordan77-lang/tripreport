@@ -4,11 +4,16 @@ import { SyncChip } from '../components/SyncChip';
 import { TripMap } from '../components/TripMap';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { addEvent, getCurrentUserId, isTripMember, isTripOwner, removeLocation, updateLocation } from '../lib/storage';
-import { getSignedInUserId } from '../lib/authUser';
+import { addEvent, getCurrentUserId, isTripMember, isTripOwner, removeLocation, updateEntityPhotos, updateLocation } from '../lib/storage';
+import { getSignedInUserId, getSignedInDisplayName } from '../lib/authUser';
 import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
+import { PhotoGallery } from '../components/PhotoGallery';
+import {
+  appendPhotosPatch, captionPhotoPatch, createGalleryPhotos,
+  galleryCount, removePhotoPatch, setCoverPatch,
+} from '../lib/gallery';
 import { shareEntity } from '../lib/share';
 import { AddExpenseSheet } from '../components/AddExpenseSheet';
 import { LocationSaveForm } from '../components/LocationSaveForm';
@@ -28,6 +33,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
   const canAddToEvents = isMember;
   const [editingLocation, setEditingLocation] = useState(false);
   const [addingExpense, setAddingExpense] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [locationDraft, setLocationDraft] = useState({
     name: location?.name || '',
     type: location?.type || 'point-of-interest',
@@ -111,6 +117,29 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
     onBack();
   }
 
+  // ── Location gallery ──
+  // Any member contributes photos; the owner and each photo's author manage them.
+  function applyPhotoPatch(patch) {
+    if (!patch || !trip || !location) return;
+    updateEntityPhotos(trip.id, { kind: 'location', id: location.id }, patch);
+    onTripUpdate?.();
+  }
+
+  async function addLocationPhotos(files) {
+    if (!canAddToEvents || !trip?.id || !location) return;
+    setPhotoBusy(true);
+    try {
+      const refs = await createGalleryPhotos(files, {
+        tripId: trip.id,
+        authorId: userId,
+        authorName: getSignedInDisplayName() || null,
+      });
+      applyPhotoPatch(appendPhotosPatch(location, refs));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
   async function onLocationCoverSelected(files) {
     const f = Array.from(files || [])[0];
     if (!f) return;
@@ -170,11 +199,20 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-        {!!location.coverPhoto && (
-          <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: 8, marginBottom: 12 }}>
-            <MediaThumb media={location.coverPhoto} alt="Location cover" style={{ width: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 10, display: 'block', background: '#F0EDE8' }} />
-          </div>
-        )}
+        {/* Photos of the place itself — any member can add, caption, set cover. */}
+        <PhotoGallery
+          entity={location}
+          title="Photos here"
+          canAdd={canAddToEvents}
+          canManage={canEditLocation}
+          currentUserId={userId}
+          busy={photoBusy}
+          onAdd={(files) => void addLocationPhotos(files)}
+          onCaption={(photo, caption) => applyPhotoPatch(captionPhotoPatch(location, photo, caption))}
+          onRemove={(photo) => applyPhotoPatch(removePhotoPatch(location, photo))}
+          onSetCover={(photo) => applyPhotoPatch(setCoverPatch(location, photo))}
+          emptyHint="Add photos or videos of this place — tap Camera or Upload. Everyone on the trip can contribute."
+        />
 
         {editingLocation && (
           <LocationSaveForm
@@ -222,6 +260,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
               const sym = EVENT_SYMBOLS[ev.type] || '📍';
               const typeLabel = EVENT_CAPTURE_TYPES.find((t) => t.type === ev.type)?.label || ev.type;
               const entryCount = (trip?.entries || []).filter((e) => e.eventId === ev.id).length;
+              const photoCount = galleryCount(ev);
               return (
                 <div key={ev.id} onClick={() => openViewEvent(ev.id)}
                      style={{ background: T.card, borderRadius: 11, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
@@ -237,7 +276,8 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.name}</div>
                     <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 1 }}>
                       <span style={{ background: (EVENT_COLORS[ev.type] || T.accent) + '18', color: EVENT_COLORS[ev.type] || T.accent, borderRadius: 5, padding: '1px 6px', fontWeight: 700 }}>{typeLabel}</span>
-                      <span style={{ marginLeft: 6 }}>{entryCount} {entryCount === 1 ? 'entry' : 'entries'}</span>
+                      {photoCount > 0 && <span style={{ marginLeft: 6 }}>{photoCount} {photoCount === 1 ? 'photo' : 'photos'}</span>}
+                      {entryCount > 0 && <span style={{ marginLeft: 6 }}>{entryCount} {entryCount === 1 ? 'entry' : 'entries'}</span>}
                     </div>
                     {ev.notes && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.notes}</div>}
                   </div>

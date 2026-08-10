@@ -5,13 +5,19 @@ import { Ic } from '../components/Ic';
 import { EntryForm } from './EntryForm';
 import { AddExpenseSheet } from '../components/AddExpenseSheet';
 import { T, F, ICONS } from '../tokens';
-import { addEntry, getCurrentUserId, removeEvent, updateEntry, updateEvent } from '../lib/storage';
+import { addEntry, getCurrentUserId, removeEvent, updateEntityPhotos, updateEntry, updateEvent } from '../lib/storage';
+import { getSignedInDisplayName } from '../lib/authUser';
 import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
+import { PhotoGallery } from '../components/PhotoGallery';
+import {
+  appendPhotosPatch, captionPhotoPatch, createGalleryPhotos,
+  galleryPhotos, removePhotoPatch, setCoverPatch,
+} from '../lib/gallery';
 import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
 import { buildTripParticipants, labelFor } from '../lib/expenses';
-import { mediaCaptureLabel } from '../lib/featureFlags';
+import { EVENT_CAPTURE_TYPES } from '../lib/eventTypes';
 import { buildCustomEventDraft, pickEventWeatherFields, resolveObservedAtIso } from '../lib/eventWeather';
 import { EventTimeEditSection, EventWeatherEditSection, EventWeatherSummary } from '../components/EventWeatherPanel';
 
@@ -30,10 +36,11 @@ const ENTRY_ICON = {
   video: ICONS.video, gauge: ICONS.gauge, 'custom-event': ICONS.plus,
 };
 
-// Core contributions always available for any event
+// Core contributions always available for any event.
+// Photos are NOT here — the gallery on the page adds them in one tap, so routing
+// them through an entry form would be a slower second path to the same place.
 const CORE_CONTRIBUTE = [
   { icon: ICONS.note,    label: 'Add Note',        col: '#6B6763', type: 'note' },
-  { icon: ICONS.camera,  label: mediaCaptureLabel('Photo / Video'),   col: '#C05050', type: 'video' },
   { icon: ICONS.mic,     label: 'Voice Memo',      col: '#5B8DD9', type: 'voice' },
   { icon: ICONS.compass, label: 'Weather',         col: '#517EA3', type: 'weather' },
   { icon: ICONS.gauge,   label: 'Gauge Reading',   col: '#2A5C8E', type: 'gauge' },
@@ -47,6 +54,13 @@ const CONTEXTUAL_CONTRIBUTE = {
   campsite: [{ icon: ICONS.tent,  label: 'Camp Note',   col: '#B8702E', type: 'campsite' }],
 };
 
+// Event types offered in the edit form. Derived from the same list the creation
+// picker uses, plus 'note' — which events can hold but the picker doesn't offer.
+const EVENT_TYPE_OPTIONS = [
+  ...EVENT_CAPTURE_TYPES.map(({ type, label }) => ({ type, label })),
+  { type: 'note', label: 'Note' },
+];
+
 function getContributeItems(eventType) {
   const contextual = CONTEXTUAL_CONTRIBUTE[eventType] || [];
   // Deduplicate: don't show a contextual item if it's already in core
@@ -56,7 +70,7 @@ function getContributeItems(eventType) {
 
 export function EventPage({
   trip, location, event, onBack, onNav, onFab, onTripUpdate,
-  canEditEvent = true, canAddToEvent = true,
+  canEditEvent = true, canAddToEvent = true, canDeleteEvent = true,
   initialEdit = false, initialAddType = null,
   onPrev = null, onNext = null, eventIndex = null, eventCount = null,
 }) {
@@ -73,6 +87,7 @@ export function EventPage({
   const [contributeOpen, setContributeOpen] = useState(false);
   const [addingExpense, setAddingExpense] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const eventCrewCount = event?.memberIds?.length || 0;
   const [eventDraft, setEventDraft] = useState(() => ({
     name: event?.name || '',
@@ -103,26 +118,59 @@ export function EventPage({
     });
   }, [trip?.entries, event?.id]);
 
+  // Hero carousel: the event's own gallery first, then anything its entries carry.
   const photos = useMemo(() => {
     const out = [];
-    const cover = event?.coverPhoto;
-    if (cover && (cover.id || cover.thumbDataUrl || cover.dataUrl)) {
-      out.push({ media: cover, caption: event.name, isCover: true });
+    const seen = new Set();
+    for (const p of galleryPhotos(event)) {
+      if (p.id) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+      }
+      out.push({ media: p, caption: p.caption || event?.name, isCover: true });
     }
     for (const e of entries) {
       for (const f of e.photoFiles || []) {
-        if (f.id || f.thumbDataUrl || f.dataUrl) {
-          out.push({ media: f, caption: e.title || e.type, entryId: e.id });
-        }
+        if (!(f.id || f.thumbDataUrl || f.dataUrl)) continue;
+        if (f.id && seen.has(f.id)) continue;
+        if (f.id) seen.add(f.id);
+        out.push({ media: f, caption: f.caption || e.title || e.type, entryId: e.id });
       }
     }
     return out;
-  }, [entries, event?.coverPhoto, event?.name]);
+  }, [entries, event]);
+
+  // Clamp during render so removing a photo cannot leave the carousel on a gone
+  // index — no effect needed, and no extra render pass.
+  const safePhotoIdx = photos.length ? Math.min(photoIdx, photos.length - 1) : 0;
 
   function openNewEntry(type) {
     setEditingEntry(null);
     setActiveFormType(type);
     setContributeOpen(false);
+  }
+
+  // ── Event gallery ──
+  // Contributing photos is open to any trip member, even on someone else's event.
+  function applyPhotoPatch(patch) {
+    if (!patch || !trip || !event) return;
+    updateEntityPhotos(trip.id, { kind: 'event', id: event.id }, patch);
+    onTripUpdate?.();
+  }
+
+  async function addEventPhotos(files) {
+    if (!canAddToEvent || !trip?.id || !event) return;
+    setPhotoBusy(true);
+    try {
+      const refs = await createGalleryPhotos(files, {
+        tripId: trip.id,
+        authorId: currentUserId,
+        authorName: getSignedInDisplayName() || null,
+      });
+      applyPhotoPatch(appendPhotosPatch(event, refs));
+    } finally {
+      setPhotoBusy(false);
+    }
   }
 
   function handleSaveEntry(payload) {
@@ -178,7 +226,7 @@ export function EventPage({
   }
 
   async function handleDeleteEvent() {
-    if (!canEditEvent || !trip || !event) return;
+    if (!canDeleteEvent || !trip || !event) return;
     if (!window.confirm(`Delete "${event.name}" and all its entries?`)) return;
     await savePlanningToCloud(trip.id, () => {
       removeEvent(trip.id, event.id);
@@ -286,9 +334,9 @@ export function EventPage({
         {photos.length > 0 && (
           <div style={{ position: 'relative', background: '#111', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180, maxHeight: 340 }}>
             <MediaThumb
-              media={photos[photoIdx]?.media}
+              media={photos[safePhotoIdx]?.media}
               preferThumb={false}
-              alt={photos[photoIdx]?.caption || 'Event photo'}
+              alt={photos[safePhotoIdx]?.caption || 'Event photo'}
               style={{ width: '100%', maxHeight: 340, objectFit: 'contain', display: 'block' }}
             />
             <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,.55))', padding: '24px 14px 10px' }}>
@@ -296,11 +344,11 @@ export function EventPage({
                 <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
                   {photos.map((_, i) => (
                     <div key={i} onClick={() => setPhotoIdx(i)}
-                         style={{ width: i === photoIdx ? 16 : 5, height: 5, borderRadius: 3, background: i === photoIdx ? 'white' : 'rgba(255,255,255,.4)', cursor: 'pointer', transition: 'width .2s' }} />
+                         style={{ width: i === safePhotoIdx ? 16 : 5, height: 5, borderRadius: 3, background: i === safePhotoIdx ? 'white' : 'rgba(255,255,255,.4)', cursor: 'pointer', transition: 'width .2s' }} />
                   ))}
                 </div>
               )}
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.85)' }}>{photos[photoIdx]?.caption}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.85)' }}>{photos[safePhotoIdx]?.caption}</div>
             </div>
             {photos.length > 1 && (
               <>
@@ -313,7 +361,7 @@ export function EventPage({
                   <Ic d="M9 18l6-6-6-6" size={15} color="white" sw={2} />
                 </div>
                 <div style={{ position: 'absolute', top: 8, right: 10, background: 'rgba(0,0,0,.45)', borderRadius: 8, padding: '2px 7px', fontSize: 10, fontWeight: 700, color: 'white' }}>
-                  {photoIdx + 1} / {photos.length}
+                  {safePhotoIdx + 1} / {photos.length}
                 </div>
               </>
             )}
@@ -337,14 +385,15 @@ export function EventPage({
                   {editEventError}
                 </div>
               )}
+              {/* Same type list as the picker that created the event, with real labels. */}
               <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 8 }}>
-                {['food', 'wildlife', 'gauge', 'weather', 'note', 'custom-event'].map((tp) => (
+                {EVENT_TYPE_OPTIONS.map(({ type: tp, label }) => (
                   <div key={tp} onClick={() => setEventDraft((d) => ({ ...d, type: tp }))}
-                       style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
+                       style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
                                 background: eventDraft.type === tp ? accentCol : T.bg,
                                 color: eventDraft.type === tp ? 'white' : T.textSub,
                                 border: eventDraft.type === tp ? 'none' : `1px solid ${T.border}` }}>
-                    {tp}
+                    {label}
                   </div>
                 ))}
               </div>
@@ -420,9 +469,11 @@ export function EventPage({
                     Save
                   </div>
                 </div>
-                <button type="button" onClick={() => void handleDeleteEvent()} style={{ border: 'none', background: 'transparent', color: '#8A1414', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '2px 0', fontFamily: F }}>
-                  Delete event and its entries
-                </button>
+                {canDeleteEvent && (
+                  <button type="button" onClick={() => void handleDeleteEvent()} style={{ border: 'none', background: 'transparent', color: '#8A1414', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '2px 0', fontFamily: F }}>
+                    Delete event and its entries
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -475,6 +526,23 @@ export function EventPage({
                 </div>
               )}
             </div>
+          )}
+
+          {/* ── Event photos — open to every member ── */}
+          {!editingEvent && (
+            <PhotoGallery
+              entity={event}
+              title="Event photos"
+              canAdd={canAddToEvent}
+              canManage={canEditEvent}
+              currentUserId={currentUserId}
+              busy={photoBusy}
+              onAdd={(files) => void addEventPhotos(files)}
+              onCaption={(photo, caption) => applyPhotoPatch(captionPhotoPatch(event, photo, caption))}
+              onRemove={(photo) => applyPhotoPatch(removePhotoPatch(event, photo))}
+              onSetCover={(photo) => applyPhotoPatch(setCoverPatch(event, photo))}
+              emptyHint="Add photos or videos from this event — tap Camera or Upload. Anyone on the trip can add to it."
+            />
           )}
 
           {/* ── Contribute panel ── */}
@@ -712,7 +780,10 @@ function MediaRow({ entry: e }) {
 
   const photosWithData = (e.photoFiles || []).filter((f) => f.id || f.thumbDataUrl || f.dataUrl);
   const photosNoData   = (e.photoFiles || []).filter((f) => !f.id && !f.thumbDataUrl && !f.dataUrl);
-  const caption = e.photoNotes || '';
+  // Shared note under the grid (legacy field); the lightbox prefers the caption
+  // that belongs to the photo actually being viewed.
+  const sharedNote = e.photoNotes || '';
+  const caption = photosWithData[lightboxIdx ?? -1]?.caption || sharedNote;
 
   useEffect(() => {
     let cancelled = false;
@@ -754,14 +825,22 @@ function MediaRow({ entry: e }) {
           {photosWithData.map((f, i) => (
             <div key={f.id || i} onClick={() => setLightboxIdx(i)}
                  style={{ position: 'relative', borderRadius: 9, overflow: 'hidden', background: '#F0EDE8', cursor: 'pointer', aspectRatio: '1' }}>
-              <MediaThumb media={f} alt={`Photo ${i + 1}`}
+              <MediaThumb media={f} alt={f.caption || `Photo ${i + 1}`}
                    style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+              {f.caption && (
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
+                              background: 'linear-gradient(transparent, rgba(0,0,0,.6))', color: 'white',
+                              fontSize: 9, padding: '10px 4px 3px', overflow: 'hidden',
+                              textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {f.caption}
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
-      {caption && photosWithData.length > 0 && (
-        <div style={{ fontSize: 11, color: T.textFaint, fontStyle: 'italic', marginBottom: 4 }}>{caption}</div>
+      {sharedNote && photosWithData.length > 0 && (
+        <div style={{ fontSize: 11, color: T.textFaint, fontStyle: 'italic', marginBottom: 4 }}>{sharedNote}</div>
       )}
       {(photosNoData.length > 0 || videoCount > 0 || voiceCount > 0) && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

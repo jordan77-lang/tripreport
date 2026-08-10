@@ -313,6 +313,7 @@ function ensureEntryEvent(trip, entry) {
     name: defaultEventName(entryType),
     notes: '',
     coverPhoto: null,
+    photos: [],
     taggedParticipantId: null,
     taggedParticipantLabel: null,
     // Prefer the entry's own observed time so a back-dated entry does not create
@@ -496,6 +497,8 @@ export function addLocation(tripId, location) {
     updatedAt: now,
     syncState: 'pending',
     coverPhoto: location.coverPhoto || null,
+    // Full gallery — coverPhoto stays as the denormalised first image.
+    photos: Array.isArray(location.photos) ? location.photos : [],
   };
 
   trip.locations.unshift(full);
@@ -577,6 +580,7 @@ export function addEvent(tripId, event) {
     name: event.name || defaultEventName(event.type),
     notes: event.notes || '',
     coverPhoto: event.coverPhoto,
+    photos: Array.isArray(event.photos) ? event.photos : [],
     taggedParticipantId: event.taggedParticipantId || null,
     taggedParticipantLabel: event.taggedParticipantLabel || null,
     memberIds: Array.isArray(event.memberIds) ? event.memberIds : [],
@@ -651,6 +655,42 @@ export function removeEvent(tripId, eventId) {
     trip.events = (trip.events || []).filter((e) => e.id !== eventId);
     trip.entries = (trip.entries || []).filter((e) => e.eventId !== eventId);
     return trip.events.length < before;
+  });
+}
+
+/**
+ * Apply a gallery patch (from lib/gallery) to a location or event.
+ *
+ * Photo contributions are deliberately separate from "edit the entity": any
+ * member may add photos to someone else's location or event, and the record of
+ * who contributed is kept on the entity so the UI can credit them.
+ */
+export function updateEntityPhotos(tripId, { kind, id }, patch) {
+  if (!patch || !kind || !id) return null;
+  const collection = kind === 'location' ? 'locations' : kind === 'event' ? 'events' : null;
+  if (!collection) return null;
+
+  return mutateTrip(tripId, (trip) => {
+    const list = trip[collection] || [];
+    const idx = list.findIndex((item) => item.id === id);
+    if (idx < 0) return null;
+
+    const now = Date.now();
+    const existing = list[idx];
+    const userId = getCurrentUserId();
+    const contributors = Array.isArray(existing.photoContributors) ? existing.photoContributors : [];
+    const updated = {
+      ...existing,
+      ...patch,
+      id: existing.id,
+      photoContributors: userId && !contributors.includes(userId) ? [...contributors, userId] : contributors,
+      updatedAt: now,
+      syncState: 'pending',
+    };
+    trip[collection][idx] = updated;
+    trip.updatedAt = now;
+    trip.syncState = 'pending';
+    return updated;
   });
 }
 

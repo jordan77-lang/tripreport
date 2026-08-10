@@ -326,8 +326,12 @@ function EventPageRoute({ trip, location, event, onOpenEvent, ...rest }) {
 
   // Anonymous (not-yet-signed-in) trips fall back to the local device id.
   const currentUserId = getSignedInUserId() || getCurrentUserId();
-  // Owners edit anything; members edit what they created themselves.
-  const canEdit = Boolean(event && trip && (
+  const isMember = Boolean(trip && isTripMember(trip, currentUserId));
+  // Any member can correct an event's details — a shared log is only useful if
+  // whoever is standing there can fix the name or time. Deleting stays with the
+  // owner and the person who created it.
+  const canEdit = isMember;
+  const canDelete = Boolean(event && trip && (
     isTripOwner(trip, currentUserId) || event.createdBy === currentUserId
   ));
 
@@ -341,7 +345,8 @@ function EventPageRoute({ trip, location, event, onOpenEvent, ...rest }) {
     onPrev={prev ? () => onOpenEvent(location?.id, prev.id) : null}
     onNext={next ? () => onOpenEvent(location?.id, next.id) : null}
     canEditEvent={canEdit}
-    canAddToEvent={Boolean(trip && isTripMember(trip, currentUserId))}
+    canDeleteEvent={canDelete}
+    canAddToEvent={isMember}
     {...rest}
   />;
 }

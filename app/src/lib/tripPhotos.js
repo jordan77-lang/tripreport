@@ -41,11 +41,24 @@ export function collectTripPhotos(trip, { scope = 'trip', day = null, locationId
   }
 
   for (const loc of trip.locations || []) {
+    const at = loc.observedAt || loc.observedStartAt;
+    // Gallery photos first so their own captions win over the fallback below;
+    // `add` de-dupes by media id, so a coverPhoto already in photos[] is skipped.
+    for (const p of loc.photos || []) {
+      add(p, {
+        caption: p.caption || loc.name,
+        at,
+        day: dayKey(at),
+        locationId: loc.id,
+        locationName: loc.name,
+        source: 'location-photo',
+      });
+    }
     if (loc.coverPhoto) {
       add(loc.coverPhoto, {
-        caption: loc.name,
-        at: loc.observedAt || loc.observedStartAt,
-        day: dayKey(loc.observedAt || loc.observedStartAt),
+        caption: loc.coverPhoto.caption || loc.name,
+        at,
+        day: dayKey(at),
         locationId: loc.id,
         locationName: loc.name,
         source: 'location-cover',
@@ -54,18 +67,21 @@ export function collectTripPhotos(trip, { scope = 'trip', day = null, locationId
   }
 
   for (const ev of trip.events || []) {
+    const loc = locById.get(ev.locationId);
+    const at = ev.observedAt || ev.createdAt;
+    const meta = {
+      at,
+      day: dayKey(at),
+      locationId: ev.locationId,
+      locationName: loc?.name,
+      eventId: ev.id,
+      eventName: ev.name,
+    };
+    for (const p of ev.photos || []) {
+      add(p, { ...meta, caption: p.caption || ev.name, source: 'event-photo' });
+    }
     if (ev.coverPhoto) {
-      const loc = locById.get(ev.locationId);
-      add(ev.coverPhoto, {
-        caption: ev.name,
-        at: ev.observedAt || ev.createdAt,
-        day: dayKey(ev.observedAt || ev.createdAt),
-        locationId: ev.locationId,
-        locationName: loc?.name,
-        eventId: ev.id,
-        eventName: ev.name,
-        source: 'event-cover',
-      });
+      add(ev.coverPhoto, { ...meta, caption: ev.coverPhoto.caption || ev.name, source: 'event-cover' });
     }
   }
 

@@ -265,6 +265,14 @@ export function EntryForm({
     if (mode === 'voice') setVoiceFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
+  /** Caption lives on the media ref itself, matching location/event galleries. */
+  function captionMediaFile(mode, index, caption) {
+    const patch = (prev) => prev.map((f, i) => (i === index ? { ...f, caption } : f));
+    if (mode === 'photo') setPhotoFiles(patch);
+    if (mode === 'video') setVideoFiles(patch);
+    if (mode === 'voice') setVoiceFiles(patch);
+  }
+
   return (
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
 
@@ -500,22 +508,34 @@ export function EntryForm({
           <input ref={activeAttachRef} type="file" accept={activeAccept} style={{ display: 'none' }} onChange={(e) => addMediaFiles(mediaMode, e.target.files)} />
 
           {!!activeMediaFiles.length && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {activeMediaFiles.map((f, idx) => (
-                <div key={f.id || `${f.name}-${idx}`} style={{ position: 'relative' }}>
-                  {f.thumbDataUrl || f.id ? (
-                    <MediaThumb media={f} alt={f.name}
-                         style={{ width: 72, height: 72, borderRadius: 10, objectFit: 'contain', background: '#F0EDE8', border: `1px solid ${T.border}`, display: 'block' }} />
-                  ) : (
-                    <div style={{ width: 72, height: 72, borderRadius: 10, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 3 }}>
-                      <span style={{ fontSize: 18 }}>{mediaMode === 'video' ? '🎥' : mediaMode === 'voice' ? '🎙' : '📷'}</span>
-                      <span style={{ fontSize: 9, color: T.textFaint, textAlign: 'center', padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 68 }}>{f.name}</span>
+                <div key={f.id || `${f.name}-${idx}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    {f.thumbDataUrl || f.id ? (
+                      <MediaThumb media={f} alt={f.name}
+                           style={{ width: 72, height: 72, borderRadius: 10, objectFit: 'contain', background: '#F0EDE8', border: `1px solid ${T.border}`, display: 'block' }} />
+                    ) : (
+                      <div style={{ width: 72, height: 72, borderRadius: 10, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 3 }}>
+                        <span style={{ fontSize: 18 }}>{mediaMode === 'video' ? '🎥' : mediaMode === 'voice' ? '🎙' : '📷'}</span>
+                        <span style={{ fontSize: 9, color: T.textFaint, textAlign: 'center', padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 68 }}>{f.name}</span>
+                      </div>
+                    )}
+                    <div onClick={() => removeMediaFile(mediaMode, idx)}
+                         style={{ position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9, background: '#C04040', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <span style={{ fontSize: 10, color: 'white', fontWeight: 700, lineHeight: 1 }}>✕</span>
                     </div>
-                  )}
-                  <div onClick={() => removeMediaFile(mediaMode, idx)}
-                       style={{ position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9, background: '#C04040', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <span style={{ fontSize: 10, color: 'white', fontWeight: 700, lineHeight: 1 }}>✕</span>
                   </div>
+                  {/* Per-file caption — the entry's Notes field below still describes the whole observation. */}
+                  <textarea
+                    value={f.caption || ''}
+                    onChange={(e) => captionMediaFile(mediaMode, idx, e.target.value)}
+                    placeholder="Caption this one…"
+                    rows={2}
+                    style={{ flex: 1, minWidth: 0, border: `1.5px solid ${T.border}`, borderRadius: 10,
+                             padding: '8px 10px', fontSize: ts(12), fontFamily: F, background: T.card,
+                             outline: 'none', boxSizing: 'border-box', resize: 'vertical' }}
+                  />
                 </div>
               ))}
             </div>
