@@ -2,9 +2,22 @@
 // Docs: https://waterservices.usgs.gov/rest/IV-Service.html
 
 const BASE = 'https://waterservices.usgs.gov/nwis/iv/';
+const DV_BASE = 'https://waterservices.usgs.gov/nwis/dv/';
+
+// USGS keeps instantaneous (15-min) values for roughly 120 days. Older readings
+// have to come from the daily-values service instead.
+const IV_RETENTION_DAYS = 110;
 
 function buildIvUrl(params) {
   const url = new URL(BASE);
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null && v !== '') url.searchParams.set(k, String(v));
+  });
+  return url.toString();
+}
+
+function buildDvUrl(params) {
+  const url = new URL(DV_BASE);
   Object.entries(params).forEach(([k, v]) => {
     if (v != null && v !== '') url.searchParams.set(k, String(v));
   });
@@ -21,8 +34,35 @@ async function fetchJson(url, context) {
   return res.json();
 }
 
-// Fetch current flow (CFS) and gauge height (ft) for a site
-export async function fetchGauge(siteId) {
+/**
+ * Flow (CFS) and gauge height (ft) for a site.
+ *
+ * Pass `{ at: <ISO string> }` to get the reading closest to that moment rather
+ * than the latest one — logging yesterday's camp should record yesterday's flow.
+ * Recent times use the instantaneous service; older ones fall back to daily
+ * values, which is the best resolution USGS keeps.
+ */
+export async function fetchGauge(siteId, { at = null } = {}) {
+  const target = at ? new Date(at) : null;
+  const targetValid = target && Number.isFinite(target.getTime());
+
+  if (targetValid) {
+    const ageDays = (Date.now() - target.getTime()) / 864e5;
+    // Only reach for historical data when the target is meaningfully in the past.
+    if (ageDays > 0.08) {
+      try {
+        const historical = ageDays <= IV_RETENTION_DAYS
+          ? await fetchGaugeAtInstant(siteId, target)
+          : await fetchGaugeDaily(siteId, target);
+        if (historical && (historical.cfs != null || historical.gaugeHt != null)) {
+          return historical;
+        }
+      } catch {
+        // Fall through to the latest reading rather than failing the save.
+      }
+    }
+  }
+
   const url = buildIvUrl({
     format: 'json',
     sites: siteId,
@@ -43,6 +83,72 @@ export async function fetchGauge(siteId) {
     if (code === '00060') result.cfs = isNaN(val) ? null : val;
     if (code === '00065') result.gaugeHt = isNaN(val) ? null : val;
   }
+  return result;
+}
+
+/** Nearest 15-minute reading to `target` (within USGS IV retention). */
+async function fetchGaugeAtInstant(siteId, target) {
+  // Widen by a few hours so a gap in the record still yields a nearby sample.
+  const start = new Date(target.getTime() - 6 * 3600e3);
+  const end = new Date(Math.min(Date.now(), target.getTime() + 6 * 3600e3));
+  const url = buildIvUrl({
+    format: 'json',
+    sites: siteId,
+    parameterCd: '00060,00065',
+    startDT: start.toISOString(),
+    endDT: end.toISOString(),
+  });
+  const data = await fetchJson(url, 'USGS gauge time fetch');
+  return pickNearestReading(data, siteId, target);
+}
+
+/** Daily mean for the target's date, for readings older than IV retention. */
+async function fetchGaugeDaily(siteId, target) {
+  const dateKey = target.toISOString().slice(0, 10);
+  const url = buildDvUrl({
+    format: 'json',
+    sites: siteId,
+    parameterCd: '00060,00065',
+    startDT: dateKey,
+    endDT: dateKey,
+  });
+  const data = await fetchJson(url, 'USGS gauge daily fetch');
+  return pickNearestReading(data, siteId, target);
+}
+
+/** Walk every series/value and keep the sample closest in time to `target`. */
+function pickNearestReading(data, siteId, target) {
+  const series = data?.value?.timeSeries ?? [];
+  const result = { siteId, siteName: null, cfs: null, gaugeHt: null, updatedAt: null };
+  const t = target.getTime();
+
+  for (const s of series) {
+    const code = s.variable?.variableCode?.[0]?.value;
+    const values = s.values?.[0]?.value ?? [];
+    result.siteName = result.siteName || s.sourceInfo?.siteName;
+
+    let best = null;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    for (const v of values) {
+      const val = parseFloat(v.value);
+      if (!Number.isFinite(val)) continue;
+      const ts = Date.parse(v.dateTime);
+      const delta = Number.isFinite(ts) ? Math.abs(ts - t) : Number.POSITIVE_INFINITY;
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = { val, dateTime: v.dateTime };
+      }
+    }
+    if (!best) continue;
+
+    if (code === '00060') result.cfs = best.val;
+    if (code === '00065') result.gaugeHt = best.val;
+    // Report the timestamp of the reading we actually used.
+    if (!result.updatedAt || bestDelta < Math.abs(Date.parse(result.updatedAt) - t)) {
+      result.updatedAt = best.dateTime;
+    }
+  }
+
   return result;
 }
 

@@ -3,7 +3,7 @@ import { BottomNav } from '../components/BottomNav';
 import { SyncChip } from '../components/SyncChip';
 import { Ic } from '../components/Ic';
 import { EntryForm } from './EntryForm';
-import { TripExpenses } from '../components/TripExpenses';
+import { AddExpenseSheet } from '../components/AddExpenseSheet';
 import { T, F, ICONS } from '../tokens';
 import { addEntry, getCurrentUserId, removeEvent, updateEntry, updateEvent } from '../lib/storage';
 import { savePlanningToCloud } from '../lib/planningSave';
@@ -13,7 +13,7 @@ import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
 import { buildTripParticipants, labelFor } from '../lib/expenses';
 import { mediaCaptureLabel } from '../lib/featureFlags';
 import { buildCustomEventDraft, pickEventWeatherFields, resolveObservedAtIso } from '../lib/eventWeather';
-import { EventWeatherEditSection, EventWeatherSummary } from '../components/EventWeatherPanel';
+import { EventTimeEditSection, EventWeatherEditSection, EventWeatherSummary } from '../components/EventWeatherPanel';
 
 const ENTRY_COLORS = {
   campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
@@ -71,7 +71,9 @@ export function EventPage({
   const [editingEvent, setEditingEvent] = useState(initialEdit || initialAddType === 'custom-event');
   const [editEventError, setEditEventError] = useState(null);
   const [contributeOpen, setContributeOpen] = useState(false);
+  const [addingExpense, setAddingExpense] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
+  const eventCrewCount = event?.memberIds?.length || 0;
   const [eventDraft, setEventDraft] = useState(() => ({
     name: event?.name || '',
     notes: event?.notes || '',
@@ -148,9 +150,11 @@ export function EventPage({
       return;
     }
     setEditEventError(null);
-    const observedAt = eventDraft.type === 'custom-event'
+    // Every event carries an observed time now; only custom events also carry a
+    // fetched weather snapshot of their own.
+    const observedAt = eventDraft.observedTimeMode === 'custom'
       ? resolveObservedAtIso(eventDraft)
-      : event?.observedAt;
+      : (event?.observedAt || new Date().toISOString());
     const weatherPatch = eventDraft.type === 'custom-event'
       ? pickEventWeatherFields({ ...eventDraft, observedAt })
       : {};
@@ -162,6 +166,7 @@ export function EventPage({
         type: eventDraft.type,
         coverPhoto: eventDraft.coverPhoto,
         memberIds: eventDraft.memberIds,
+        observedAt,
         ...weatherPatch,
       });
     }).then(() => {
@@ -205,6 +210,7 @@ export function EventPage({
       <EntryForm
         type={editingEntry?.type || activeFormType}
         trip={trip}
+        event={event}
         locations={location ? [location] : []}
         defaultLocationId={location?.id || event.locationId}
         initialEntry={editingEntry}
@@ -349,6 +355,8 @@ export function EventPage({
                 rows={2}
                 style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg, resize: 'vertical' }}
               />
+              {/* Time applies to every event — its entries inherit it. */}
+              <EventTimeEditSection draft={eventDraft} setDraft={setEventDraft} />
               {eventDraft.type === 'custom-event' && (
                 <EventWeatherEditSection
                   draft={eventDraft}
@@ -469,22 +477,11 @@ export function EventPage({
             </div>
           )}
 
-          <div style={{ marginBottom: 14 }}>
-            <TripExpenses
-              trip={trip}
-              onTripUpdate={onTripUpdate}
-              showTitle
-              scope="event"
-              event={event}
-              location={location}
-            />
-          </div>
-
           {/* ── Contribute panel ── */}
           {contributeOpen && canAddToEvent && (
             <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase' }}>Add entry</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase' }}>Add to this event</div>
                 <div onClick={() => setContributeOpen(false)} style={{ fontSize: 10.5, color: T.textFaint, cursor: 'pointer' }}>Close</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -498,6 +495,23 @@ export function EventPage({
                     <Ic d="M9 18l6-6-6-6" size={14} color={T.textFaint} sw={1.8} style={{ marginLeft: 'auto' }} />
                   </div>
                 ))}
+                {/* Expense capture sits alongside the other contributions — the
+                    ledger and settle-up stay in Plan → Expenses. */}
+                <div onClick={() => { setAddingExpense(true); setContributeOpen(false); }}
+                     style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 11 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: T.accentLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Ic d={ICONS.plus} size={14} color={T.accent} sw={2} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>Expense</div>
+                    {eventCrewCount > 0 && (
+                      <div style={{ fontSize: 10, color: T.textFaint, marginTop: 1 }}>
+                        Splits with this event&apos;s crew
+                      </div>
+                    )}
+                  </div>
+                  <Ic d="M9 18l6-6-6-6" size={14} color={T.textFaint} sw={1.8} />
+                </div>
               </div>
             </div>
           )}
@@ -536,6 +550,16 @@ export function EventPage({
           <div style={{ height: 16 }} />
         </div>
       </div>
+
+      {addingExpense && (
+        <AddExpenseSheet
+          trip={trip}
+          location={location}
+          event={event}
+          onClose={() => setAddingExpense(false)}
+          onSaved={onTripUpdate}
+        />
+      )}
 
       <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
     </div>

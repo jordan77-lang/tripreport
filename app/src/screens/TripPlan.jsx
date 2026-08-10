@@ -169,7 +169,7 @@ export function TripPlan({
         {tab === 'meals' && <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
         {tab === 'shopping' && <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />}
         {tab === 'expenses' && (
-          <TripExpenses trip={trip} onTripUpdate={onTripUpdate} scope="all" showTitle layout="full" />
+          <TripExpenses trip={trip} onTripUpdate={onTripUpdate} showTitle />
         )}
         {tab === 'maps' && <OfflineMapsPanel trip={trip} onTripUpdate={onTripUpdate} />}
         <div style={{ height: 16 }} />

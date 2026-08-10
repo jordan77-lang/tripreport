@@ -8,6 +8,61 @@ import {
   weatherFieldsFromSnapshot,
 } from '../lib/eventWeather';
 
+/**
+ * Event time picker, shown for every event type.
+ *
+ * The event's time is the source of truth for its entries: weather and gauge
+ * lookups inside an event key off it, so it can never be left implicit.
+ */
+export function EventTimeEditSection({ draft, setDraft }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>When did this happen</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        {[{ id: 'now', label: 'Now' }, { id: 'custom', label: 'Pick date & time' }].map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setDraft((d) => ({ ...d, observedTimeMode: opt.id }))}
+            style={{
+              padding: '6px 11px',
+              borderRadius: 14,
+              cursor: 'pointer',
+              fontSize: 10.5,
+              fontWeight: 700,
+              fontFamily: F,
+              background: draft.observedTimeMode === opt.id ? '#2A5C8E' : T.card,
+              color: draft.observedTimeMode === opt.id ? 'white' : T.textSub,
+              border: draft.observedTimeMode === opt.id ? 'none' : `1px solid ${T.border}`,
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {draft.observedTimeMode === 'custom' && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type="date"
+            value={draft.observedDate}
+            onChange={(e) => setDraft((d) => ({ ...d, observedDate: e.target.value }))}
+            style={fieldStyle}
+          />
+          <input
+            type="time"
+            value={draft.observedTime}
+            onChange={(e) => setDraft((d) => ({ ...d, observedTime: e.target.value }))}
+            style={fieldStyle}
+          />
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: T.textFaint, marginTop: 6, lineHeight: 1.4 }}>
+        Weather and river flow logged here use this time.
+      </div>
+    </div>
+  );
+}
+
 export function EventWeatherEditSection({ draft, setDraft, location }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -53,49 +108,8 @@ export function EventWeatherEditSection({ draft, setDraft, location }) {
   return (
     <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 12, background: '#F7FAFC', border: '1px solid #D8E6F2' }}>
       <div style={{ fontSize: 10.5, fontWeight: 800, color: '#2A5C8E', marginBottom: 8, letterSpacing: 0.3 }}>
-        WHEN & WEATHER
+        WEATHER
       </div>
-
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Event time</div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        {[{ id: 'now', label: 'Now' }, { id: 'custom', label: 'Pick date & time' }].map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            onClick={() => setDraft((d) => ({ ...d, observedTimeMode: opt.id }))}
-            style={{
-              padding: '6px 11px',
-              borderRadius: 14,
-              cursor: 'pointer',
-              fontSize: 10.5,
-              fontWeight: 700,
-              fontFamily: F,
-              background: draft.observedTimeMode === opt.id ? '#2A5C8E' : T.card,
-              color: draft.observedTimeMode === opt.id ? 'white' : T.textSub,
-              border: draft.observedTimeMode === opt.id ? 'none' : `1px solid ${T.border}`,
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      {draft.observedTimeMode === 'custom' && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          <input
-            type="date"
-            value={draft.observedDate}
-            onChange={(e) => setDraft((d) => ({ ...d, observedDate: e.target.value }))}
-            style={fieldStyle}
-          />
-          <input
-            type="time"
-            value={draft.observedTime}
-            onChange={(e) => setDraft((d) => ({ ...d, observedTime: e.target.value }))}
-            style={fieldStyle}
-          />
-        </div>
-      )}
 
       <div style={{ fontSize: 10, color: T.textFaint, marginBottom: 8 }}>
         {hasCoords

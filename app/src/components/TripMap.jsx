@@ -30,6 +30,9 @@ export function TripMap({
   showHoverPopup = false,
   offlineRegionIds = [],
   trip = null,
+  pin = null,
+  onPinChange,
+  onReady = null,
 }) {
   const [offlinePack, setOfflinePack] = useState(null);
 
@@ -90,6 +93,9 @@ export function TripMap({
       onEntrySelect={onEntrySelect}
       selectedEntryId={selectedEntryId}
       showHoverPopup={showHoverPopup}
+      pin={pin}
+      onPinChange={onPinChange}
+      onReady={onReady}
     />
   );
 }
@@ -106,29 +112,29 @@ function MapboxTripMap({
   onEntrySelect,
   selectedEntryId,
   showHoverPopup = false,
+  pin = null,
+  onPinChange,
+  onReady = null,
 }) {
   const containerRef = useRef(null);
   const mapRef       = useRef(null);
   const markersRef   = useRef([]);
+  const pinMarkerRef = useRef(null);
+  const onPinChangeRef = useRef(onPinChange);
+  const lastCenterRef = useRef(null);
   const initialConfigRef = useRef(null);
   if (initialConfigRef.current == null) {
     initialConfigRef.current = { style, center, position, zoom, interactive };
   }
 
-  if (!webglSupported) {
-    return (
-      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', background: '#E8E5E0', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#6B6763' }}>Map unavailable</div>
-        <div style={{ fontSize: 11, color: '#A09D99', textAlign: 'center', padding: '0 20px' }}>
-          WebGL is not supported in this browser. Open in Chrome or Safari to use the map.
-        </div>
-      </div>
-    );
-  }
+  // Keep the drag callback fresh without re-creating the marker on every render.
+  useEffect(() => {
+    onPinChangeRef.current = onPinChange;
+  }, [onPinChange]);
 
   // Init map
   useEffect(() => {
+    if (!webglSupported) return;
     if (mapRef.current) return;
     const cfg = initialConfigRef.current;
     const map = new mapboxgl.Map({
@@ -176,6 +182,69 @@ function MapboxTripMap({
     return () => map.off('click', handleClick);
   }, [onMapClick]);
 
+  // Hand the caller an imperative flyTo so place search can move the viewport
+  // without remounting the map or disturbing the pin.
+  useEffect(() => {
+    if (!onReady) return undefined;
+    const flyTo = ({ lng, lat, bbox, zoom: toZoom } = {}) => {
+      const map = mapRef.current;
+      if (!map) return;
+      if (bbox) {
+        map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 40, duration: 700, maxZoom: 15 });
+        return;
+      }
+      if (lng == null || lat == null) return;
+      map.flyTo({ center: [lng, lat], zoom: toZoom ?? Math.max(map.getZoom(), 13), duration: 700 });
+    };
+    onReady({ flyTo });
+    return () => onReady(null);
+  }, [onReady]);
+
+  // Draggable pin — the coordinate the user is actually choosing.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!pin || pin.lng == null || pin.lat == null) {
+      pinMarkerRef.current?.remove();
+      pinMarkerRef.current = null;
+      return;
+    }
+
+    if (!pinMarkerRef.current) {
+      const el = document.createElement('div');
+      el.style.cssText = 'width:0;height:0;display:flex;align-items:center;justify-content:center;cursor:grab;';
+      el.innerHTML = `
+        <svg width="34" height="46" viewBox="0 0 34 46" style="transform:translateY(-23px);filter:drop-shadow(0 3px 6px rgba(0,0,0,.4))">
+          <path d="M17 1C8.7 1 2 7.7 2 16c0 10.5 15 29 15 29s15-18.5 15-29C32 7.7 25.3 1 17 1z"
+                fill="#2A5C8E" stroke="white" stroke-width="2.5"/>
+          <circle cx="17" cy="16" r="5" fill="white"/>
+        </svg>`;
+      const marker = new mapboxgl.Marker({ element: el, draggable: true })
+        .setLngLat([pin.lng, pin.lat])
+        .addTo(map);
+      marker.on('dragstart', () => { el.style.cursor = 'grabbing'; });
+      marker.on('dragend', () => {
+        el.style.cursor = 'grab';
+        const { lng, lat } = marker.getLngLat();
+        onPinChangeRef.current?.({ lng, lat });
+      });
+      pinMarkerRef.current = marker;
+      return;
+    }
+
+    // Keep an existing marker in sync without recreating it (avoids killing a drag).
+    const current = pinMarkerRef.current.getLngLat();
+    if (Math.abs(current.lng - pin.lng) > 1e-9 || Math.abs(current.lat - pin.lat) > 1e-9) {
+      pinMarkerRef.current.setLngLat([pin.lng, pin.lat]);
+    }
+  }, [pin]);
+
+  useEffect(() => () => {
+    pinMarkerRef.current?.remove();
+    pinMarkerRef.current = null;
+  }, []);
+
   // Update track when points change
   useEffect(() => {
     const map = mapRef.current;
@@ -198,10 +267,15 @@ function MapboxTripMap({
     }
   }, [position]);
 
-  // Focus map when caller changes center
+  // Focus map when the caller changes center. Compared by value: callers often
+  // pass a fresh object each render, and re-flying would fight place search and
+  // pin drags by yanking the viewport back.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !center) return;
+    if (!map || !center || center.lng == null || center.lat == null) return;
+    const prev = lastCenterRef.current;
+    if (prev && Math.abs(prev.lng - center.lng) < 1e-9 && Math.abs(prev.lat - center.lat) < 1e-9) return;
+    lastCenterRef.current = { lng: center.lng, lat: center.lat };
     map.flyTo({ center: [center.lng, center.lat], zoom, speed: 1.1 });
   }, [center, zoom]);
 
@@ -245,6 +319,19 @@ function MapboxTripMap({
         return marker;
       });
   }, [entries, onEntrySelect, selectedEntryId, showHoverPopup]);
+
+  // Checked after the hooks so hook order stays stable across renders.
+  if (!webglSupported) {
+    return (
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', background: '#E8E5E0', flexDirection: 'column', gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#6B6763' }}>Map unavailable</div>
+        <div style={{ fontSize: 11, color: '#A09D99', textAlign: 'center', padding: '0 20px' }}>
+          WebGL is not supported in this browser. Open in Chrome or Safari to use the map.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%' }} />

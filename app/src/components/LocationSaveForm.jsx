@@ -4,6 +4,7 @@ import { ts } from '../lib/textScale';
 import { LOCATION_TYPES } from '../lib/locationTypes';
 import { EmojiPicker } from './EmojiPicker';
 import { MediaThumb } from './MediaThumb';
+import { PlaceSearch } from './PlaceSearch';
 
 const PIN_SOURCES = [
   { id: 'map', label: 'Map pin' },
@@ -33,6 +34,7 @@ export function LocationSaveForm({
   saveLabel = 'Save location',
   showPinControls = true,
   title = 'New location',
+  onSearchPick = null,
 }) {
   const [showMore, setShowMore] = useState(false);
   const set = (patch) => onDraftChange((d) => ({ ...d, ...patch }));
@@ -82,6 +84,10 @@ export function LocationSaveForm({
       {showPinControls && (
         <>
       <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Where</div>
+      {/* Search jumps the map to the right area; the pin is still set by hand. */}
+      {onSearchPick && locationSource === 'map' && (
+        <PlaceSearch onPick={onSearchPick} />
+      )}
       <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
         {PIN_SOURCES.map((opt) => (
           <button

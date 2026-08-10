@@ -1,32 +1,33 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { SyncChip } from '../components/SyncChip';
 import { TripMap } from '../components/TripMap';
 import { Ic } from '../components/Ic';
-import { T, F } from '../tokens';
+import { T, F, ICONS } from '../tokens';
 import { addEvent, getCurrentUserId, isTripMember, isTripOwner, removeLocation, updateLocation } from '../lib/storage';
 import { getSignedInUserId } from '../lib/authUser';
 import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
 import { shareEntity } from '../lib/share';
-import { EventPage } from './EventPage';
-import { TripExpenses } from '../components/TripExpenses';
+import { AddExpenseSheet } from '../components/AddExpenseSheet';
 import { LocationSaveForm } from '../components/LocationSaveForm';
 import { EventTypePicker } from '../components/EventTypePicker';
 import { EVENT_CAPTURE_TYPES, EVENT_COLORS, EVENT_SYMBOLS, defaultEventName } from '../lib/eventTypes';
 import { locationTypeLabel } from '../lib/locationTypes';
 
-export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdate, initialEventId }) {
+export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdate, onOpenEvent, initialEventId }) {
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
-  const isOwner = Boolean(trip && isTripOwner(trip, signedInUserId || currentUserId));
-  const canEditEvents = isOwner;
+  const userId = signedInUserId || currentUserId;
+  const isOwner = Boolean(trip && isTripOwner(trip, userId));
+  const isMember = Boolean(trip && isTripMember(trip, userId));
+  // Members add locations and events; the owner can also delete the whole stop.
   const canDeleteLocation = isOwner;
-  const canEditLocation = Boolean(trip && isTripMember(trip, signedInUserId || currentUserId));
-  const canAddToEvents = canEditLocation;
+  const canEditLocation = isMember;
+  const canAddToEvents = isMember;
   const [editingLocation, setEditingLocation] = useState(false);
-  const [newEventAddType, setNewEventAddType] = useState(null);
+  const [addingExpense, setAddingExpense] = useState(false);
   const [locationDraft, setLocationDraft] = useState({
     name: location?.name || '',
     type: location?.type || 'point-of-interest',
@@ -38,19 +39,17 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
     observedEndAt: location?.observedEndAt ? toDatetimeLocal(new Date(location.observedEndAt)) : toDatetimeLocal(addHours(new Date(), 1)),
     coverPhoto: location?.coverPhoto || null,
   });
-  const [viewEventId, setViewEventId] = useState(initialEventId || null);
-
   // Chronological order for prev/next navigation
   const events = useMemo(() => {
     const list = (trip?.events || []).filter((e) => e.locationId === location?.id);
     return list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   }, [trip?.events, location?.id]);
 
-  const eventsById = useMemo(() => {
-    const m = new Map();
-    for (const ev of events) m.set(ev.id, ev);
-    return m;
-  }, [events]);
+  // Arriving from an entry that belongs to an event — go straight to it.
+  useEffect(() => {
+    if (initialEventId) onOpenEvent?.(location?.id, initialEventId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialEventId]);
 
   if (!location) {
     return (
@@ -60,32 +59,6 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
         </div>
         <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
       </div>
-    );
-  }
-
-  if (viewEventId) {
-    const eventIdx = events.findIndex((e) => e.id === viewEventId);
-    const selectedEvent = eventIdx >= 0 ? events[eventIdx] : (eventsById.get(viewEventId) || null);
-    const prevEvent = eventIdx > 0 ? events[eventIdx - 1] : null;
-    const nextEvent = eventIdx >= 0 && eventIdx < events.length - 1 ? events[eventIdx + 1] : null;
-    return (
-      <EventPage
-        key={viewEventId}
-        trip={trip}
-        location={location}
-        event={selectedEvent}
-        eventIndex={eventIdx >= 0 ? eventIdx : null}
-        eventCount={events.length}
-        onBack={() => { setViewEventId(null); setNewEventAddType(null); }}
-        onPrev={prevEvent ? () => setViewEventId(prevEvent.id) : null}
-        onNext={nextEvent ? () => setViewEventId(nextEvent.id) : null}
-        onNav={onNav}
-        onFab={onFab}
-        onTripUpdate={onTripUpdate}
-        canEditEvent={canEditEvents}
-        canAddToEvent={canAddToEvents}
-        initialAddType={newEventAddType}
-      />
     );
   }
 
@@ -99,14 +72,12 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
     });
     if (!created) return;
     onTripUpdate?.();
-    setNewEventAddType(type);
-    setViewEventId(created.id);
+    onOpenEvent?.(location.id, created.id);
   }
 
   function openViewEvent(eventId) {
     if (!eventId) return;
-    setNewEventAddType(null);
-    setViewEventId(eventId);
+    onOpenEvent?.(location.id, eventId);
   }
 
   async function saveLocationDetails() {
@@ -306,17 +277,40 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
           </div>
         </div>
 
-        <div style={{ padding: '0 0 12px' }}>
-          <TripExpenses
-            trip={trip}
-            onTripUpdate={onTripUpdate}
-            showTitle
-            scope="location"
-            location={location}
-          />
-        </div>
+        {/* Log a cost from where it happened — the ledger itself lives in Plan → Expenses. */}
+        {canAddToEvents && (
+          <div style={{ padding: '0 0 12px' }}>
+            <button
+              type="button"
+              onClick={() => setAddingExpense(true)}
+              style={{ width: '100%', background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
+                       padding: '12px 13px', display: 'flex', alignItems: 'center', gap: 10,
+                       cursor: 'pointer', fontFamily: F, textAlign: 'left' }}>
+              <div style={{ width: 30, height: 30, borderRadius: 9, background: T.accentLight,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Ic d={ICONS.plus} size={15} color={T.accent} sw={2} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>Add expense here</div>
+                <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 1 }}>
+                  Tagged to {location.name} · settle up in Plan
+                </div>
+              </div>
+              <Ic d="M9 18l6-6-6-6" size={14} color={T.textFaint} sw={2} />
+            </button>
+          </div>
+        )}
 
       </div>
+
+      {addingExpense && (
+        <AddExpenseSheet
+          trip={trip}
+          location={location}
+          onClose={() => setAddingExpense(false)}
+          onSaved={onTripUpdate}
+        />
+      )}
 
       <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
     </div>

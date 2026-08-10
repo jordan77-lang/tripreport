@@ -20,7 +20,6 @@ import {
   computeParticipantBreakdown,
   computeSettlements,
   expenseShareAmount,
-  filterExpenses,
   formatExpenseContext,
   formatSplitLabel,
   labelFor,
@@ -30,30 +29,17 @@ import {
 } from '../lib/expenses';
 
 /**
- * scope:
- * - trip: pre-planning / trip-wide costs only
- * - location: costs tied to a location
- * - event: costs for one event
- * - all: every expense (trip dashboard)
+ * The trip's one expense ledger — totals, breakdown, settle-up, add and edit.
  *
- * layout:
- * - full: Trip Plan / location / event pages
- * - compact: trip overview widget
+ * Lives only in Plan → Expenses. Location and Event pages capture new expenses
+ * through AddExpenseSheet (which pre-fills their context) rather than embedding a
+ * second copy of this, so there is exactly one place that owns the numbers.
  */
 export function TripExpenses({
   trip,
   onTripUpdate,
   showTitle = false,
-  scope = 'trip',
-  location = null,
-  event = null,
-  layout = 'full',
-  onOpenFull,
 }) {
-  const compact = layout === 'compact';
-  const tripOverviewCompact = compact && scope === 'all';
-  const embedCollapsed = scope === 'location' || scope === 'event';
-  const startsCollapsed = embedCollapsed || tripOverviewCompact;
   const currentUserId = getCurrentUserId();
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const expenseGroups = useMemo(() => getExpenseGroups(trip), [trip]);
@@ -63,20 +49,24 @@ export function TripExpenses({
   const [splitPreset, setSplitPreset] = useState(SPLIT_ALL);
   const [splitGroupId, setSplitGroupId] = useState(null);
   const [splitIds, setSplitIds] = useState([]);
-  const [panel, setPanel] = useState(compact ? 'summary' : 'ledger');
-  const [sectionOpen, setSectionOpen] = useState(!startsCollapsed);
-  const [showAddForm, setShowAddForm] = useState(!compact && !embedCollapsed);
+  const [panel, setPanel] = useState('ledger');
+  const [showAddForm, setShowAddForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
-  const [showAllItems, setShowAllItems] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const formRef = useRef(null);
 
-  const allExpenses = trip?.expenses || [];
-  const visibleExpenses = useMemo(() => filterExpenses(allExpenses, scope, {
-    locationId: location?.id,
-    eventId: event?.id,
-  }), [allExpenses, scope, location?.id, event?.id]);
+  const visibleExpenses = useMemo(() => trip?.expenses || [], [trip?.expenses]);
+  const allExpenses = visibleExpenses;
+
+  // The event behind the expense being edited, if any. Expenses captured on an
+  // Event page split by that event's crew; keep that resolvable while editing.
+  const editingEvent = useMemo(() => {
+    if (!editingExpenseId) return null;
+    const target = allExpenses.find((e) => e.id === editingExpenseId);
+    if (!target?.eventId) return null;
+    return (trip?.events || []).find((ev) => ev.id === target.eventId) || null;
+  }, [editingExpenseId, allExpenses, trip?.events]);
 
   const aliasMap = useMemo(
     () => (trip ? buildParticipantAliasMap(trip, participants) : new Map()),
@@ -93,14 +83,7 @@ export function TripExpenses({
 
   function defaultSplitState() {
     const participantIds = participants.map((p) => p.id);
-    const crew = getEventCrewIds(event, participantIds, aliasMap);
-    if (scope === 'event' && crew.length > 0) {
-      return { preset: SPLIT_EVENT_CREW, groupId: SPLIT_EVENT_CREW, ids: crew };
-    }
-    if (scope === 'all' || scope === 'trip' || scope === 'location') {
-      return { preset: SPLIT_ALL, groupId: null, ids: participantIds };
-    }
-    return { preset: 'custom', groupId: null, ids: participantIds };
+    return { preset: SPLIT_ALL, groupId: null, ids: participantIds };
   }
 
   function applySplitPreset(preset, groupId = null) {
@@ -109,11 +92,6 @@ export function TripExpenses({
     if (preset === SPLIT_ALL) {
       setSplitGroupId(null);
       setSplitIds(participantIds);
-      return;
-    }
-    if (preset === SPLIT_EVENT_CREW) {
-      setSplitGroupId(SPLIT_EVENT_CREW);
-      setSplitIds(getEventCrewIds(event, participantIds, aliasMap));
       return;
     }
     if (preset === 'group' && groupId) {
@@ -133,7 +111,6 @@ export function TripExpenses({
     setSplitPreset(preset);
     setSplitGroupId(groupId);
     setSplitIds(ids);
-    setSectionOpen(true);
     setShowAddForm(true);
     setPanel('ledger');
   }
@@ -141,27 +118,22 @@ export function TripExpenses({
   function closeAddForm() {
     setShowAddForm(false);
     setEditingExpenseId(null);
-    if (startsCollapsed && visibleExpenses.length === 0) {
-      setSectionOpen(false);
-    }
-  }
-
-  function collapseSection() {
-    setSectionOpen(false);
-    setShowAddForm(false);
-    setEditingExpenseId(null);
-    setPanel('ledger');
-    setExpandedId(null);
   }
 
   function startEdit(expense) {
     if (!expense) return;
     const participantIds = participants.map((p) => p.id);
     const payerId = resolveParticipantId(expense.paidBy, aliasMap, participantIds) || expense.paidBy;
+    // An expense captured on an Event page carries splitGroupId 'event-crew';
+    // resolve that event so editing here recognises the preset instead of
+    // silently downgrading it to a custom split.
+    const sourceEvent = expense.eventId
+      ? (trip?.events || []).find((ev) => ev.id === expense.eventId) || null
+      : null;
     const inferred = inferSplitPreset(expense, {
       participantIds,
       groups: expenseGroups,
-      event,
+      event: sourceEvent,
       aliasMap,
     });
     setEditingExpenseId(expense.id);
@@ -171,7 +143,6 @@ export function TripExpenses({
     setSplitPreset(inferred.preset);
     setSplitGroupId(inferred.groupId);
     setSplitIds(inferred.splitIds.length ? inferred.splitIds : participantIds);
-    setSectionOpen(true);
     setShowAddForm(true);
     setPanel('ledger');
     setExpandedId(null);
@@ -183,7 +154,7 @@ export function TripExpenses({
   function splitIsValid() {
     if (splitPreset === SPLIT_ALL) return participants.length > 0;
     if (splitPreset === SPLIT_EVENT_CREW) {
-      return getEventCrewIds(event, participants.map((p) => p.id), aliasMap).length > 0;
+      return getEventCrewIds(editingEvent, participants.map((p) => p.id), aliasMap).length > 0;
     }
     if (splitPreset === 'group' && splitGroupId) {
       const group = expenseGroups.find((g) => g.id === splitGroupId);
@@ -205,7 +176,7 @@ export function TripExpenses({
       splitIds,
       participants,
       groups: expenseGroups,
-      event,
+      event: editingEvent,
       aliasMap,
     });
     const existing = editingExpenseId
@@ -219,15 +190,8 @@ export function TripExpenses({
       ...splitFields,
     };
 
-    if (scope === 'event' && event) {
-      payload.eventId = event.id;
-      payload.eventName = event.name;
-      payload.locationId = event.locationId || location?.id || null;
-      payload.locationName = event.locationName || location?.name || null;
-    } else if (scope === 'location' && location) {
-      payload.locationId = location.id;
-      payload.locationName = location.name;
-    } else if (existing) {
+    // Preserve whichever stop/event the expense was originally captured against.
+    if (existing) {
       payload.locationId = existing.locationId ?? null;
       payload.locationName = existing.locationName ?? null;
       payload.eventId = existing.eventId ?? null;
@@ -277,62 +241,20 @@ export function TripExpenses({
 
   if (!trip) return null;
 
-  const title = scope === 'event'
-    ? 'Event Expenses'
-    : scope === 'location'
-      ? 'Location Expenses'
-      : scope === 'all'
-        ? 'Shared Expenses'
-        : 'Trip Expenses';
+  const title = 'Shared Expenses';
+  const hint = 'All trip costs roll into one settle-up. Add costs from a location or event to tag them automatically.';
 
-  const hint = scope === 'event'
-    ? 'Gas and tolls: split with this event\'s crew. Set crew in Edit Event above.'
-    : scope === 'location'
-      ? 'Tag costs to this stop, or open an event to split by vehicle crew.'
-      : scope === 'trip'
-        ? 'Pre-trip costs not tied to a location yet.'
-        : 'All trip costs roll into one settle-up. Use whole trip for permits and group meals; saved groups or event crews for subgroups.';
-
-  const placeholder = scope === 'event' ? 'Gas, tolls, permit…' : 'What was bought (gas, groceries…)';
-  const listLimit = compact && !showAllItems ? 3 : visibleExpenses.length;
-  const hiddenCount = Math.max(0, visibleExpenses.length - listLimit);
-  const listedExpenses = visibleExpenses.slice(0, listLimit);
+  const placeholder = 'What was bought (gas, groceries…)';
+  const listedExpenses = visibleExpenses;
   const unsettledCount = settlements.length;
-
-  if (startsCollapsed && !sectionOpen) {
-    return (
-      <CollapsedExpensesBar
-        title={title}
-        showTitle={showTitle || tripOverviewCompact}
-        total={total}
-        count={visibleExpenses.length}
-        unsettledCount={unsettledCount}
-        onExpand={() => { setSectionOpen(true); setPanel('ledger'); }}
-        onAdd={openAddForm}
-      />
-    );
-  }
 
   return (
     <div>
-      {startsCollapsed && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-          <button type="button" onClick={collapseSection} style={collapseBtnStyle}>
-            Hide expenses
-          </button>
-        </div>
-      )}
       {showTitle && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase' }}>
             {title}
           </div>
-          {!!(scope === 'event' && event?.name) && (
-            <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>{event.name}</div>
-          )}
-          {!!(scope === 'location' && location?.name) && (
-            <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>{location.name}</div>
-          )}
         </div>
       )}
 
@@ -340,48 +262,26 @@ export function TripExpenses({
         total={total}
         count={visibleExpenses.length}
         unsettledCount={unsettledCount}
-        compact={compact}
         onOpenBreakdown={() => setPanel('breakdown')}
       />
 
-      {!compact && (
-        <SegmentTabs
-          active={panel}
-          onChange={setPanel}
-          tabs={[
-            { id: 'ledger', label: 'Expenses' },
-            { id: 'breakdown', label: 'Breakdown' },
-          ]}
-        />
-      )}
+      <SegmentTabs
+        active={panel}
+        onChange={setPanel}
+        tabs={[
+          { id: 'ledger', label: 'Expenses' },
+          { id: 'breakdown', label: 'Breakdown' },
+        ]}
+      />
 
-      {compact && panel === 'breakdown' && (
-        <BreakdownPanel
-          breakdown={breakdown}
-          settlements={settlements}
-          participants={participants}
-          onClose={() => setPanel('ledger')}
-        />
-      )}
+      <ExpenseGroupsPanel
+        trip={trip}
+        participants={participants}
+        groups={expenseGroups}
+        onTripUpdate={onTripUpdate}
+      />
 
-      {tripOverviewCompact && onOpenFull && sectionOpen && panel !== 'breakdown' && (
-        <div style={{ marginBottom: 10 }}>
-          <button type="button" onClick={onOpenFull} style={viewAllStyle}>
-            Manage in Trip Plan →
-          </button>
-        </div>
-      )}
-
-      {!compact && scope === 'all' && (
-        <ExpenseGroupsPanel
-          trip={trip}
-          participants={participants}
-          groups={expenseGroups}
-          onTripUpdate={onTripUpdate}
-        />
-      )}
-
-      {(panel === 'ledger' || (compact && panel !== 'breakdown')) && (
+      {panel === 'ledger' && (
         <>
           {!showAddForm ? (
             <button
@@ -403,9 +303,8 @@ export function TripExpenses({
               splitIds={splitIds}
               participants={participants}
               expenseGroups={expenseGroups}
-              event={event}
-              eventCrewCount={getEventCrewIds(event, participants.map((p) => p.id), aliasMap).length}
-              scope={scope}
+              event={editingEvent}
+              eventCrewCount={getEventCrewIds(editingEvent, participants.map((p) => p.id), aliasMap).length}
               hint={hint}
               placeholder={placeholder}
               editing={Boolean(editingExpenseId)}
@@ -432,9 +331,9 @@ export function TripExpenses({
           )}
 
           {visibleExpenses.length === 0 && !showAddForm ? (
-            <Empty text={hint} compact={embedCollapsed} />
+            <Empty text={hint} />
           ) : visibleExpenses.length === 0 ? null : (
-            <div style={{ marginTop: compact ? 8 : 12 }}>
+            <div style={{ marginTop: 12 }}>
               {listedExpenses.map((e) => (
                 <ExpenseRow
                   key={e.id}
@@ -442,7 +341,6 @@ export function TripExpenses({
                   trip={trip}
                   participants={participants}
                   aliasMap={aliasMap}
-                  scope={scope}
                   expanded={expandedId === e.id}
                   editing={editingExpenseId === e.id}
                   onToggle={() => setExpandedId((id) => (id === e.id ? null : e.id))}
@@ -450,22 +348,12 @@ export function TripExpenses({
                   onDelete={() => void deleteExpense(e)}
                 />
               ))}
-              {hiddenCount > 0 && (
-                <button type="button" onClick={() => setShowAllItems(true)} style={viewAllStyle}>
-                  View all {visibleExpenses.length} expenses
-                </button>
-              )}
-              {compact && unsettledCount > 0 && panel !== 'breakdown' && (
-                <button type="button" onClick={() => setPanel('breakdown')} style={breakdownLinkStyle}>
-                  View {unsettledCount} settlement{unsettledCount === 1 ? '' : 's'} →
-                </button>
-              )}
             </div>
           )}
         </>
       )}
 
-      {!compact && panel === 'breakdown' && (
+      {panel === 'breakdown' && (
         <BreakdownPanel
           breakdown={breakdown}
           settlements={settlements}
@@ -477,46 +365,7 @@ export function TripExpenses({
   );
 }
 
-function CollapsedExpensesBar({ title, showTitle, total, count, unsettledCount, onExpand, onAdd }) {
-  const status = count === 0
-    ? 'Tap to track costs'
-    : unsettledCount === 0
-      ? 'All settled up'
-      : `${unsettledCount} to settle`;
-
-  return (
-    <div style={collapsedBarStyle}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onExpand}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onExpand(); }}
-        style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-      >
-        {showTitle && (
-          <div style={{ fontSize: ts(10), fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 4 }}>
-            {title}
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: ts(18), fontWeight: 900, color: T.text, letterSpacing: -.3 }}>{money(total)}</span>
-          <span style={{ fontSize: ts(12), color: T.textSub }}>
-            {count === 0 ? status : `${count} item${count === 1 ? '' : 's'} · ${status}`}
-          </span>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={onAdd}
-        style={collapsedAddBtnStyle}
-      >
-        + Add
-      </button>
-    </div>
-  );
-}
-
-function SummaryBar({ total, count, unsettledCount, compact, onOpenBreakdown }) {
+function SummaryBar({ total, count, unsettledCount, onOpenBreakdown }) {
   const status = count === 0
     ? 'No expenses yet'
     : unsettledCount === 0
@@ -527,8 +376,8 @@ function SummaryBar({ total, count, unsettledCount, compact, onOpenBreakdown }) 
     <div style={{
       background: T.accentLight,
       borderRadius: 12,
-      padding: compact ? '10px 12px' : '12px 14px',
-      marginBottom: compact ? 10 : 12,
+      padding: '12px 14px',
+      marginBottom: 12,
       border: `1px solid ${T.accent}30`,
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
@@ -653,12 +502,13 @@ function BreakdownPanel({ breakdown, settlements, participants, embedded = false
   );
 }
 
-function ExpenseRow({ expense, trip, participants, aliasMap, scope, expanded, editing, onToggle, onEdit, onDelete }) {
+function ExpenseRow({ expense, trip, participants, aliasMap, expanded, editing, onToggle, onEdit, onDelete }) {
   const participantIds = participants.map((p) => p.id);
   const split = resolveSplitIds(expense, participantIds, aliasMap);
   const shareEach = expenseShareAmount(expense, split);
   const payer = expense.paidByLabel || labelFor(participants, resolveParticipantId(expense.paidBy, aliasMap, participantIds) || expense.paidBy);
-  const context = scope === 'all' ? formatExpenseContext(expense) : null;
+  // Single unified ledger, so every row names the stop/event it came from.
+  const context = formatExpenseContext(expense);
 
   return (
     <div style={{ ...expenseRowStyle, borderColor: editing ? T.accent : T.border }}>
@@ -887,7 +737,6 @@ function AddExpenseForm({
   expenseGroups,
   event,
   eventCrewCount,
-  scope,
   hint,
   placeholder,
   editing = false,
@@ -936,14 +785,14 @@ function AddExpenseForm({
       <div style={{ marginTop: 10 }}>
         <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Split between</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: showCustom ? 8 : 0 }}>
-          {(scope === 'trip' || scope === 'all' || scope === 'location') && (
-            <SplitModeChip
-              active={splitPreset === SPLIT_ALL}
-              label="Whole trip"
-              onClick={() => onSplitPreset(SPLIT_ALL)}
-            />
-          )}
-          {scope === 'event' && eventCrewCount > 0 && (
+          <SplitModeChip
+            active={splitPreset === SPLIT_ALL}
+            label="Whole trip"
+            onClick={() => onSplitPreset(SPLIT_ALL)}
+          />
+          {/* Only offered when the expense being edited belongs to an event that
+              has a crew — otherwise the preset would resolve to nobody. */}
+          {eventCrewCount > 0 && (
             <SplitModeChip
               active={splitPreset === SPLIT_EVENT_CREW}
               label={eventCrewLabel}
@@ -964,11 +813,6 @@ function AddExpenseForm({
             onClick={() => onSplitPreset('custom')}
           />
         </div>
-        {scope === 'event' && eventCrewCount === 0 && (
-          <div style={{ fontSize: ts(11), color: T.textFaint, marginBottom: 8 }}>
-            Tip: set this event&apos;s crew in Edit Event to default gas splits to your car.
-          </div>
-        )}
         {showCustom && (
           <ParticipantChips
             participants={participants}
@@ -1014,49 +858,13 @@ function SplitModeChip({ active, label, onClick }) {
   );
 }
 
-function Empty({ text, compact = false }) {
+function Empty({ text }) {
   return (
-    <div style={{ textAlign: 'center', padding: compact ? '8px 6px' : '14px 10px', color: T.textFaint, fontSize: ts(12), lineHeight: 1.45 }}>
+    <div style={{ textAlign: 'center', padding: '14px 10px', color: T.textFaint, fontSize: ts(12), lineHeight: 1.45 }}>
       {text}
     </div>
   );
 }
-
-const collapsedBarStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 10,
-  background: T.card,
-  borderRadius: 12,
-  border: `1px solid ${T.border}`,
-  padding: '10px 12px',
-  cursor: 'pointer',
-  fontFamily: F,
-};
-
-const collapsedAddBtnStyle = {
-  flexShrink: 0,
-  border: `1px solid ${T.accent}50`,
-  borderRadius: 9,
-  padding: '7px 11px',
-  background: T.accentLight,
-  color: T.accent,
-  fontSize: ts(12),
-  fontWeight: 800,
-  fontFamily: F,
-  cursor: 'pointer',
-};
-
-const collapseBtnStyle = {
-  border: 'none',
-  background: 'transparent',
-  color: T.textFaint,
-  fontSize: ts(12),
-  fontWeight: 600,
-  fontFamily: F,
-  cursor: 'pointer',
-  padding: '2px 0',
-};
 
 const composerStyle = {
   background: T.card,
@@ -1131,24 +939,6 @@ const ghostBtnStyle = {
   fontWeight: 700,
   fontFamily: F,
   cursor: 'pointer',
-};
-
-const viewAllStyle = {
-  width: '100%',
-  border: 'none',
-  background: 'transparent',
-  color: T.accent,
-  fontSize: ts(13),
-  fontWeight: 700,
-  fontFamily: F,
-  cursor: 'pointer',
-  padding: '10px 0 4px',
-  textAlign: 'center',
-};
-
-const breakdownLinkStyle = {
-  ...viewAllStyle,
-  color: T.textSub,
 };
 
 const addBtnStyle = {

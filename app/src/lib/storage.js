@@ -315,6 +315,9 @@ function ensureEntryEvent(trip, entry) {
     coverPhoto: null,
     taggedParticipantId: null,
     taggedParticipantLabel: null,
+    // Prefer the entry's own observed time so a back-dated entry does not create
+    // an event stamped "now".
+    observedAt: entry.observedAt || new Date(now).toISOString(),
     createdBy: getCurrentUserId(),
     createdAt: now,
     updatedAt: now,
@@ -577,7 +580,9 @@ export function addEvent(tripId, event) {
     taggedParticipantId: event.taggedParticipantId || null,
     taggedParticipantLabel: event.taggedParticipantLabel || null,
     memberIds: Array.isArray(event.memberIds) ? event.memberIds : [],
-    observedAt: event.observedAt || null,
+    // Every event is timestamped — entries inherit this for weather/gauge lookups
+    // and for "when did this happen" without asking the user again.
+    observedAt: event.observedAt || new Date(now).toISOString(),
     weatherTempC: event.weatherTempC ?? null,
     weatherFeelsLikeC: event.weatherFeelsLikeC ?? null,
     weatherWindKph: event.weatherWindKph ?? null,

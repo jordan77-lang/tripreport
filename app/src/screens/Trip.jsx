@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { TripMap } from '../components/TripMap';
 import { SyncChip } from '../components/SyncChip';
-import { TripExpenses } from '../components/TripExpenses';
 import { TripCrewList } from '../components/TripCrewList';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
@@ -22,10 +21,9 @@ import { ts } from '../lib/textScale';
 import { deleteTripCompletely, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
-import { resolveUserDisplayName } from '../lib/expenses';
-import { LocationPage } from './LocationPage';
+import { buildTripParticipants, computeBalances, money, resolveUserDisplayName } from '../lib/expenses';
 
-export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap }) {
+export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap, onOpenLocation, onOpenEvent }) {
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
   const canEditTrip = Boolean(trip && isTripMember(trip, signedInUserId || currentUserId));
@@ -58,8 +56,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   const [currentPos, setCurrentPos] = useState(null);
   const [currentPosError, setCurrentPosError] = useState(null);
   const [locationError, setLocationError] = useState(null);
-  const [locationPageId, setLocationPageId] = useState(null);
-  const [locationPageEventId, setLocationPageEventId] = useState(null);
   const [editingTrip, setEditingTrip] = useState(false);
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const [locCoverPhoto, setLocCoverPhoto] = useState(null);
@@ -69,6 +65,9 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [tripSection, setTripSection] = useState('overview');
   const importUpdateRef = useRef(null);
+  // Imperative map handle, supplied by TripMap once its map exists.
+  const mapApiRef = useRef(null);
+  const handleMapReady = useCallback((api) => { mapApiRef.current = api; }, []);
   const entries = useMemo(() => trip?.entries ?? [], [trip?.entries]);
   const locations = useMemo(() => trip?.locations ?? [], [trip?.locations]);
   const track = useMemo(() => trip?.track ?? [], [trip?.track]);
@@ -430,21 +429,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     ? { lng: selectedLocation.lng, lat: selectedLocation.lat }
     : (mapEntries[0] ? { lng: mapEntries[0].lng, lat: mapEntries[0].lat } : undefined));
 
-  if (locationPageId) {
-    const pageLocation = locations.find((l) => l.id === locationPageId) || null;
-    return (
-      <LocationPage
-        trip={trip}
-        location={pageLocation}
-        onBack={() => { setLocationPageId(null); setLocationPageEventId(null); }}
-        onNav={onNav}
-        onFab={onFab}
-        onTripUpdate={onTripUpdate}
-        initialEventId={locationPageEventId}
-      />
-    );
-  }
-
   if (!trip) {
     return (
       <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F }}>
@@ -621,15 +605,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           />
         )}
 
-        <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 14 }}>
-          <TripExpenses
-            trip={trip}
-            onTripUpdate={onTripUpdate}
-            scope="all"
-            layout="compact"
-            onOpenFull={() => onNav('plan')}
-          />
-        </div>
+        <ExpenseSummaryLink trip={trip} onOpen={() => onNav('plan')} />
 
         <TripCrewList
           trip={trip}
@@ -647,7 +623,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         </div>
         <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, lineHeight: 1.45 }}>
           {addingLocation
-            ? 'Place the pin, name the spot, then save. Add events after you open the location.'
+            ? 'Search to jump the map, then tap or drag the pin to the exact spot and save.'
             : 'Tap the map to log a new location, or open one below to add events.'}
         </div>
         <div style={{ borderRadius: 14, overflow: 'hidden', height: 220, border: `1px solid ${T.border}`, marginBottom: 8 }}>
@@ -660,10 +636,13 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             interactive
             selectedEntryId={selectedLocationId}
             showHoverPopup
+            onReady={handleMapReady}
+            pin={addingLocation && locationSource === 'map' ? locationPin : null}
+            onPinChange={(pos) => setLocationPin(pos)}
             onEntrySelect={(entry) => {
               if (entry.id === '__draft_location__') return;
               setSelectedLocationId(entry.id);
-              setLocationPageId(entry.id);
+              onOpenLocation?.(entry.id);
             }}
             onMapClick={(pos) => {
               if (addingLocation && locationSource === 'map') {
@@ -703,6 +682,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
               void onLocationCoverSelected(files);
             }}
             error={locationError}
+            onSearchPick={({ lng, lat, bbox }) => mapApiRef.current?.flyTo({ lng, lat, bbox })}
             onCancel={() => { setAddingLocation(false); setLocationError(null); setLocCoverPhoto(null); }}
             onSave={saveLocation}
           />
@@ -717,7 +697,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             </div>
           )}
           {orderedLocations.map((loc, idx) => (
-            <div key={loc.id} onClick={() => { setSelectedLocationId(loc.id); setLocationPageId(loc.id); }}
+            <div key={loc.id} onClick={() => { setSelectedLocationId(loc.id); onOpenLocation?.(loc.id); }}
                  style={{ background: T.card, borderRadius: 11, border: `1px solid ${selectedLocationId === loc.id ? '#2A5C8E' : T.border}`, padding: '10px 11px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
               <div style={{ width: 36, height: 36, borderRadius: 9, background: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
                 {loc.coverPhoto ? (
@@ -930,11 +910,9 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             <div key={e.id || i}
                  onClick={() => {
                    if (canViewEvent) {
-                     setLocationPageEventId(e.eventId);
-                     setLocationPageId(entryLocationId);
+                     onOpenEvent?.(entryLocationId, e.eventId);
                    } else if (canViewLocation) {
-                     setLocationPageEventId(null);
-                     setLocationPageId(entryLocationId);
+                     onOpenLocation?.(entryLocationId);
                    }
                  }}
                  style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1px solid ${T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start', cursor: canNavigate ? 'pointer' : 'default' }}>
@@ -973,6 +951,47 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       </div>
 
       <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
+    </div>
+  );
+}
+
+/**
+ * Read-only expense pulse on the trip overview. Deliberately not a ledger —
+ * adding, editing, and settling all happen in Plan → Expenses so there is exactly
+ * one place that owns the numbers.
+ */
+function ExpenseSummaryLink({ trip, onOpen }) {
+  const currentUserId = getCurrentUserId();
+  const expenses = useMemo(() => trip?.expenses || [], [trip?.expenses]);
+  const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
+  const total = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const myNet = useMemo(() => {
+    const balances = computeBalances(expenses, participants, { trip });
+    return balances[currentUserId] ?? 0;
+  }, [expenses, participants, trip, currentUserId]);
+
+  const owed = Math.abs(myNet) >= 0.01;
+  const subtitle = expenses.length === 0
+    ? 'No expenses logged yet'
+    : owed
+      ? (myNet < 0 ? `You owe ${money(-myNet)}` : `You are owed ${money(myNet)}`)
+      : 'All settled up';
+
+  return (
+    <div onClick={onOpen}
+         style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px',
+                  marginBottom: 14, display: 'flex', alignItems: 'center', gap: 11, cursor: 'pointer' }}>
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: T.accentLight, display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 15 }}>
+        💵
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>
+          Expenses{expenses.length > 0 ? ` · ${money(total)}` : ''}
+        </div>
+        <div style={{ fontSize: ts(11), color: owed ? T.amber : T.textFaint, marginTop: 1 }}>{subtitle}</div>
+      </div>
+      <Ic d="M9 18l6-6-6-6" size={15} color={T.textFaint} sw={2} />
     </div>
   );
 }

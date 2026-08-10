@@ -1,41 +1,55 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { TripMap } from '../components/TripMap';
+import { PlaceSearch } from '../components/PlaceSearch';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { fetchGauge, findNearbyKnownGauges } from '../lib/usgs';
-import { fetchCurrentWeather } from '../lib/weather';
-import { getCurrentUserId } from '../lib/storage';
+import { fetchWeatherAtTime } from '../lib/weather';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
-import { EmojiPicker } from '../components/EmojiPicker';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 import { ts } from '../lib/textScale';
 
-export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, locations = [], defaultLocationId = null }) {
-  const initialObservedAt = initialEntry?.observedAt ? new Date(initialEntry.observedAt) : new Date();
-  const [title, setTitle]         = useState(initialEntry?.title || '');
+/**
+ * Entry capture inside an event.
+ *
+ * The event already establishes WHERE (its location) and WHEN (its observedAt),
+ * so this form does not re-ask for either. It only collects what is specific to
+ * this observation. Anything the app can derive — coordinates, time, weather at
+ * that time, river flow at that time — is derived, not typed.
+ *
+ * `event` supplies the time/place context. When it is absent (legacy callers) the
+ * form falls back to the selected location and "now".
+ */
+export function EntryForm({
+  type,
+  trip,
+  onSave,
+  onCancel,
+  initialEntry = null,
+  locations = [],
+  defaultLocationId = null,
+  event = null,
+}) {
   const [notes, setNotes]         = useState(initialEntry?.notes || '');
-  const [photoNotes, setPhotoNotes] = useState(initialEntry?.photoNotes || '');
-  const [videoNotes, setVideoNotes] = useState(initialEntry?.videoNotes || '');
-  const [voiceNotes, setVoiceNotes] = useState(initialEntry?.voiceNotes || '');
   const [photoFiles, setPhotoFiles] = useState(initialEntry?.photoFiles || []);
   const [videoFiles, setVideoFiles] = useState(initialEntry?.videoFiles || []);
   const [voiceFiles, setVoiceFiles] = useState(initialEntry?.voiceFiles || []);
   const [rating, setRating]       = useState(initialEntry?.rating || 0);
   const [featureType, setFeatureType] = useState(initialEntry?.featureType || 'rapid');
-  const [mapTagSymbol, setMapTagSymbol] = useState(initialEntry?.mapTagSymbol || defaultTagSymbol(type, initialEntry?.featureType || 'rapid'));
   const [rapidClass, setRapidClass] = useState(initialEntry?.rapidClass || 'III');
   const [cfs, setCfs]             = useState(initialEntry?.cfs != null ? String(initialEntry.cfs) : '');
   const [gaugeSiteId, setGaugeSiteId] = useState(initialEntry?.gaugeSiteId || '');
   const [gaugeSiteName, setGaugeSiteName] = useState(initialEntry?.gaugeSiteName || '');
-  const [observedTimeMode, setObservedTimeMode] = useState(initialEntry?.observedAt ? 'custom' : 'now');
-  const [observedDate, setObservedDate] = useState(toDateInput(initialObservedAt));
-  const [observedTime, setObservedTime] = useState(toTimeInput(initialObservedAt));
-  const [gpsMode, setGpsMode]     = useState(initialEntry?.lat && initialEntry?.lng ? 'pin' : 'now');
+  const [gaugeReadingAt, setGaugeReadingAt] = useState(initialEntry?.gaugeFetchedAt || null);
   const [position, setPosition]   = useState(null);
-  const [pinPos, setPinPos]       = useState(initialEntry?.lat && initialEntry?.lng ? { lat: initialEntry.lat, lng: initialEntry.lng } : null);
+  const [pinPos, setPinPos]       = useState(
+    initialEntry?.lat != null && initialEntry?.lng != null
+      ? { lat: initialEntry.lat, lng: initialEntry.lng }
+      : null,
+  );
+  const [adjustingPin, setAdjustingPin] = useState(false);
   const [gpsError, setGpsError]   = useState(null);
-  const [locationError, setLocationError] = useState(null);
   const [selectedLocationId, setSelectedLocationId] = useState(
     initialEntry?.locationId || defaultLocationId || locations[0]?.id || null
   );
@@ -58,34 +72,46 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
     };
   });
   const [weatherObservation, setWeatherObservation] = useState(initialEntry?.weatherObservation || '');
-  const [mediaMode, setMediaMode] = useState('photo');
+  const [mediaMode, setMediaMode] = useState(type === 'voice' ? 'voice' : type === 'video' ? 'video' : 'photo');
   const photoCaptureRef = useRef(null);
   const photoAttachRef = useRef(null);
   const videoCaptureRef = useRef(null);
   const videoAttachRef = useRef(null);
   const voiceCaptureRef = useRef(null);
   const voiceAttachRef = useRef(null);
+  // Imperative map handle, supplied by TripMap once its map exists.
+  const mapApiRef = useRef(null);
+  const handleMapReady = useCallback((api) => { mapApiRef.current = api; }, []);
 
-  // Auto-grab GPS on mount
+  const isRiver = ['river-feature', 'rapid', 'gauge'].includes(type);
+  const isCamp  = type === 'campsite';
+  const isRiverFeature = type === 'river-feature' || type === 'rapid';
+  const isGaugeEvent = type === 'gauge';
+  const isWeatherEvent = type === 'weather';
+  const selectedLocation = locations.find((l) => l.id === selectedLocationId) || null;
+
+  // The observation inherits the event's time. Editing an existing entry keeps
+  // whatever it was saved with so re-saving never silently re-stamps it.
+  const observedAt = initialEntry?.observedAt || event?.observedAt || null;
+  const observedAtIso = observedAt || new Date().toISOString();
+  const observedIsHistoric = Boolean(observedAt);
+
+  // Coordinates: the pin wins if the user explicitly adjusted it, otherwise the
+  // event's location, otherwise a live GPS fix.
+  const coords = pinPos
+    || (selectedLocation?.lat != null ? { lng: selectedLocation.lng, lat: selectedLocation.lat } : null)
+    || position;
+
+  // Auto-grab GPS only when we have nothing better.
   useEffect(() => {
-    if (initialEntry?.lat && initialEntry?.lng) return;
+    if (pinPos || selectedLocation?.lat != null) return;
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       pos => setPosition({ lng: pos.coords.longitude, lat: pos.coords.latitude }),
       err => setGpsError(err.message),
       { enableHighAccuracy: true, timeout: 8000 },
     );
-  }, [initialEntry?.lat, initialEntry?.lng]);
-
-  const isRiver = ['river-feature', 'rapid', 'gauge'].includes(type);
-  const isCamp  = type === 'campsite';
-  const isRiverFeature = type === 'river-feature' || type === 'rapid';
-  const isGaugeEvent = type === 'gauge';
-  const selectedLocation = locations.find((l) => l.id === selectedLocationId) || null;
-  const coords  = selectedLocation
-    ? { lng: selectedLocation.lng, lat: selectedLocation.lat }
-    : (gpsMode === 'now' ? position : pinPos);
-  const userColor = colorForUser(getCurrentUserId());
+  }, [pinPos, selectedLocation?.lat]);
 
   async function lookupNearbyGauges() {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -93,7 +119,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
       return;
     }
     if (!coords?.lat || !coords?.lng) {
-      setGaugeError('Tag GPS first to find nearby gauges.');
+      setGaugeError('No coordinates yet for this event.');
       return;
     }
     setGaugesLoading(true);
@@ -108,7 +134,8 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
       const detailed = await Promise.all(
         nearby.map(async (g) => {
           try {
-            const live = await fetchGauge(g.id);
+            // Flow AT THE EVENT'S TIME, not right now.
+            const live = await fetchGauge(g.id, { at: observedAtIso });
             return {
               ...g,
               siteName: live.siteName || g.name,
@@ -117,13 +144,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
               updatedAt: live.updatedAt,
             };
           } catch {
-            return {
-              ...g,
-              siteName: g.name,
-              cfs: null,
-              gaugeHt: null,
-              updatedAt: null,
-            };
+            return { ...g, siteName: g.name, cfs: null, gaugeHt: null, updatedAt: null };
           }
         }),
       );
@@ -137,14 +158,13 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
     if (g.cfs != null) setCfs(String(Math.round(g.cfs)));
     setGaugeSiteId(g.id || '');
     setGaugeSiteName(g.siteName || g.name || '');
-    if (!title.trim()) setTitle(`${featureLabel(featureType)} near ${g.siteName.split(',')[0]}`);
-    const stamped = `Imported from ${g.siteName} (#${g.id})${g.cfs != null ? ` · ${Math.round(g.cfs)} CFS` : ''} at ${new Date().toLocaleString()}`;
-    setNotes(prev => (prev ? `${prev}\n${stamped}` : stamped));
+    setGaugeReadingAt(g.updatedAt || observedAtIso);
+    setGaugeError(null);
   }
 
-  async function pullCurrentWeather() {
+  async function pullWeatherForEvent() {
     if (!coords?.lat || !coords?.lng) {
-      setWeatherError('Tag GPS first to pull weather for this location.');
+      setWeatherError('No coordinates yet for this event.');
       return;
     }
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -154,58 +174,55 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
     setWeatherLoading(true);
     setWeatherError(null);
     try {
-      const weather = await fetchCurrentWeather(coords.lat, coords.lng);
+      // Conditions at the event's location and time — the archive API handles
+      // anything more than a couple of hours old.
+      const weather = await fetchWeatherAtTime(coords.lat, coords.lng, observedAtIso);
       setWeatherSnapshot(weather);
     } catch (err) {
-      setWeatherError(err?.message || 'Could not fetch current weather.');
+      setWeatherError(err?.message || 'Could not fetch weather for that time.');
     } finally {
       setWeatherLoading(false);
     }
   }
 
   function handleSave() {
-    if (locations.length && !selectedLocationId) {
-      setLocationError('Select a location for this entry.');
-      return;
-    }
-
     const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-    const weatherPending = type === 'weather' && coords?.lat != null && coords?.lng != null && (!weatherSnapshot || isOffline);
-    const gaugePending = type === 'gauge' && Boolean(gaugeSiteId) && (!cfs || isOffline);
+    const weatherPending = isWeatherEvent && coords?.lat != null && coords?.lng != null && (!weatherSnapshot || isOffline);
+    const gaugePending = isGaugeEvent && Boolean(gaugeSiteId) && (!cfs || isOffline);
 
     onSave({
       type,
       locationId: selectedLocationId || undefined,
       locationName: selectedLocation?.name,
       locationType: selectedLocation?.type,
-      title: title || defaultTitle(type),
+      title: defaultTitle(type),
       notes,
-      photoNotes: photoNotes || undefined,
-      videoNotes: videoNotes || undefined,
-      voiceNotes: voiceNotes || undefined,
       photoFiles: photoFiles.length ? photoFiles : undefined,
       videoFiles: videoFiles.length ? videoFiles : undefined,
       voiceFiles: voiceFiles.length ? voiceFiles : undefined,
       rating: isCamp ? rating : undefined,
       featureType: isRiverFeature ? featureType : undefined,
-      mapTagSymbol: mapTagSymbol || defaultTagSymbol(type, featureType),
+      mapTagSymbol: defaultTagSymbol(type, featureType),
       rapidClass: isRiverFeature && featureType === 'rapid' ? rapidClass : undefined,
       cfs: isRiver && cfs ? parseFloat(cfs) : undefined,
-      gaugeSiteId: type === 'gauge' ? (gaugeSiteId || undefined) : undefined,
-      gaugeSiteName: type === 'gauge' ? (gaugeSiteName || undefined) : undefined,
-      gaugeFetchedAt: type === 'gauge' && !gaugePending ? new Date().toISOString() : undefined,
+      gaugeSiteId: isGaugeEvent ? (gaugeSiteId || undefined) : undefined,
+      gaugeSiteName: isGaugeEvent ? (gaugeSiteName || undefined) : undefined,
+      gaugeFetchedAt: isGaugeEvent && !gaugePending ? (gaugeReadingAt || observedAtIso) : undefined,
       gaugeSyncPending: gaugePending || undefined,
-      weatherTempC: type === 'weather' ? weatherSnapshot?.temperatureC : undefined,
-      weatherFeelsLikeC: type === 'weather' ? weatherSnapshot?.feelsLikeC : undefined,
-      weatherWindKph: type === 'weather' ? weatherSnapshot?.windKph : undefined,
-      weatherWindDirectionDeg: type === 'weather' ? weatherSnapshot?.windDirectionDeg : undefined,
-      weatherCode: type === 'weather' ? weatherSnapshot?.weatherCode : undefined,
-      weatherSummary: type === 'weather' ? weatherSnapshot?.summary : undefined,
-      weatherFetchedAt: type === 'weather' ? weatherSnapshot?.fetchedAt : undefined,
-      weatherSource: type === 'weather' ? weatherSnapshot?.source : undefined,
-      weatherObservation: type === 'weather' ? (weatherObservation || undefined) : undefined,
+      // Requested time is what the enrichment retry keys off when offline.
+      gaugeRequestedAt: isGaugeEvent ? observedAtIso : undefined,
+      weatherTempC: isWeatherEvent ? weatherSnapshot?.temperatureC : undefined,
+      weatherFeelsLikeC: isWeatherEvent ? weatherSnapshot?.feelsLikeC : undefined,
+      weatherWindKph: isWeatherEvent ? weatherSnapshot?.windKph : undefined,
+      weatherWindDirectionDeg: isWeatherEvent ? weatherSnapshot?.windDirectionDeg : undefined,
+      weatherCode: isWeatherEvent ? weatherSnapshot?.weatherCode : undefined,
+      weatherSummary: isWeatherEvent ? weatherSnapshot?.summary : undefined,
+      weatherFetchedAt: isWeatherEvent ? weatherSnapshot?.fetchedAt : undefined,
+      weatherSource: isWeatherEvent ? weatherSnapshot?.source : undefined,
+      weatherObservation: isWeatherEvent ? (weatherObservation || undefined) : undefined,
+      weatherRequestedAt: isWeatherEvent ? observedAtIso : undefined,
       weatherSyncPending: weatherPending || undefined,
-      observedAt: resolveObservedAt({ mode: observedTimeMode, observedDate, observedTime }),
+      observedAt: observedAtIso,
       lng: coords?.lng,
       lat: coords?.lat,
     });
@@ -215,19 +232,12 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
   const FEATURE_TYPES = ['rapid', 'obstruction', 'possible camp', 'wildlife', 'hazard', 'portage'];
   const typeColor = isRiver ? '#3A72A8' : isCamp ? T.amber : T.accent;
   const activeMediaFiles = mediaMode === 'photo' ? photoFiles : mediaMode === 'video' ? videoFiles : voiceFiles;
-  const activeMediaNotes = mediaMode === 'photo' ? photoNotes : mediaMode === 'video' ? videoNotes : voiceNotes;
   const activeCaptureRef = mediaMode === 'photo' ? photoCaptureRef : mediaMode === 'video' ? videoCaptureRef : voiceCaptureRef;
   const activeAttachRef = mediaMode === 'photo' ? photoAttachRef : mediaMode === 'video' ? videoAttachRef : voiceAttachRef;
   const activeAccept = mediaMode === 'photo' ? 'image/*' : mediaMode === 'video' ? 'video/*' : 'audio/*';
   const activeCaptureMode = mediaMode === 'voice' ? 'microphone' : 'environment';
   const activeCaptureLabel = mediaMode === 'photo' ? 'Take Photo' : mediaMode === 'video' ? 'Record Video' : 'Record Voice';
   const activeAttachLabel = mediaMode === 'photo' ? 'Add Photo' : mediaMode === 'video' ? 'Add Video' : 'Add Audio';
-
-  function setCurrentObservedTime() {
-    const now = new Date();
-    setObservedDate(toDateInput(now));
-    setObservedTime(toTimeInput(now));
-  }
 
   async function addMediaFiles(mode, fileList) {
     if (mode === 'video' && !VIDEO_ENABLED) return;
@@ -255,12 +265,6 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
     if (mode === 'voice') setVoiceFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function setMediaNotes(mode, value) {
-    if (mode === 'photo') setPhotoNotes(value);
-    if (mode === 'video') setVideoNotes(value);
-    if (mode === 'voice') setVoiceNotes(value);
-  }
-
   return (
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
 
@@ -271,33 +275,34 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color={T.text} sw={2} />
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: ts(19), fontWeight: 800, color: T.text, letterSpacing: -.4, textTransform: 'capitalize' }}>
-              {initialEntry ? 'Edit' : 'Log'} {typeLabel(type)}
+              {initialEntry ? 'Edit' : 'Add'} {typeLabel(type)}
+            </div>
+            {/* The inherited context, stated once, read-only. */}
+            <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 2,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {[event?.name || selectedLocation?.name, formatWhen(observedAtIso)].filter(Boolean).join(' · ')}
             </div>
           </div>
-          <div style={{ width: 10, height: 10, borderRadius: 5, background: typeColor }} />
+          <div style={{ width: 10, height: 10, borderRadius: 5, background: typeColor, flexShrink: 0 }} />
         </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
 
-        {/* Title */}
-        {!!locations.length && (
+        {/* Location picker only when there is a real choice to make. */}
+        {locations.length > 1 && (
           <div style={{ marginBottom: 16 }}>
-            <Label>Attach To Location</Label>
+            <Label>Location</Label>
             <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
               {locations.map((loc) => (
                 <div
                   key={loc.id}
-                  onClick={() => { setSelectedLocationId(loc.id); setLocationError(null); }}
+                  onClick={() => setSelectedLocationId(loc.id)}
                   style={{
-                    flexShrink: 0,
-                    padding: '8px 12px',
-                    borderRadius: 16,
-                    cursor: 'pointer',
-                    fontSize: ts(13),
-                    fontWeight: 700,
+                    flexShrink: 0, padding: '8px 12px', borderRadius: 16, cursor: 'pointer',
+                    fontSize: ts(13), fontWeight: 700,
                     background: selectedLocationId === loc.id ? '#2A5C8E' : T.card,
                     color: selectedLocationId === loc.id ? 'white' : T.textSub,
                     border: selectedLocationId === loc.id ? 'none' : `1px solid ${T.border}`,
@@ -307,37 +312,12 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
                 </div>
               ))}
             </div>
-            {!!selectedLocation && (
-              <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 6 }}>
-                {selectedLocation.type} · {selectedLocation.lat?.toFixed(5)}, {selectedLocation.lng?.toFixed(5)}
-              </div>
-            )}
-            {locationError && <div style={{ fontSize: ts(13), color: T.amber, marginTop: 6 }}>{locationError}</div>}
           </div>
         )}
-
-        {locations.length === 0 && (
-          <div style={{ marginBottom: 16, background: T.card, border: `1px dashed ${T.border}`, borderRadius: 10, padding: '10px 11px' }}>
-            <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>No trip locations yet</div>
-            <div style={{ fontSize: ts(13), color: T.textFaint, marginTop: 3 }}>
-              Create a map location from the Trip page first, then add entries to it.
-            </div>
-          </div>
-        )}
-
-        <div style={{ marginBottom: 16 }}>
-          <Label>Title</Label>
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder={defaultTitle(type)}
-            style={inputStyle(T)}
-          />
-        </div>
 
         {isRiverFeature && (
           <div style={{ marginBottom: 16 }}>
-            <Label>River Feature Type</Label>
+            <Label>Feature</Label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
               {FEATURE_TYPES.map(ft => (
                 <div key={ft} onClick={() => setFeatureType(ft)}
@@ -353,57 +333,6 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
           </div>
         )}
 
-        <div style={{ marginBottom: 16 }}>
-          <EmojiPicker
-            label="Map tag icon"
-            value={mapTagSymbol}
-            onChange={setMapTagSymbol}
-            accentColor={userColor}
-          />
-          <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 4 }}>Tag color follows your user color.</div>
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <Label>Observed Time</Label>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-            {[{ id: 'now', label: 'Use Current Time' }, { id: 'custom', label: 'Pick Date/Time' }].map((opt) => (
-              <div key={opt.id} onClick={() => setObservedTimeMode(opt.id)}
-                   style={{ padding: '7px 12px', borderRadius: 14, cursor: 'pointer', fontSize: ts(12), fontWeight: 700,
-                            background: observedTimeMode === opt.id ? '#2A5C8E' : T.bg,
-                            color: observedTimeMode === opt.id ? 'white' : T.textSub,
-                            border: observedTimeMode === opt.id ? 'none' : `1px solid ${T.border}` }}>
-                {opt.label}
-              </div>
-            ))}
-          </div>
-          {observedTimeMode === 'custom' ? (
-            <>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input
-                  value={observedDate}
-                  onChange={e => setObservedDate(e.target.value)}
-                  type="date"
-                  style={{ ...inputStyle(T), flex: 1 }}
-                />
-                <input
-                  value={observedTime}
-                  onChange={e => setObservedTime(e.target.value)}
-                  type="time"
-                  style={{ ...inputStyle(T), flex: 1 }}
-                />
-              </div>
-              <div onClick={setCurrentObservedTime}
-                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: T.bg,
-                            border: `1px solid ${T.border}`, borderRadius: 9, padding: '6px 9px', cursor: 'pointer' }}>
-                <span style={{ fontSize: ts(12), fontWeight: 700, color: T.textSub }}>Set to current time</span>
-              </div>
-            </>
-          ) : (
-            <div style={{ fontSize: ts(13), color: T.textFaint }}>This entry will save with the current time when you tap Save.</div>
-          )}
-        </div>
-
-        {/* Rapid class — river only */}
         {isRiverFeature && featureType === 'rapid' && (
           <div style={{ marginBottom: 16 }}>
             <Label>Rapid Class</Label>
@@ -423,157 +352,98 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
           </div>
         )}
 
-        {/* CFS — river only */}
-        {isRiver && (
-          <div style={{ marginBottom: 16 }}>
-            <Label>Flow (CFS)</Label>
-            <input
-              value={cfs}
-              onChange={e => setCfs(e.target.value)}
-              placeholder="e.g. 1240"
-              type="number"
-              style={inputStyle(T)}
-            />
-          </div>
-        )}
-
+        {/* River flow — fetched for the event's time, never typed by hand. */}
         {isGaugeEvent && (
           <div style={{ marginBottom: 16 }}>
-            <Label>Gauge Station</Label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <input
-                value={gaugeSiteId}
-                onChange={(e) => setGaugeSiteId(e.target.value)}
-                placeholder="USGS station id"
-                style={{ ...inputStyle(T), flex: 1 }}
-              />
-              <input
-                value={gaugeSiteName}
-                onChange={(e) => setGaugeSiteName(e.target.value)}
-                placeholder="Station name"
-                style={{ ...inputStyle(T), flex: 1 }}
-              />
-            </div>
-            {gaugeSiteId && !cfs && (
-              <div style={{ fontSize: ts(12), color: T.textFaint }}>
-                Flow can be synced later when you are back online.
+            <Label>River Flow{observedIsHistoric ? ' at event time' : ''}</Label>
+
+            {gaugeSiteName ? (
+              <div style={{ background: '#EAF3FB', border: '1px solid #3A72A835', borderRadius: 12, padding: '11px 12px', marginBottom: 8 }}>
+                <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{gaugeSiteName}</div>
+                <div style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 600, marginTop: 2 }}>
+                  {cfs ? `${Number(cfs).toLocaleString()} cfs` : 'Flow syncs when back online'}
+                </div>
+                <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 2 }}>
+                  {gaugeSiteId ? `#${gaugeSiteId} · ` : ''}reading for {formatWhen(gaugeReadingAt || observedAtIso)}
+                </div>
+                <button type="button" onClick={() => { setGaugeSiteId(''); setGaugeSiteName(''); setCfs(''); setGaugeReadingAt(null); }}
+                        style={linkBtnStyle}>
+                  Choose a different station
+                </button>
               </div>
-            )}
-          </div>
-        )}
-
-        {(isRiverFeature || isGaugeEvent) && (
-          <div style={{ marginBottom: 16 }}>
-            <Label>Nearby USGS Gauges</Label>
-            <div
-              onClick={lookupNearbyGauges}
-              style={{
-                background: gaugesLoading ? T.bg : '#E4EFF8',
-                border: `1px solid ${gaugesLoading ? T.border : '#3A72A840'}`,
-                borderRadius: 12,
-                padding: '10px 12px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                cursor: 'pointer',
-                marginBottom: 10,
-              }}
-            >
-              <Ic d={ICONS.gauge} size={14} color={gaugesLoading ? T.textFaint : '#2A5C8E'} sw={1.8} />
-              <span style={{ fontSize: ts(13), fontWeight: 700, color: gaugesLoading ? T.textFaint : '#2A5C8E' }}>
-                {gaugesLoading ? 'Looking up gauges...' : 'Find nearby gauges'}
-              </span>
-            </div>
-
-            {gaugeError && <div style={{ fontSize: ts(13), color: T.amber, marginBottom: 8 }}>{gaugeError}</div>}
-
-            {!!nearbyGauges.length && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {nearbyGauges.map(g => (
-                  <div key={g.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 11px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{g.siteName}</div>
-                        <div style={{ fontSize: ts(12), color: T.textFaint }}>
-                          #{g.id} · {g.distanceMiles.toFixed(1)} mi away
+            ) : (
+              <>
+                <div onClick={lookupNearbyGauges} style={fetchBtnStyle(gaugesLoading)}>
+                  <Ic d={ICONS.gauge} size={14} color={gaugesLoading ? T.textFaint : '#2A5C8E'} sw={1.8} />
+                  <span style={{ fontSize: ts(13), fontWeight: 700, color: gaugesLoading ? T.textFaint : '#2A5C8E' }}>
+                    {gaugesLoading ? 'Looking up gauges…' : 'Find nearby gauges'}
+                  </span>
+                </div>
+                {gaugeError && <div style={{ fontSize: ts(13), color: T.amber, marginTop: 8 }}>{gaugeError}</div>}
+                {!!nearbyGauges.length && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                    {nearbyGauges.map(g => (
+                      <div key={g.id} onClick={() => importGaugeFlow(g)}
+                           style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{g.siteName}</div>
+                          <div style={{ fontSize: ts(12), color: T.textFaint }}>{g.distanceMiles.toFixed(1)} mi away</div>
+                          <div style={{ fontSize: ts(12), color: '#2A5C8E', marginTop: 2 }}>
+                            {g.cfs != null ? `${Math.round(g.cfs).toLocaleString()} cfs` : 'Flow unavailable'}
+                            {g.gaugeHt != null ? ` · ${g.gaugeHt.toFixed(1)} ft` : ''}
+                          </div>
                         </div>
-                        <div style={{ fontSize: ts(12), color: '#2A5C8E', marginTop: 2 }}>
-                          {g.cfs != null ? `${Math.round(g.cfs).toLocaleString()} CFS` : 'Flow unavailable'}
-                          {g.gaugeHt != null ? ` · ${g.gaugeHt.toFixed(1)} ft` : ''}
-                        </div>
+                        <Ic d="M9 18l6-6-6-6" size={14} color={T.textFaint} sw={2} />
                       </div>
-                      <div
-                        onClick={() => importGaugeFlow(g)}
-                        style={{
-                          flexShrink: 0,
-                          background: '#3A72A8',
-                          color: 'white',
-                          borderRadius: 9,
-                          padding: '8px 12px',
-                          fontSize: ts(12),
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Import
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
         )}
 
-        {type === 'weather' && (
+        {/* Weather — fetched for the event's location and time. */}
+        {isWeatherEvent && (
           <div style={{ marginBottom: 16 }}>
-            <Label>Current Conditions</Label>
-            <div
-              onClick={pullCurrentWeather}
-              style={{
-                background: weatherLoading ? T.bg : '#E4EFF8',
-                border: `1px solid ${weatherLoading ? T.border : '#3A72A840'}`,
-                borderRadius: 12,
-                padding: '10px 12px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                cursor: 'pointer',
-                marginBottom: 10,
-              }}
-            >
-              <Ic d={ICONS.compass} size={14} color={weatherLoading ? T.textFaint : '#2A5C8E'} sw={1.8} />
-              <span style={{ fontSize: ts(13), fontWeight: 700, color: weatherLoading ? T.textFaint : '#2A5C8E' }}>
-                {weatherLoading ? 'Fetching weather...' : 'Pull current weather'}
-              </span>
-            </div>
+            <Label>Conditions{observedIsHistoric ? ' at event time' : ''}</Label>
+
+            {weatherSnapshot ? (
+              <div style={{ background: '#EBF3FA', border: '1px solid #517EA335', borderRadius: 12, padding: '11px 12px', marginBottom: 8 }}>
+                <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{weatherSnapshot.summary || 'Conditions'}</div>
+                <div style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 600, marginTop: 2 }}>
+                  {weatherSnapshot.temperatureC != null ? `${Math.round(cToF(weatherSnapshot.temperatureC))}°F` : 'Temp n/a'}
+                  {weatherSnapshot.feelsLikeC != null ? ` · feels ${Math.round(cToF(weatherSnapshot.feelsLikeC))}°F` : ''}
+                  {weatherSnapshot.windKph != null ? ` · wind ${Math.round(weatherSnapshot.windKph)} km/h` : ''}
+                </div>
+                <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 2 }}>
+                  for {formatWhen(weatherSnapshot.fetchedAt || observedAtIso)}
+                </div>
+                <button type="button" onClick={() => void pullWeatherForEvent()} style={linkBtnStyle}>
+                  {weatherLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+            ) : (
+              <div onClick={() => void pullWeatherForEvent()} style={fetchBtnStyle(weatherLoading)}>
+                <Ic d={ICONS.compass} size={14} color={weatherLoading ? T.textFaint : '#2A5C8E'} sw={1.8} />
+                <span style={{ fontSize: ts(13), fontWeight: 700, color: weatherLoading ? T.textFaint : '#2A5C8E' }}>
+                  {weatherLoading ? 'Fetching weather…' : `Get weather for ${formatWhen(observedAtIso)}`}
+                </span>
+              </div>
+            )}
 
             {weatherError && <div style={{ fontSize: ts(13), color: T.amber, marginBottom: 8 }}>{weatherError}</div>}
-
-            {weatherSnapshot && (
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 11px', marginBottom: 8 }}>
-                <div style={{ fontSize: ts(14), fontWeight: 700, color: T.text, marginBottom: 2 }}>{weatherSnapshot.summary || 'Conditions'}</div>
-                <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>
-                  {weatherSnapshot.fetchedAt ? new Date(weatherSnapshot.fetchedAt).toLocaleString() : 'Now'}
-                </div>
-                <div style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 600 }}>
-                  {weatherSnapshot.temperatureC != null ? `${Math.round(cToF(weatherSnapshot.temperatureC))}°F` : 'Temp n/a'}
-                  {weatherSnapshot.windKph != null ? ` · Wind ${Math.round(weatherSnapshot.windKph)} km/h` : ''}
-                </div>
-              </div>
-            )}
 
             <textarea
               value={weatherObservation}
               onChange={(e) => setWeatherObservation(e.target.value)}
-              placeholder="Personal weather observations (cloud cover, visibility, gusts, etc.)"
+              placeholder="What you actually saw (cloud cover, gusts, visibility…)"
               rows={2}
               style={{ ...inputStyle(T), resize: 'none', height: 'auto' }}
             />
           </div>
         )}
 
-        {/* Star rating — campsite only */}
         {isCamp && (
           <div style={{ marginBottom: 16 }}>
             <Label>Site Rating</Label>
@@ -591,20 +461,9 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
           </div>
         )}
 
-        {/* Notes */}
+        {/* Media — one section, one caption (the notes field below). */}
         <div style={{ marginBottom: 16 }}>
-          <Label>Notes</Label>
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="Describe what you found..."
-            rows={3}
-            style={{ ...inputStyle(T), resize: 'none', height: 'auto' }}
-          />
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <Label>Media</Label>
+          <Label>Photos & Audio</Label>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             {[
               { id: 'photo', label: `Photos (${photoFiles.length})`, icon: ICONS.camera },
@@ -641,7 +500,7 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
           <input ref={activeAttachRef} type="file" accept={activeAccept} style={{ display: 'none' }} onChange={(e) => addMediaFiles(mediaMode, e.target.files)} />
 
           {!!activeMediaFiles.length && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {activeMediaFiles.map((f, idx) => (
                 <div key={f.id || `${f.name}-${idx}`} style={{ position: 'relative' }}>
                   {f.thumbDataUrl || f.id ? (
@@ -661,60 +520,64 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
               ))}
             </div>
           )}
+        </div>
 
+        {/* One notes field, captioning the whole entry. */}
+        <div style={{ marginBottom: 16 }}>
+          <Label>Notes</Label>
           <textarea
-            value={activeMediaNotes}
-            onChange={(e) => setMediaNotes(mediaMode, e.target.value)}
-            placeholder={mediaMode === 'photo' ? 'Photo caption (optional)' : mediaMode === 'video' ? 'Video note (optional)' : 'Audio summary (optional)'}
-            rows={2}
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Describe what you found…"
+            rows={3}
             style={{ ...inputStyle(T), resize: 'none', height: 'auto' }}
           />
         </div>
 
-        {/* GPS */}
+        {/* Coordinates are inherited; adjusting them is opt-in. */}
         <div style={{ marginBottom: 16 }}>
-          <Label>GPS Tag</Label>
-          {!!selectedLocation && (
-            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', fontSize: ts(13), color: T.textSub, marginBottom: 10 }}>
-              GPS is linked from location: <span style={{ color: '#2A5C8E', fontWeight: 700 }}>{selectedLocation.name}</span>
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            {[
-              { id: 'now', label: 'Tag Now', sub: position ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}` : 'Getting location…' },
-              { id: 'pin', label: 'Pin on Map', sub: pinPos ? `${pinPos.lat.toFixed(5)}, ${pinPos.lng.toFixed(5)}` : 'Tap map below' },
-            ].map(opt => (
-              <div key={opt.id} onClick={() => setGpsMode(opt.id)}
-                   style={{ flex: 1, padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
-                             background: gpsMode === opt.id ? T.accentLight : T.card,
-                             border: `1.5px solid ${gpsMode === opt.id ? T.accent : T.border}` }}>
-                <div style={{ fontSize: ts(12), fontWeight: 700, color: gpsMode === opt.id ? T.accent : T.text }}>{opt.label}</div>
-                <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 2 }}>{opt.sub}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: adjustingPin ? 8 : 0 }}>
+            <div style={{ minWidth: 0 }}>
+              <Label>Coordinates</Label>
+              <div style={{ fontSize: ts(12), color: T.textFaint }}>
+                {coords
+                  ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`
+                  : (gpsError ? `⚠ ${gpsError}` : 'Getting location…')}
+                {pinPos ? ' · adjusted' : selectedLocation ? ` · from ${selectedLocation.name}` : ''}
               </div>
-            ))}
+            </div>
+            <button type="button" onClick={() => setAdjustingPin((v) => !v)} style={linkBtnStyle}>
+              {adjustingPin ? 'Done' : 'Adjust'}
+            </button>
           </div>
 
-          {gpsError && (
-            <div style={{ fontSize: ts(13), color: T.amber, marginBottom: 8 }}>⚠ {gpsError}</div>
-          )}
-
-          {gpsMode === 'pin' && (
-            <div style={{ borderRadius: 12, overflow: 'hidden', height: 200 }}>
-              <TripMap
-                zoom={13}
-                center={selectedLocation ? { lng: selectedLocation.lng, lat: selectedLocation.lat } : position}
-                track={trip?.track ?? []}
-                interactive
-                onMapClick={pos => setPinPos(pos)}
+          {adjustingPin && (
+            <>
+              <PlaceSearch
+                onPick={({ lng, lat, bbox }) => mapApiRef.current?.flyTo({ lng, lat, bbox })}
+                placeholder="Search a place to move the map…"
               />
-              {pinPos && (
-                <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)',
-                               background: T.accent, borderRadius: 8, padding: '4px 10px',
-                               fontSize: 11, fontWeight: 700, color: 'white', pointerEvents: 'none' }}>
-                  ✓ Pin placed
-                </div>
-              )}
-            </div>
+              <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', height: 240 }}>
+                <TripMap
+                  zoom={14}
+                  center={coords || undefined}
+                  track={trip?.track ?? []}
+                  interactive
+                  pin={coords}
+                  onPinChange={(p) => setPinPos(p)}
+                  onMapClick={(p) => setPinPos(p)}
+                  onReady={handleMapReady}
+                />
+              </div>
+              <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 6, lineHeight: 1.4 }}>
+                Drag the pin or tap the map to set the exact spot.
+                {pinPos && selectedLocation && (
+                  <button type="button" onClick={() => setPinPos(null)} style={{ ...linkBtnStyle, marginLeft: 6 }}>
+                    Reset to {selectedLocation.name}
+                  </button>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -723,10 +586,9 @@ export function EntryForm({ type, trip, onSave, onCancel, initialEntry = null, l
       <div style={{ padding: '12px 16px 16px', background: T.card, borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
         <div onClick={handleSave}
              style={{ background: typeColor, borderRadius: 14, padding: '15px', textAlign: 'center',
-                      boxShadow: `0 4px 16px ${typeColor}50`, cursor: locations.length && !selectedLocationId ? 'not-allowed' : 'pointer',
-                      opacity: locations.length && !selectedLocationId ? 0.6 : 1 }}>
+                      boxShadow: `0 4px 16px ${typeColor}50`, cursor: 'pointer' }}>
           <span style={{ fontSize: ts(16), fontWeight: 800, color: 'white', letterSpacing: -.2 }}>
-            {initialEntry ? 'Update Entry' : 'Save Entry'}
+            {initialEntry ? 'Update' : 'Save'}
           </span>
         </div>
       </div>
@@ -744,14 +606,51 @@ const inputStyle = (T) => ({
   fontSize: ts(14), fontFamily: F, color: T.text, background: T.card, outline: 'none', boxSizing: 'border-box',
 });
 
+const linkBtnStyle = {
+  border: 'none',
+  background: 'transparent',
+  color: '#2A5C8E',
+  fontSize: ts(11.5),
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: F,
+  padding: '4px 0 0',
+};
+
+function fetchBtnStyle(loading) {
+  return {
+    background: loading ? T.bg : '#E4EFF8',
+    border: `1px solid ${loading ? T.border : '#3A72A840'}`,
+    borderRadius: 12,
+    padding: '11px 13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    cursor: loading ? 'default' : 'pointer',
+    marginBottom: 8,
+  };
+}
+
+/** "Jul 21, 6:40 PM" — or "Today, 6:40 PM" for same-day. */
+function formatWhen(iso) {
+  if (!iso) return 'now';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'now';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (sameDay) return `today, ${time}`;
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${time}`;
+}
+
 function defaultTitle(type) {
   const map = { campsite: 'Campsite', water: 'Water Crossing', wildlife: 'Wildlife Sighting',
-                rapid: 'Rapid', 'river-feature': 'River Feature', gauge: 'River Flow Check', weather: 'Weather Check', note: 'Event', food: 'Meal', voice: 'Voice Note', video: mediaCaptureLabel('Photo / Video'), 'custom-event': 'Custom Event' };
+                rapid: 'Rapid', 'river-feature': 'River Feature', gauge: 'River Flow Check', weather: 'Weather Check', note: 'Note', food: 'Meal', voice: 'Voice Note', video: mediaCaptureLabel('Photo / Video'), 'custom-event': 'Custom Event' };
   return map[type] || type;
 }
 
 function typeLabel(type) {
-  const map = { 'river-feature': 'River Feature', 'custom-event': 'Custom Event', gauge: 'River Flow', weather: 'Weather', video: mediaCaptureLabel('Photo / Video') };
+  const map = { 'river-feature': 'River Feature', 'custom-event': 'Custom Event', gauge: 'River Flow', weather: 'Weather', video: mediaCaptureLabel('Photo / Video'), note: 'Note' };
   return map[type] || type;
 }
 
@@ -765,29 +664,6 @@ function featureLabel(featureType) {
     portage: 'Portage',
   };
   return map[featureType] || featureType;
-}
-
-function toDateInput(date) {
-  const pad = (n) => String(n).padStart(2, '0');
-  const y = date.getFullYear();
-  const m = pad(date.getMonth() + 1);
-  const d = pad(date.getDate());
-  return `${y}-${m}-${d}`;
-}
-
-function toTimeInput(date) {
-  const pad = (n) => String(n).padStart(2, '0');
-  const h = pad(date.getHours());
-  const min = pad(date.getMinutes());
-  return `${h}:${min}`;
-}
-
-function resolveObservedAt({ mode, observedDate, observedTime }) {
-  if (mode === 'now') return new Date().toISOString();
-  if (!observedDate) return new Date().toISOString();
-  const composed = `${observedDate}T${observedTime || '00:00'}`;
-  const parsed = new Date(composed);
-  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
 function classColor(cls) {
@@ -820,45 +696,6 @@ function defaultTagSymbol(type, featureType) {
   return map[type] || '📍';
 }
 
-function colorForUser(authorId) {
-  const palette = ['#3A72A8', '#B8702E', '#4A7A34', '#7A4ACF', '#C05050', '#2A5C8E', '#9A6D1A'];
-  let hash = 0;
-  const id = authorId || 'unknown';
-  for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash) + id.charCodeAt(i);
-  return palette[Math.abs(hash) % palette.length];
-}
-
 function cToF(c) {
   return (c * 9) / 5 + 32;
 }
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-function resizeDataUrl(dataUrl, maxSide, mimeType) {
-  const mime = mimeType === 'image/png' ? 'image/png' : mimeType === 'image/webp' ? 'image/webp' : 'image/jpeg';
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const ratio = Math.min(1, maxSide / Math.max(img.width, img.height));
-      const w = Math.max(1, Math.round(img.width * ratio));
-      const h = Math.max(1, Math.round(img.height * ratio));
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { reject(new Error('no ctx')); return; }
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL(mime, 0.72));
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-}
-

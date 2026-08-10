@@ -143,14 +143,6 @@ export function formatExpenseContext(expense) {
   return 'Trip';
 }
 
-export function filterExpenses(expenses, scope, { locationId, eventId } = {}) {
-  const list = expenses || [];
-  if (scope === 'event' && eventId) return list.filter((e) => e.eventId === eventId);
-  if (scope === 'location' && locationId) return list.filter((e) => e.locationId === locationId);
-  if (scope === 'trip') return list.filter((e) => !e.eventId && !e.locationId);
-  return list;
-}
-
 export function money(value) {
   return `$${roundMoney(value).toFixed(2)}`;
 }
