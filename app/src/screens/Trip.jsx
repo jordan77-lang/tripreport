@@ -682,7 +682,16 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
               void onLocationCoverSelected(files);
             }}
             error={locationError}
-            onSearchPick={({ lng, lat, bbox }) => mapApiRef.current?.flyTo({ lng, lat, bbox })}
+            onSearchPick={({ lng, lat, bbox, setPin }) => {
+              // A typed coordinate is the answer, so it drops the pin; a named
+              // place only moves the viewport for the user to eyeball.
+              if (setPin) {
+                setLocationSource('map');
+                setLocationPin({ lat, lng });
+                setLocationError(null);
+              }
+              mapApiRef.current?.flyTo({ lng, lat, bbox, zoom: setPin ? 15 : undefined });
+            }}
             onCancel={() => { setAddingLocation(false); setLocationError(null); setLocCoverPhoto(null); }}
             onSave={saveLocation}
           />

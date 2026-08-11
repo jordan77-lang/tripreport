@@ -5,6 +5,7 @@ import { LOCATION_TYPES } from '../lib/locationTypes';
 import { EmojiPicker } from './EmojiPicker';
 import { MediaThumb } from './MediaThumb';
 import { PlaceSearch } from './PlaceSearch';
+import { parseCoordinates } from '../lib/coords';
 
 const PIN_SOURCES = [
   { id: 'map', label: 'Map pin' },
@@ -38,6 +39,19 @@ export function LocationSaveForm({
 }) {
   const [showMore, setShowMore] = useState(false);
   const set = (patch) => onDraftChange((d) => ({ ...d, ...patch }));
+
+  /**
+   * Pasting "45.56750, -115.19301" into the latitude field fills both, rather
+   * than leaving a full pair jammed in one box that then fails to parse.
+   */
+  function onCustomLatChange(value) {
+    const parsed = parseCoordinates(value);
+    if (parsed) {
+      set({ customLat: String(parsed.lat), customLng: String(parsed.lng) });
+      return;
+    }
+    set({ customLat: value });
+  }
 
   const pinStatus = locationSource === 'map'
     ? (locationPin ? `${locationPin.lat.toFixed(5)}, ${locationPin.lng.toFixed(5)}` : 'Tap the map to place a pin')
@@ -101,24 +115,64 @@ export function LocationSaveForm({
         ))}
       </div>
       {locationSource === 'custom' && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          <input
-            value={draft.customLat}
-            onChange={(e) => set({ customLat: e.target.value })}
-            placeholder="Latitude"
-            inputMode="decimal"
-            style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
-          />
-          <input
-            value={draft.customLng}
-            onChange={(e) => set({ customLng: e.target.value })}
-            placeholder="Longitude"
-            inputMode="decimal"
-            style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
-          />
-        </div>
+        <>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+            <input
+              value={draft.customLat}
+              onChange={(e) => onCustomLatChange(e.target.value)}
+              placeholder="Latitude"
+              inputMode="decimal"
+              style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+            />
+            <input
+              value={draft.customLng}
+              onChange={(e) => set({ customLng: e.target.value })}
+              placeholder="Longitude"
+              inputMode="decimal"
+              style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+            />
+          </div>
+          <div style={{ fontSize: ts(10.5), color: T.textFaint, marginBottom: 8, lineHeight: 1.4 }}>
+            Paste a full pair into Latitude (e.g. 45.56750, -115.19301) and it splits itself.
+          </div>
+        </>
       )}
       <div style={{ fontSize: ts(11), color: T.textFaint, marginBottom: 10 }}>{pinStatus}</div>
+        </>
+      )}
+
+      {/* When: always visible. A location logged after the trip needs a real date,
+          and hiding that behind a disclosure made "Now" a silent wrong default. */}
+      <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>When</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+        {TIME_MODES.map((opt) => (
+          <button key={opt.id} type="button" onClick={() => set({ timeMode: opt.id })} style={chipStyle(draft.timeMode === opt.id)}>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {draft.timeMode === 'current' && (
+        <div style={{ fontSize: ts(11), color: T.textFaint, marginBottom: 10 }}>
+          Stamped when you save — {new Date().toLocaleString()}
+        </div>
+      )}
+      {draft.timeMode === 'custom' && (
+        <input
+          type="datetime-local"
+          value={draft.observedAt}
+          onChange={(e) => set({ observedAt: e.target.value })}
+          style={inputStyle}
+        />
+      )}
+      {draft.timeMode === 'range' && (
+        <>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+            <input type="datetime-local" value={draft.observedStartAt} onChange={(e) => set({ observedStartAt: e.target.value })} style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+            <input type="datetime-local" value={draft.observedEndAt} onChange={(e) => set({ observedEndAt: e.target.value })} style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+          </div>
+          <div style={{ fontSize: ts(10.5), color: T.textFaint, marginBottom: 10 }}>
+            Arrived → left. Use this for a camp you stayed at over several days.
+          </div>
         </>
       )}
 
@@ -138,7 +192,7 @@ export function LocationSaveForm({
           padding: '4px 0 10px',
         }}
       >
-        {showMore ? '− Less options' : '+ More options (icon, notes, photo, time)'}
+        {showMore ? '− Less options' : '+ More options (icon, notes, photo)'}
       </button>
 
       {showMore && (
@@ -170,28 +224,6 @@ export function LocationSaveForm({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <MediaThumb media={coverPhoto} alt="Cover" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
               <span style={{ fontSize: 11, color: T.textFaint }}>{coverPhoto.name}</span>
-            </div>
-          )}
-          <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Time</div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-            {TIME_MODES.map((opt) => (
-              <button key={opt.id} type="button" onClick={() => set({ timeMode: opt.id })} style={chipStyle(draft.timeMode === opt.id)}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          {draft.timeMode === 'custom' && (
-            <input
-              type="datetime-local"
-              value={draft.observedAt}
-              onChange={(e) => set({ observedAt: e.target.value })}
-              style={inputStyle}
-            />
-          )}
-          {draft.timeMode === 'range' && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <input type="datetime-local" value={draft.observedStartAt} onChange={(e) => set({ observedStartAt: e.target.value })} style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
-              <input type="datetime-local" value={draft.observedEndAt} onChange={(e) => set({ observedEndAt: e.target.value })} style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
             </div>
           )}
         </>

@@ -574,8 +574,12 @@ export function EntryForm({
           {adjustingPin && (
             <>
               <PlaceSearch
-                onPick={({ lng, lat, bbox }) => mapApiRef.current?.flyTo({ lng, lat, bbox })}
-                placeholder="Search a place to move the map…"
+                onPick={({ lng, lat, bbox, setPin }) => {
+                  // Coordinates set the entry's exact spot; names only pan.
+                  if (setPin) setPinPos({ lat, lng });
+                  mapApiRef.current?.flyTo({ lng, lat, bbox, zoom: setPin ? 15 : undefined });
+                }}
+                placeholder="Search a place, or paste coordinates…"
               />
               <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', height: 240 }}>
                 <TripMap
