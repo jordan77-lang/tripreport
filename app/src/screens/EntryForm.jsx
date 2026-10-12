@@ -5,8 +5,10 @@ import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { fetchGauge, findNearbyKnownGauges } from '../lib/usgs';
 import { fetchWeatherAtTime } from '../lib/weather';
-import { createPhotoMediaFromFile } from '../lib/media';
+import { createPhotoMediaFromFile, createAudioMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
+import { VoiceRecorder } from '../components/VoiceRecorder';
+import { AudioAttachment } from '../components/AudioAttachment';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 import { ts } from '../lib/textScale';
 
@@ -30,6 +32,8 @@ export function EntryForm({
   locations = [],
   defaultLocationId = null,
   event = null,
+  allowUnlinked = false,
+  saveError = null,
 }) {
   const [notes, setNotes]         = useState(initialEntry?.notes || '');
   const [photoFiles, setPhotoFiles] = useState(initialEntry?.photoFiles || []);
@@ -51,7 +55,7 @@ export function EntryForm({
   const [adjustingPin, setAdjustingPin] = useState(false);
   const [gpsError, setGpsError]   = useState(null);
   const [selectedLocationId, setSelectedLocationId] = useState(
-    initialEntry?.locationId || defaultLocationId || locations[0]?.id || null
+    initialEntry?.locationId || defaultLocationId || (allowUnlinked ? null : locations[0]?.id) || null
   );
   const [nearbyGauges, setNearbyGauges] = useState([]);
   const [gaugesLoading, setGaugesLoading] = useState(false);
@@ -72,7 +76,11 @@ export function EntryForm({
     };
   });
   const [weatherObservation, setWeatherObservation] = useState(initialEntry?.weatherObservation || '');
-  const [mediaMode, setMediaMode] = useState(type === 'voice' ? 'voice' : type === 'video' ? 'video' : 'photo');
+  const [mediaMode, setMediaMode] = useState(type === 'voice' ? 'voice' : type === 'video' && VIDEO_ENABLED ? 'video' : 'photo');
+  const [recording, setRecording] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const [mediaError, setMediaError] = useState(null);
+  const [capturedAt] = useState(() => new Date().toISOString());
   const photoCaptureRef = useRef(null);
   const photoAttachRef = useRef(null);
   const videoCaptureRef = useRef(null);
@@ -93,7 +101,7 @@ export function EntryForm({
   // The observation inherits the event's time. Editing an existing entry keeps
   // whatever it was saved with so re-saving never silently re-stamps it.
   const observedAt = initialEntry?.observedAt || event?.observedAt || null;
-  const observedAtIso = observedAt || new Date().toISOString();
+  const observedAtIso = observedAt || capturedAt;
   const observedIsHistoric = Boolean(observedAt);
 
   // Coordinates: the pin wins if the user explicitly adjusted it, otherwise the
@@ -186,6 +194,7 @@ export function EntryForm({
   }
 
   function handleSave() {
+    if (mediaBusy || recording) return;
     const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
     const weatherPending = isWeatherEvent && coords?.lat != null && coords?.lng != null && (!weatherSnapshot || isOffline);
     const gaugePending = isGaugeEvent && Boolean(gaugeSiteId) && (!cfs || isOffline);
@@ -236,27 +245,33 @@ export function EntryForm({
   const activeAttachRef = mediaMode === 'photo' ? photoAttachRef : mediaMode === 'video' ? videoAttachRef : voiceAttachRef;
   const activeAccept = mediaMode === 'photo' ? 'image/*' : mediaMode === 'video' ? 'video/*' : 'audio/*';
   const activeCaptureMode = mediaMode === 'voice' ? 'microphone' : 'environment';
-  const activeCaptureLabel = mediaMode === 'photo' ? 'Take Photo' : mediaMode === 'video' ? 'Record Video' : 'Record Voice';
+  const activeCaptureLabel = mediaMode === 'photo' ? 'Take Photo' : mediaMode === 'video' ? 'Record Video' : 'Choose voice recording';
   const activeAttachLabel = mediaMode === 'photo' ? 'Add Photo' : mediaMode === 'video' ? 'Add Video' : 'Add Audio';
 
   async function addMediaFiles(mode, fileList) {
-    if (mode === 'video' && !VIDEO_ENABLED) return;
+    if (mediaBusy || (mode === 'video' && !VIDEO_ENABLED)) return;
     const rawFiles = Array.from(fileList || []);
     if (!rawFiles.length) return;
-    const files = await Promise.all(rawFiles.map(async (f) => {
-      const meta = { name: f.name, size: f.size, type: f.type };
-      if (f.type?.startsWith('image/') && trip?.id) {
-        try {
-          return await createPhotoMediaFromFile(f, trip.id);
-        } catch {
-          return meta;
+    setMediaBusy(true);
+    setMediaError(null);
+    try {
+      for (const file of rawFiles) {
+        if (mode === 'photo') {
+          if (!file.type?.startsWith('image/')) throw new Error('Choose an image file.');
+          const media = await createPhotoMediaFromFile(file, trip.id);
+          setPhotoFiles(prev => [...prev, media]);
+        } else if (mode === 'voice') {
+          const media = await createAudioMediaFromFile(file, trip.id);
+          setVoiceFiles(prev => [...prev, media]);
+        } else {
+          throw new Error('Video capture is not available yet.');
         }
       }
-      return meta;
-    }));
-    if (mode === 'photo') setPhotoFiles((prev) => [...prev, ...files]);
-    if (mode === 'video') setVideoFiles((prev) => [...prev, ...files]);
-    if (mode === 'voice') setVoiceFiles((prev) => [...prev, ...files]);
+    } catch (error) {
+      setMediaError(error.message || 'Could not store this file. Please try again.');
+    } finally {
+      setMediaBusy(false);
+    }
   }
 
   function removeMediaFile(mode, index) {
@@ -279,10 +294,10 @@ export function EntryForm({
       {/* Header */}
       <div style={{ background: T.card, padding: '10px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div onClick={onCancel} style={{ width: 36, height: 36, borderRadius: 18, background: T.bg,
+          <button type="button" onClick={onCancel} aria-label="Cancel entry" style={{ border: 'none', width: 44, height: 44, borderRadius: 18, background: T.bg,
                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color={T.text} sw={2} />
-          </div>
+          </button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: ts(19), fontWeight: 800, color: T.text, letterSpacing: -.4, textTransform: 'capitalize' }}>
               {initialEntry ? 'Edit' : 'Add'} {typeLabel(type)}
@@ -300,26 +315,14 @@ export function EntryForm({
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
 
         {/* Location picker only when there is a real choice to make. */}
-        {locations.length > 1 && (
+        {(allowUnlinked || locations.length > 1) && (
           <div style={{ marginBottom: 16 }}>
-            <Label>Location</Label>
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-              {locations.map((loc) => (
-                <div
-                  key={loc.id}
-                  onClick={() => setSelectedLocationId(loc.id)}
-                  style={{
-                    flexShrink: 0, padding: '8px 12px', borderRadius: 16, cursor: 'pointer',
-                    fontSize: ts(13), fontWeight: 700,
-                    background: selectedLocationId === loc.id ? '#2A5C8E' : T.card,
-                    color: selectedLocationId === loc.id ? 'white' : T.textSub,
-                    border: selectedLocationId === loc.id ? 'none' : `1px solid ${T.border}`,
-                  }}
-                >
-                  {loc.name}
-                </div>
-              ))}
-            </div>
+            <label htmlFor="entry-location" style={{ display: 'block', fontSize: ts(14), fontWeight: 700, marginBottom: 8 }}>Location{allowUnlinked ? ' (optional)' : ''}</label>
+            <select id="entry-location" value={selectedLocationId || ''}
+              onChange={(event) => setSelectedLocationId(event.target.value || null)} style={inputStyle(T)}>
+              {allowUnlinked && <option value="">No saved location — use current GPS if available</option>}
+              {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+            </select>
           </div>
         )}
 
@@ -443,6 +446,7 @@ export function EntryForm({
             {weatherError && <div style={{ fontSize: ts(13), color: T.amber, marginBottom: 8 }}>{weatherError}</div>}
 
             <textarea
+              aria-label="Weather observation"
               value={weatherObservation}
               onChange={(e) => setWeatherObservation(e.target.value)}
               placeholder="What you actually saw (cloud cover, gusts, visibility…)"
@@ -475,12 +479,12 @@ export function EntryForm({
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             {[
               { id: 'photo', label: `Photos (${photoFiles.length})`, icon: ICONS.camera },
-              { id: 'video', label: `Videos (${videoFiles.length})`, icon: ICONS.video, videoOnly: true },
+              ...(VIDEO_ENABLED ? [{ id: 'video', label: `Videos (${videoFiles.length})`, icon: ICONS.video, videoOnly: true }] : []),
               { id: 'voice', label: `Audio (${voiceFiles.length})`, icon: ICONS.mic },
             ].map((opt) => {
               const disabled = opt.videoOnly && !VIDEO_ENABLED;
               return (
-              <div key={opt.id} onClick={() => { if (!disabled) setMediaMode(opt.id); }}
+              <button type="button" disabled={disabled || mediaBusy || recording} key={opt.id} onClick={() => { if (!disabled) setMediaMode(opt.id); }}
                    title={disabled ? VIDEO_DISABLED_HINT : undefined}
                    style={{ flex: 1, padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
                             border: `1.5px solid ${mediaMode === opt.id ? '#2A5C8E' : T.border}`,
@@ -489,30 +493,33 @@ export function EntryForm({
                             ...(disabled ? disabledMediaStyle() : {}) }}>
                 <Ic d={opt.icon} size={14} color={disabled ? T.textFaint : mediaMode === opt.id ? '#2A5C8E' : T.textSub} sw={1.8} />
                 <span style={{ fontSize: ts(12), fontWeight: 700, color: disabled ? T.textFaint : mediaMode === opt.id ? '#2A5C8E' : T.textSub }}>{opt.label}</span>
-              </div>
+              </button>
             );})}
           </div>
 
+          {mediaMode === 'voice' && <VoiceRecorder disabled={mediaBusy} onRecordingChange={setRecording} onRecorded={(file) => void addMediaFiles('voice', [file])} />}
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <div onClick={() => { if (mediaMode !== 'video' || VIDEO_ENABLED) activeCaptureRef.current?.click(); }}
-                 style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '10px 12px', fontSize: ts(13), fontWeight: 700, color: '#2A5C8E', cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
+            <button type="button" hidden={mediaMode === 'voice'} disabled={mediaBusy || recording} onClick={() => { if (mediaMode !== 'video' || VIDEO_ENABLED) activeCaptureRef.current?.click(); }}
+                 style={{ minHeight: 48, background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '10px 12px', fontSize: ts(13), fontWeight: 700, color: '#2A5C8E', cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
               {activeCaptureLabel}
-            </div>
-            <div onClick={() => { if (mediaMode !== 'video' || VIDEO_ENABLED) activeAttachRef.current?.click(); }}
-                 style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', fontSize: ts(13), fontWeight: 700, color: T.textSub, cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
+            </button>
+            <button type="button" disabled={mediaBusy || recording} onClick={() => { if (mediaMode !== 'video' || VIDEO_ENABLED) activeAttachRef.current?.click(); }}
+                 style={{ minHeight: 48, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', fontSize: ts(13), fontWeight: 700, color: T.textSub, cursor: 'pointer', ...(mediaMode === 'video' && !VIDEO_ENABLED ? disabledMediaStyle() : {}) }}>
               {activeAttachLabel}
-            </div>
+            </button>
           </div>
 
           <input ref={activeCaptureRef} type="file" accept={activeAccept} capture={activeCaptureMode} style={{ display: 'none' }} onChange={(e) => addMediaFiles(mediaMode, e.target.files)} />
           <input ref={activeAttachRef} type="file" accept={activeAccept} style={{ display: 'none' }} onChange={(e) => addMediaFiles(mediaMode, e.target.files)} />
 
+          {mediaError && <p role="alert" style={{ color: '#8A1414', padding: '8px 0', fontSize: ts(14) }}>{mediaError}</p>}
+          {mediaBusy && <p role="status">Storing attachment on this phone…</p>}
           {!!activeMediaFiles.length && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {activeMediaFiles.map((f, idx) => (
-                <div key={f.id || `${f.name}-${idx}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    {f.thumbDataUrl || f.id ? (
+                <div key={f.id || `${f.name}-${idx}`} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-start' }}>
+                  <div style={{ position: 'relative', flexShrink: 0, maxWidth: '100%', paddingTop: mediaMode === 'voice' ? 44 : 0 }}>
+                    {mediaMode === 'voice' ? <AudioAttachment media={f} /> : f.thumbDataUrl || f.id ? (
                       <MediaThumb media={f} alt={f.name}
                            style={{ width: 72, height: 72, borderRadius: 10, objectFit: 'contain', background: '#F0EDE8', border: `1px solid ${T.border}`, display: 'block' }} />
                     ) : (
@@ -521,13 +528,14 @@ export function EntryForm({
                         <span style={{ fontSize: 9, color: T.textFaint, textAlign: 'center', padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 68 }}>{f.name}</span>
                       </div>
                     )}
-                    <div onClick={() => removeMediaFile(mediaMode, idx)}
-                         style={{ position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9, background: '#C04040', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    <button type="button" aria-label="Remove attachment" onClick={() => removeMediaFile(mediaMode, idx)}
+                         style={{ position: 'absolute', top: -5, right: -5, width: 44, height: 44, border: 'none', borderRadius: 22, background: '#C04040', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                       <span style={{ fontSize: 10, color: 'white', fontWeight: 700, lineHeight: 1 }}>✕</span>
-                    </div>
+                    </button>
                   </div>
                   {/* Per-file caption — the entry's Notes field below still describes the whole observation. */}
                   <textarea
+                    aria-label="Attachment caption"
                     value={f.caption || ''}
                     onChange={(e) => captionMediaFile(mediaMode, idx, e.target.value)}
                     placeholder="Caption this one…"
@@ -545,7 +553,7 @@ export function EntryForm({
         {/* One notes field, captioning the whole entry. */}
         <div style={{ marginBottom: 16 }}>
           <Label>Notes</Label>
-          <textarea
+          <textarea id="entry-notes"
             value={notes}
             onChange={e => setNotes(e.target.value)}
             placeholder="Describe what you found…"
@@ -606,15 +614,16 @@ export function EntryForm({
         </div>
       </div>
 
+      {saveError && <p role="alert" style={{ padding: 12, color: '#8A1414', background: '#FBE4E4' }}>{saveError}</p>}
       {/* Save CTA */}
       <div style={{ padding: '12px 16px 16px', background: T.card, borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
-        <div onClick={handleSave}
-             style={{ background: typeColor, borderRadius: 14, padding: '15px', textAlign: 'center',
+        <button type="button" onClick={handleSave} disabled={mediaBusy || recording}
+             style={{ width: '100%', border: 'none', opacity: mediaBusy ? 0.6 : 1, background: typeColor, borderRadius: 14, padding: '15px', textAlign: 'center',
                       boxShadow: `0 4px 16px ${typeColor}50`, cursor: 'pointer' }}>
           <span style={{ fontSize: ts(16), fontWeight: 800, color: 'white', letterSpacing: -.2 }}>
-            {initialEntry ? 'Update' : 'Save'}
+            {recording ? 'Stop recording to save' : mediaBusy ? 'Storing attachment…' : initialEntry ? 'Save changes' : 'Save on this phone'}
           </span>
-        </div>
+        </button>
       </div>
     </div>
   );
@@ -627,7 +636,7 @@ const Label = ({ children }) => (
 
 const inputStyle = (T) => ({
   width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 12, padding: '12px 14px',
-  fontSize: ts(14), fontFamily: F, color: T.text, background: T.card, outline: 'none', boxSizing: 'border-box',
+  fontSize: ts(16), fontFamily: F, color: T.text, background: T.card, outline: 'none', boxSizing: 'border-box',
 });
 
 const linkBtnStyle = {
@@ -668,13 +677,13 @@ function formatWhen(iso) {
 }
 
 function defaultTitle(type) {
-  const map = { campsite: 'Campsite', water: 'Water Crossing', wildlife: 'Wildlife Sighting',
+  const map = { photo: 'Photo', campsite: 'Campsite', water: 'Water Crossing', wildlife: 'Wildlife Sighting',
                 rapid: 'Rapid', 'river-feature': 'River Feature', gauge: 'River Flow Check', weather: 'Weather Check', note: 'Note', food: 'Meal', voice: 'Voice Note', video: mediaCaptureLabel('Photo / Video'), 'custom-event': 'Custom Event' };
   return map[type] || type;
 }
 
 function typeLabel(type) {
-  const map = { 'river-feature': 'River Feature', 'custom-event': 'Custom Event', gauge: 'River Flow', weather: 'Weather', video: mediaCaptureLabel('Photo / Video'), note: 'Note' };
+  const map = { photo: 'Photo', 'river-feature': 'River Feature', 'custom-event': 'Custom Event', gauge: 'River Flow', weather: 'Weather', video: mediaCaptureLabel('Photo / Video'), note: 'Note' };
   return map[type] || type;
 }
 
@@ -705,6 +714,7 @@ function defaultTagSymbol(type, featureType) {
     return map[featureType] || '🌊';
   }
   const map = {
+    photo: '📷',
     campsite: '⛺',
     water: '💧',
     wildlife: '🦌',

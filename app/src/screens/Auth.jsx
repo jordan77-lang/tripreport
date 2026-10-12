@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { InstallAppCard } from '../components/InstallAppCard';
 import { T, F } from '../tokens';
 
-export function AuthScreen() {
+export function AuthScreen({ inviteCode = null }) {
   const { signInWithEmail, signInWithPassword, signUpWithPassword } = useAuth();
   const [mode, setMode] = useState('signin'); // signin | signup | magic
   const [email, setEmail] = useState('');
@@ -39,7 +39,7 @@ export function AuthScreen() {
       <div style={{ flex: 1, padding: '32px 20px 24px', maxWidth: 420, margin: '0 auto', width: '100%' }}>
         <div style={{ fontSize: 28, fontWeight: 900, color: T.text, letterSpacing: -0.6, marginBottom: 6 }}>TripReport</div>
         <div style={{ fontSize: 13, color: T.textSub, marginBottom: 28, lineHeight: 1.5 }}>
-          Sign in to plan trips with your crew and sync when you have service.
+          {inviteCode ? 'You have a trip invitation. Sign in or create an account, then join your crew.' : 'Sign in to plan trips with your crew and sync when you have service.'}
         </div>
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
@@ -70,8 +70,9 @@ export function AuthScreen() {
         </div>
 
         <form onSubmit={handleSubmit}>
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Email</label>
+          <label htmlFor="auth-email" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Email</label>
           <input
+            id="auth-email"
             type="email"
             autoComplete="email"
             required
@@ -83,8 +84,9 @@ export function AuthScreen() {
 
           {mode !== 'magic' && (
             <>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6, marginTop: 14 }}>Password</label>
+              <label htmlFor="auth-password" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6, marginTop: 14 }}>Password</label>
               <input
+                id="auth-password"
                 type="password"
                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                 required

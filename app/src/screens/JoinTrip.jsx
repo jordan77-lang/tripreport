@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { parseInviteCode } from '../lib/inviteCode';
 import { joinTripByCode } from '../lib/tripCloud';
 import { T, F } from '../tokens';
 
@@ -9,10 +10,12 @@ export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
 
   async function handleJoin(e) {
     e.preventDefault();
+    const inviteCode = parseInviteCode(code);
+    if (!inviteCode) { setError('Paste a trip invite link or enter the code from your trip lead.'); return; }
     setBusy(true);
     setError(null);
     try {
-      const tripId = await joinTripByCode(code);
+      const tripId = await joinTripByCode(inviteCode);
       onJoined?.(tripId);
     } catch (err) {
       setError(err?.message || 'Could not join trip');
@@ -27,17 +30,20 @@ export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
         <button type="button" onClick={onBack} style={backBtn}>← Back</button>
         <div style={{ fontSize: 22, fontWeight: 900, color: T.text, marginBottom: 8 }}>Join a trip</div>
         <div style={{ fontSize: 13, color: T.textSub, marginBottom: 20, lineHeight: 1.5 }}>
-          Enter the invite code from your trip lead.
+          Paste an invite link or enter the code from your trip lead.
         </div>
 
         <form onSubmit={handleJoin}>
-          <input
+          <label htmlFor="join-code" style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 700 }}>Invite link or code</label>
+          <input id="join-code"
             type="text"
             required
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="INVITE CODE"
-            maxLength={12}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Paste link or enter code"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             style={{
               width: '100%',
               boxSizing: 'border-box',
@@ -45,7 +51,7 @@ export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
               borderRadius: 10,
               padding: '14px 13px',
               fontSize: 18,
-              letterSpacing: 3,
+              letterSpacing: 0,
               textAlign: 'center',
               fontWeight: 800,
               background: T.card,

@@ -51,6 +51,21 @@ export async function createPhotoMediaFromFile(file, tripId, {
   };
 }
 
+/** Keep audio bytes locally, using the same upload queue as photos. */
+export async function createAudioMediaFromFile(file, tripId) {
+  if (!file || !tripId) throw new Error('A trip and audio file are required.');
+  if (!file.type?.startsWith('audio/')) throw new Error('Choose an audio file.');
+  if (file.size > 25 * 1024 * 1024) throw new Error('Choose an audio clip smaller than 25 MB.');
+  const id = crypto.randomUUID();
+  const meta = {
+    id, tripId, name: file.name, mime: file.type, size: file.size,
+    fullByteSize: file.size, thumbByteSize: 0, syncState: 'pending',
+    storagePath: null, createdAt: Date.now(), updatedAt: Date.now(),
+  };
+  await putMediaRecord({ ...meta, fullBlob: file, thumbBlob: null });
+  return { id, name: file.name, mime: file.type, size: file.size, fullByteSize: file.size, syncState: 'pending' };
+}
+
 /** Preview before trip exists — returns { previewUrl, file } for wizard UI. */
 export function createCoverPhotoPreview(file) {
   if (!file) return null;

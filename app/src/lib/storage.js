@@ -7,6 +7,7 @@ const CONTACTS_KEY = 'tr_contacts';
 
 import { getSignedInUserId, getSignedInDisplayName } from './authUser';
 import { defaultEventName } from './eventTypes';
+import { captureChanges, materialize } from './tripSync';
 
 export function getContacts() {
   try {
@@ -209,9 +210,12 @@ export function getTrip(id) {
   return getTrips().find(t => t.id === id) || null;
 }
 
-export function saveTrip(trip) {
+export function saveTrip(trip, { capture = true, schedule = capture } = {}) {
   const trips = getTrips();
-  const nextTrip = normalizeTripShape(trip);
+  const latest = trips.find(t => t.id === trip.id);
+  const nextTrip = normalizeTripShape(capture
+    ? captureChanges(trip, latest, { authorId: getCurrentUserId() })
+    : materialize(trip));
   const idx = trips.findIndex(t => t.id === nextTrip.id);
   if (idx >= 0) trips[idx] = nextTrip;
   else trips.unshift(nextTrip);
@@ -219,12 +223,12 @@ export function saveTrip(trip) {
     localStorage.setItem(TRIPS_KEY, JSON.stringify(trips));
   } catch (e) {
     if (e.name === 'QuotaExceededError' || e.code === 22) {
-      throw new Error('Storage full — your trip photos are using too much space. Try removing some photos from older entries to free up room.');
+      throw new Error('Device storage is full. This change was not saved; the previous trip is intact. Export a backup before freeing browser storage.');
     }
     throw e;
   }
 
-  if (nextTrip.syncState === 'pending' && nextTrip.id) {
+  if (schedule && nextTrip.syncState === 'pending' && nextTrip.id) {
     queueMicrotask(() => {
       import('./tripAutoSync.js')
         .then((m) => m.scheduleTripCloudSync(nextTrip.id))
@@ -258,6 +262,7 @@ export function createTrip({
   const trip = {
     id: crypto.randomUUID(),
     name,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     types,        // string[] e.g. ['Backpacking', 'Rafting']
     location,
     startDate,
@@ -291,9 +296,9 @@ export function createTrip({
     coverPhoto,
     mapArea,
   };
-  saveTrip(trip);
+  const saved = saveTrip(trip);
   setActiveTrip(trip.id);
-  return trip;
+  return saved;
 }
 
 function ensureEntryEvent(trip, entry) {
@@ -302,8 +307,7 @@ function ensureEntryEvent(trip, entry) {
   const location = resolveEntryLocation(trip, entry.locationId);
   if (!location) return null;
   const entryType = entry.type || 'note';
-  const existing = (trip.events || []).find((e) => e.locationId === location.id && e.type === entryType);
-  if (existing) return existing;
+  // A new visit is a new event. Explicit eventId links contributions to an existing visit.
   const now = Date.now();
   const created = {
     id: crypto.randomUUID(),
@@ -397,8 +401,9 @@ export function appendTrackPoint(tripId, point) {
   const trip = getTrip(tripId);
   if (!trip) return;
   const now = Date.now();
-  const sessionId = point.sessionId || trip.gpsSessionId || null;
-  trip.track.push({ ...point, sessionId, id: point.id || crypto.randomUUID(), syncState: point.syncState || 'pending' });
+  const sessionId = point.sessionId;
+  if(!isTripOpen(trip) || !trip.gpsSessionActive || !sessionId || sessionId!==trip.gpsSessionId || trip.gpsRecordingDeviceId!==getRecordingDeviceId())return false;
+  trip.track.push({ ...point, deviceId: getRecordingDeviceId(), authorId: point.authorId || getCurrentUserId(), sessionId, id: point.id || crypto.randomUUID(), syncState: point.syncState || 'pending' });
 
   if (sessionId) {
     const sIdx = (trip.trackSessions || []).findIndex((s) => s.id === sessionId);
@@ -416,63 +421,63 @@ export function appendTrackPoint(tripId, point) {
   trip.updatedAt = now;
   trip.syncState = 'pending';
   saveTrip(trip);
+  return true;
 }
 
-export function startGpsSession(tripId, { label } = {}) {
-  const trip = getTrip(tripId);
-  if (!trip) return null;
-  const now = Date.now();
-  const sessionId = crypto.randomUUID();
-  const session = {
-    id: sessionId,
-    label: label || null,
-    startedAt: now,
-    endedAt: null,
-    attachLocationId: null,
-    pointsCount: 0,
-    createdBy: getCurrentUserId(),
-    createdAt: now,
-    updatedAt: now,
-    syncState: 'pending',
-  };
-
-  trip.gpsTrackingEnabled = true;
-  trip.gpsSessionActive = true;
-  trip.gpsSessionId = sessionId;
-  trip.gpsSessionStartedAt = now;
-  trip.trackSessions = [session, ...(trip.trackSessions || [])];
-  trip.updatedAt = now;
-  trip.syncState = 'pending';
-  saveTrip(trip);
+export function getRecordingDeviceId() {
+  const key='tr_gps_device_id';
+  let id=localStorage.getItem(key);
+  if(!id){id=crypto.randomUUID();localStorage.setItem(key,id);}
+  return id;
+}
+export function startGpsSession(tripId,{label}={}) {
+  const trip=getTrip(tripId);
+  if(!trip || !isTripOpen(trip))throw new Error('Open a trip before recording.');
+  const deviceId=getRecordingDeviceId();
+  const other=getTrips().find(t=>t.id!==tripId && t.gpsSessionId && t.gpsRecordingDeviceId===deviceId);
+  if(other)throw new Error('Finish the recording in '+other.name+' before starting another.');
+  if(trip.gpsSessionId && trip.gpsRecordingDeviceId===deviceId){
+    if(!trip.gpsSessionActive)resumeGpsSession(tripId);
+    return getTrip(tripId).trackSessions.find(s=>s.id===trip.gpsSessionId);
+  }
+  const now=Date.now();
+  const session={id:crypto.randomUUID(),deviceId,label:label||null,startedAt:now,endedAt:null,
+    activeMs:0,resumedAt:now,attachLocationId:null,pointsCount:0,createdBy:getCurrentUserId(),createdAt:now};
+  saveTrip({...trip,gpsTrackingEnabled:true,gpsBackgroundTracking:false,gpsSessionActive:true,
+    gpsRecordingDeviceId:deviceId,gpsSessionId:session.id,gpsSessionStartedAt:now,
+    trackSessions:[session,...(trip.trackSessions||[])]});
   return session;
 }
-
-export function stopGpsSession(tripId, { attachLocationId = null } = {}) {
-  const trip = getTrip(tripId);
-  if (!trip) return null;
-  const activeId = trip.gpsSessionId;
-  if (!activeId) return null;
-  const now = Date.now();
-
-  const idx = (trip.trackSessions || []).findIndex((s) => s.id === activeId);
-  if (idx >= 0) {
-    const existing = trip.trackSessions[idx];
-    trip.trackSessions[idx] = {
-      ...existing,
-      endedAt: now,
-      attachLocationId: attachLocationId || existing.attachLocationId || null,
-      updatedAt: now,
-      syncState: 'pending',
-    };
-  }
-
-  trip.gpsSessionActive = false;
-  trip.gpsSessionId = null;
-  trip.gpsSessionStartedAt = null;
-  trip.updatedAt = now;
-  trip.syncState = 'pending';
-  saveTrip(trip);
-  return trip;
+export function pauseGpsSession(tripId) {
+  const trip=getTrip(tripId);
+  if(!trip || !trip.gpsSessionId || trip.gpsRecordingDeviceId!==getRecordingDeviceId())return null;
+  const now=Date.now();
+  return saveTrip({...trip,gpsSessionActive:false,gpsTrackingEnabled:false,gpsBackgroundTracking:false,
+    trackSessions:trip.trackSessions.map(s=>s.id===trip.gpsSessionId?
+      {...s,activeMs:(s.activeMs||0)+(trip.gpsSessionActive?Math.max(0,now-(s.resumedAt||now)):0),resumedAt:null,pausedAt:now}:s)});
+}
+export function resumeGpsSession(tripId) {
+  const trip=getTrip(tripId);
+  if(!trip || !isTripOpen(trip) || !trip.gpsSessionId || trip.gpsRecordingDeviceId!==getRecordingDeviceId())return null;
+  if(trip.gpsSessionActive)return trip;
+  return saveTrip({...trip,gpsSessionActive:true,gpsTrackingEnabled:true,
+    trackSessions:trip.trackSessions.map(s=>s.id===trip.gpsSessionId?{...s,resumedAt:Date.now(),pausedAt:null}:s)});
+}
+export function stopGpsSession(tripId,{attachLocationId=null}={}) {
+  let trip=getTrip(tripId);
+  if(!trip)return null;
+  if(trip.gpsSessionId && trip.gpsRecordingDeviceId!==getRecordingDeviceId())return null;
+  if(trip.gpsSessionActive)trip=pauseGpsSession(tripId);
+  const activeId=trip.gpsSessionId;
+  return saveTrip({...trip,gpsSessionActive:false,gpsTrackingEnabled:false,gpsBackgroundTracking:false,
+    gpsSessionId:null,gpsSessionStartedAt:null,
+    trackSessions:(trip.trackSessions||[]).map(s=>s.id===activeId?{...s,endedAt:Date.now(),resumedAt:null,attachLocationId:attachLocationId||s.attachLocationId||null}:s)});
+}
+export function updateGpsSession(tripId,sessionId,patch) {
+  const trip=getTrip(tripId);
+  if(!trip)return null;
+  return saveTrip({...trip,trackSessions:trip.trackSessions.map(s=>s.id===sessionId?
+    {...s,label:patch.label??s.label,attachLocationId:patch.attachLocationId??s.attachLocationId}:s)});
 }
 
 export function addLocation(tripId, location) {
@@ -704,6 +709,7 @@ export function isTripOpen(trip) {
 }
 
 export function finalizeTrip(tripId) {
+  if(getTrip(tripId)?.gpsRecordingDeviceId===getRecordingDeviceId())stopGpsSession(tripId);
   const trip = getTrip(tripId);
   if (!trip) return null;
   const now = Date.now();

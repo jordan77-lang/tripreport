@@ -1,3 +1,4 @@
+import { routeStats } from '../lib/gpsRecorder';
 import { useState, useEffect } from 'react';
 import { TripMap } from '../components/TripMap';
 import { BottomNav } from '../components/BottomNav';
@@ -8,7 +9,17 @@ import { getTripOfflineMapReadiness } from '../lib/offlineMaps';
 export function Navigator({ trip, onNav, onFab, gps }) {
   const [mapStyle, setMapStyle] = useState('outdoors-v12');
   const [offlineReadiness, setOfflineReadiness] = useState(null);
-  const { position, tracking, error } = gps || {};
+  const { position:recordingPosition, tracking, error } = gps || {};
+  const [locatedPosition,setLocatedPosition]=useState(null);
+  const [locating,setLocating]=useState(false),[locateError,setLocateError]=useState(null);
+  const position=tracking?recordingPosition:(locatedPosition||recordingPosition);
+  function locateMe(){
+    if(!navigator.geolocation){setLocateError('Location is unavailable.');return;}
+    setLocating(true);setLocateError(null);
+    navigator.geolocation.getCurrentPosition(p=>{
+      setLocatedPosition({lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy});setLocating(false);
+    },e=>{setLocateError(e.message);setLocating(false);},{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+  }
 
   const track = trip?.track ?? [];
   const locations = (trip?.locations ?? [])
@@ -20,7 +31,7 @@ export function Navigator({ trip, onNav, onFab, gps }) {
       .filter(e => e.lng && e.lat)
       .map(e => ({ ...e, col: entryColor(e.type) }));
 
-  const stats = computeStats(track);
+  const stats = routeStats(track);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +59,7 @@ export function Navigator({ trip, onNav, onFab, gps }) {
         <TripMap
           style={mapStyle}
           position={position}
+          center={locatedPosition}
           track={track}
           entries={locations.length ? locations : legacyEntries}
           zoom={13}
@@ -118,21 +130,25 @@ export function Navigator({ trip, onNav, onFab, gps }) {
         )}
 
         {/* GPS error */}
-        {error && (
+        {(error || locateError) && (
           <div style={{ position: 'absolute', top: offlineReadiness?.configured ? 98 : 70, left: 12, right: 12, zIndex: 10,
                         background: '#FBF0E4', borderRadius: 10, padding: '8px 12px',
                         fontSize: 11, color: T.amber, fontWeight: 600 }}>
-            GPS: {error}
+            GPS: {error || locateError}
           </div>
         )}
 
+        <button type="button" disabled={locating} onClick={locateMe}
+          style={{position:'absolute',bottom:94,right:12,zIndex:10,minHeight:44,padding:'10px 14px',border:'1px solid '+T.border,borderRadius:12,background:T.card,color:T.accent,fontWeight:700}}>
+          {locating?'Finding location…':'Locate me'}
+        </button>
         {/* Stats bar */}
         <div style={{ position: 'absolute', bottom: 14, left: 12, right: 12, zIndex: 10 }}>
           <div style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)',
                         borderRadius: 16, padding: '12px 6px', boxShadow: '0 4px 22px rgba(0,0,0,.16)',
                         display: 'flex' }}>
             {[
-              { val: stats.miles,  unit: 'mi',  label: 'Distance' },
+              { val: stats.miles,  unit: 'mi',  label: 'Recorded distance' },
               { val: stats.elev,   unit: 'ft',  label: 'Elevation' },
               { val: stats.pts,    unit: 'pts', label: 'Points' },
               { val: position ? `${position.accuracy?.toFixed(0)}` : '—', unit: 'm', label: 'Accuracy' },
@@ -168,30 +184,4 @@ function locationSymbol(type) {
     'point-of-interest': '📍',
   };
   return map[type] || '📍';
-}
-
-function computeStats(track) {
-  if (!track.length) return { miles: '0.0', elev: '0', pts: '0' };
-  let dist = 0;
-  for (let i = 1; i < track.length; i++) {
-    dist += haversine(track[i - 1], track[i]);
-  }
-  const alts = track.filter(p => p.alt != null).map(p => p.alt);
-  const elevGain = alts.length > 1
-    ? alts.reduce((acc, a, i) => i > 0 && a > alts[i - 1] ? acc + (a - alts[i - 1]) : acc, 0)
-    : 0;
-  return {
-    miles: (dist * 0.000621371).toFixed(1),
-    elev: Math.round(elevGain * 3.28084).toLocaleString(),
-    pts: track.length.toString(),
-  };
-}
-
-function haversine(a, b) {
-  const R = 6371000;
-  const dLat = (b.lat - a.lat) * Math.PI / 180;
-  const dLng = (b.lng - a.lng) * Math.PI / 180;
-  const x = Math.sin(dLat / 2) ** 2 +
-    Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }

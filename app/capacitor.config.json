@@ -1,0 +1,8 @@
+{
+  "appId": "com.tripreport.app",
+  "appName": "TripReport",
+  "webDir": "dist",
+  "android": {
+    "useLegacyBridge": true
+  }
+}

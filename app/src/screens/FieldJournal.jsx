@@ -1,47 +1,59 @@
-import { useState } from 'react';
+import { buildTripTimeline, tripDayKey } from '../lib/tripTimeline';
+import { Fragment, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { Ic } from '../components/Ic';
 import { SyncChip } from '../components/SyncChip';
-import { T, F, ICONS, CAPTURE_MODES } from '../tokens';
-import { addEntry, updateEntry } from '../lib/storage';
-import { mediaCaptureLabel } from '../lib/featureFlags';
+import { T, F, ICONS } from '../tokens';
+import { addEntry, updateEntry, getCurrentUserId } from '../lib/storage';
+import { AudioAttachment } from '../components/AudioAttachment';
+import { MediaThumb } from '../components/MediaThumb';
+import { CaptureActions } from '../components/CaptureActions';
+import { resolveUserDisplayName } from '../lib/tripParticipants';
 import { ts } from '../lib/textScale';
 import { EntryForm } from './EntryForm';
 
 const ENTRY_COLORS = {
-  campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
+  photo: '#2C5F3E', campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
   weather: '#517EA3', rapid: '#3A72A8', 'river-feature': '#3A72A8', note: '#6B6763', food: '#B06030',
   voice: '#5B8DD9', video: '#C05050', gauge: '#2A5C8E', 'custom-event': '#2C5F3E',
 };
 
-export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
-  const hasRiver = trip?.types?.some(t => ['Rafting', 'River Camping', 'Paddling'].includes(t));
-  const [captureMode, setCaptureMode] = useState(hasRiver ? 'river' : 'camping');
+export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
   const [activeForm, setActiveForm] = useState(null); // entry type string or null
   const [editingEntry, setEditingEntry] = useState(null);
-  const [showCaptureMenu, setShowCaptureMenu] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [savedNotice, setSavedNotice] = useState(null);
+  const [filter, setFilter] = useState('everyone');
+  const currentUserId = getCurrentUserId();
   const [search, setSearch] = useState('');
-  const captureItems = CAPTURE_MODES[captureMode];
-  const entries = trip?.entries ?? [];
+  const entries = buildTripTimeline(trip || {}).map(point => ({...point.item,
+    _kind: point.kind, _key: point.id, authorId: point.authorId,
+    title: point.item.title || point.item.name,
+    photoFiles: point.item.photoFiles || point.item.photos || [],
+    observedAt: point.time,
+  }));
   const locations = trip?.locations ?? [];
 
-  const filteredEntries = search.trim()
-    ? entries.filter((e) => {
-        const q = search.toLowerCase();
-        const locName = locations.find((l) => l.id === e.locationId)?.name || e.locationName || '';
-        const hay = `${e.title || ''} ${e.type || ''} ${e.notes || ''} ${e.featureType || ''} ${locName}`.toLowerCase();
-        return hay.includes(q);
-      })
-    : entries;
+  const filteredEntries = entries.filter(e => {
+    if (filter === 'mine' && e.authorId !== currentUserId) return false;
+    if (filter === 'photos' && !e.photoFiles?.length) return false;
+    const q = search.trim().toLowerCase();
+    const locName = locations.find(l => l.id === e.locationId)?.name || e.locationName || '';
+    return !q || [e.title, e.type, e.notes, e.featureType, locName].join(' ').toLowerCase().includes(q);
+  }).sort((a, b) => new Date(b.observedAt || b.createdAt) - new Date(a.observedAt || a.createdAt));
   const tripSyncState = trip?.syncState || (entries.some(e => e.syncState === 'pending') ? 'pending' : 'synced');
 
   function handleSave(entry) {
     if (!trip) return;
-    if (editingEntry?.id) updateEntry(trip.id, editingEntry.id, entry);
-    else addEntry(trip.id, entry);
-    onTripUpdate?.();
-    setActiveForm(null);
-    setEditingEntry(null);
+    setSaveError(null);
+    try {
+      const saved = editingEntry?.id ? updateEntry(trip.id, editingEntry.id, entry) : addEntry(trip.id, entry);
+      if (!saved) throw new Error('Entry could not be saved. Please try again.');
+      onTripUpdate?.();
+      setActiveForm(null);
+      setEditingEntry(null);
+      setSavedNotice('Entry saved on this phone.');
+    } catch (e) { setSaveError(e.message); }
   }
 
   if (activeForm) {
@@ -49,7 +61,9 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
       type={activeForm}
       trip={trip}
       locations={locations}
-      defaultLocationId={editingEntry?.locationId || locations[0]?.id || null}
+      defaultLocationId={editingEntry?.locationId || null}
+      allowUnlinked={!editingEntry?.locationId}
+      saveError={saveError}
       initialEntry={editingEntry}
       onSave={handleSave}
       onCancel={() => { setActiveForm(null); setEditingEntry(null); }}
@@ -86,66 +100,28 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
 
-        {/* Quick Capture */}
-        <div style={{ background: T.card, borderRadius: 14, padding: '12px 14px',
-                      border: `1px solid ${T.border}`, marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <div style={{ fontSize: ts(12), fontWeight: 700, color: T.textSub,
-                           textTransform: 'uppercase', letterSpacing: .8 }}>Quick Capture</div>
-            {hasRiver && (
-              <div style={{ display: 'flex', background: T.bg, borderRadius: 8, padding: 2, gap: 1,
-                             border: `1px solid ${T.border}` }}>
-                {['camping', 'river'].map(mode => (
-                  <div key={mode} onClick={() => setCaptureMode(mode)}
-                       style={{ padding: '5px 10px', borderRadius: 6, fontSize: ts(12), fontWeight: 700,
-                                 cursor: 'pointer', transition: 'all .15s',
-                                 background: captureMode === mode ? (mode === 'river' ? '#3A72A8' : T.accent) : 'transparent',
-                                 color: captureMode === mode ? 'white' : T.textFaint }}>
-                    {mode === 'camping' ? '⛺' : '🌊'}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div style={{ position: 'relative' }}>
-            <div onClick={() => setShowCaptureMenu(v => !v)}
-                 style={{ minHeight: 46, borderRadius: 11, border: `1.5px solid ${T.border}`, background: T.bg,
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', cursor: 'pointer' }}>
-              <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>Choose entry type for a location</span>
-              <span style={{ fontSize: ts(13), color: T.textFaint }}>{showCaptureMenu ? '▲' : '▼'}</span>
-            </div>
-
-            {showCaptureMenu && (
-              <div style={{ position: 'absolute', top: 46, left: 0, right: 0, background: T.card, border: `1px solid ${T.border}`,
-                            borderRadius: 11, boxShadow: '0 8px 20px rgba(0,0,0,.12)', zIndex: 5, maxHeight: 260, overflowY: 'auto' }}>
-                {!locations.length && (
-                  <div style={{ padding: '12px 11px', fontSize: ts(13), color: T.textFaint }}>
-                    Create a trip location from the Trip page first.
-                  </div>
-                )}
-                {!!locations.length && captureItems.map((item, i) => (
-                  <div key={i} onClick={() => { setEditingEntry(null); setActiveForm(item.type); setShowCaptureMenu(false); }}
-                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 11px', cursor: 'pointer', borderBottom: i < captureItems.length - 1 ? `1px solid ${T.border}` : 'none' }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 8, background: item.col + '1A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Ic d={item.icon} size={16} color={item.col} sw={1.9} />
-                    </div>
-                    <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{mediaCaptureLabel(item.label)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        {(savedNotice || notice) && <p role="status" style={{ padding: 12, marginBottom: 12, background: T.accentLight, color: T.accent, borderRadius: 10, fontSize: ts(14) }}>{savedNotice || notice}</p>}
+        <div style={{ marginBottom: 20 }}>
+          <CaptureActions trip={trip} onCapture={(type) => onNav('capture-' + type)} />
         </div>
 
         {/* Entries */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: ts(15), fontWeight: 700, color: T.text }}>Entries</span>
+          <span style={{ fontSize: ts(15), fontWeight: 700, color: T.text }}>Trip timeline</span>
           <span style={{ fontSize: ts(13), color: T.textSub }}>{filteredEntries.length}{search.trim() ? `/${entries.length}` : ''} total</span>
         </div>
 
+        <div aria-label="Journal filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          {[['everyone', 'Everyone'], ['mine', 'Mine'], ['photos', 'Photos']].map(([value, label]) =>
+            <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}
+              style={{ minHeight: 44, padding: '8px 14px', borderRadius: 12, border: '1px solid ' + T.border,
+                background: filter === value ? T.accent : T.card, color: filter === value ? 'white' : T.text,
+                fontSize: ts(14), cursor: 'pointer' }}>{label}</button>)}
+        </div>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search journal"
           placeholder="Search title, notes, type, location…"
           style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '11px 12px', fontSize: ts(14), fontFamily: F, marginBottom: 10, boxSizing: 'border-box', outline: 'none', background: T.card }}
         />
@@ -158,14 +134,19 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
 
         {entries.length > 0 && filteredEntries.length === 0 && (
           <div style={{ textAlign: 'center', padding: '24px 0', color: T.textFaint, fontSize: ts(13) }}>
-            No entries match &ldquo;{search}&rdquo;
+            No entries match these filters.
           </div>
         )}
 
         {filteredEntries.map((e, i) => {
           const col = ENTRY_COLORS[e.type] || T.accent;
+          const day = tripDayKey(e.observedAt || e.createdAt, trip?.timeZone || 'UTC');
+          const previous = filteredEntries[i - 1];
+          const previousDay = previous && tripDayKey(previous.observedAt || previous.createdAt, trip?.timeZone || 'UTC');
           return (
-            <div key={e.id || i} style={{ background: T.card, borderRadius: 12, padding: '12px 13px',
+            <Fragment key={e._key || i}>
+            {day !== previousDay && <h2 style={{ fontSize: ts(15), color: T.textSub, margin: '16px 0 10px' }}>{day}</h2>}
+            <div style={{ background: T.card, borderRadius: 12, padding: '12px 13px',
                                            marginBottom: 8, border: `1px solid ${T.border}`,
                                            display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <div style={{ width: 36, height: 36, borderRadius: 9, background: col + '1C',
@@ -173,19 +154,19 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
                 <Ic d={typeIcon(e.type)} size={16} color={col} sw={1.8} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
                   <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{e.title || e.type}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: ts(12), color: T.textFaint }}>{timeAgo(e.createdAt)}</span>
-                    <SyncChip state={e.syncState || 'pending'} compact />
+                    <SyncChip state={tripSyncState} compact />
                   </div>
                 </div>
                 <div style={{ fontSize: ts(12), color: col, fontWeight: 700, marginBottom: e.notes ? 4 : 0,
-                               textTransform: 'capitalize' }}>{entryTypeLabel(e)}</div>
+                               textTransform: 'capitalize' }}>{entryTypeLabel(e)} · {e._kind}</div>
                 <div style={{ fontSize: ts(12), color: '#2A5C8E', marginBottom: 4 }}>
-                  {entryLocationLabel(e, locations)}
+                  {resolveUserDisplayName(trip, e.authorId, currentUserId) || 'Crew member'} · {entryLocationLabel(e, locations)}
                 </div>
-                {e.observedAt && <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>Observed: {new Date(e.observedAt).toLocaleString()}</div>}
+                {e.observedAt && <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>Observed: {new Date(e.observedAt).toLocaleString(undefined, { timeZone: trip?.timeZone || 'UTC' })}</div>}
                 {e.notes && <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.4 }}>{e.notes}</div>}
                 {e.mapTagSymbol && <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>Tag: {e.mapTagSymbol}</div>}
                 {e.cfs && (
@@ -227,16 +208,19 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
                     {(e.photoFiles?.length || 0)} photos · {(e.videoFiles?.length || 0)} videos · {(e.voiceFiles?.length || 0)} audio
                   </div>
                 )}
-                <div style={{ marginTop: 7 }}>
-                  <span
-                    onClick={() => { setEditingEntry(e); setActiveForm(e.type || 'note'); }}
-                    style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}
+                {!!e.photoFiles?.length && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginTop: 8 }}>{e.photoFiles.map((photo, index) => <MediaThumb key={photo.id || index} media={photo} alt={photo.caption || 'Journal photo'} style={{ width: 96, height: 96, borderRadius: 10, objectFit: 'cover' }} />)}</div>}
+                {e.voiceFiles?.map((audio, index) => <AudioAttachment key={audio.id || index} media={audio} />)}
+                {e._kind === 'entry' && <div style={{ marginTop: 7 }}>
+                  <button type="button"
+                    onClick={() => { setSaveError(null); setEditingEntry(trip.entries.find(item=>item.id===e.id)); setActiveForm(e.type || 'note'); }}
+                    style={{ minHeight: 44, padding: '8px 0', border: 'none', background: 'transparent', fontSize: ts(14), color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}
                   >
                     Edit entry
-                  </span>
-                </div>
+                  </button>
+                </div>}
               </div>
             </div>
+            </Fragment>
           );
         })}
         <div style={{ height: 4 }} />
@@ -249,7 +233,7 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate }) {
 
 function typeIcon(type) {
   const map = {
-    campsite: ICONS.tent, water: ICONS.drop, wildlife: ICONS.leaf,
+    photo: ICONS.camera, campsite: ICONS.tent, water: ICONS.drop, wildlife: ICONS.leaf,
     weather: ICONS.compass, rapid: ICONS.drop, 'river-feature': ICONS.drop, note: ICONS.note, food: ICONS.fork,
     voice: ICONS.mic, video: ICONS.video, gauge: ICONS.gauge,
     'custom-event': ICONS.plus,

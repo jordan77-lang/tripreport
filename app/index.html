@@ -46,10 +46,10 @@
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script>
+    <script type="module">
       // Registered as early as possible so a first online visit finishes
       // precaching the whole app — that is what makes it launch without service.
-      if ('serviceWorker' in navigator) {
+      if (import.meta.env.PROD && !window.Capacitor?.isNativePlatform?.() && 'serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').then((reg) => {
             // A new deploy installs in the background; take it over on next load.
@@ -66,6 +66,19 @@
             // Registration failure must not break the app.
           });
         });
+      } else if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+        // A production preview may have installed our worker on this origin.
+        // It must not cache Vite's client or its per-process WebSocket token.
+        const workerUrl = new URL('/sw.js', window.location.origin).href;
+        const controlledByTripReport = navigator.serviceWorker.controller?.scriptURL === workerUrl;
+        navigator.serviceWorker.getRegistrations().then(async (registrations) => {
+          const owned = registrations.filter((reg) =>
+            [reg.active, reg.waiting, reg.installing].some((worker) => worker?.scriptURL === workerUrl),
+          );
+          const removed = await Promise.all(owned.map((reg) => reg.unregister()));
+          // Unregistering leaves the current page controlled until navigation.
+          if (controlledByTripReport && removed.some(Boolean)) window.location.reload();
+        }).catch((error) => console.warn('Could not remove the local offline worker', error));
       }
     </script>
   </body>

@@ -25,16 +25,20 @@ function openDb() {
 }
 
 function runTransaction(mode, fn) {
-  return openDb().then((db) => new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, mode);
-    const store = tx.objectStore(STORE);
-    Promise.resolve(fn(store))
-      .then((result) => {
-        tx.oncomplete = () => resolve(result);
-        tx.onerror = () => reject(tx.error);
-      })
-      .catch(reject);
+  return openDb().then(db=>new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,mode);
+    let result,failed=false;
+    tx.oncomplete=()=>{db.close();resolve(result);};
+    tx.onerror=tx.onabort=()=>{db.close();reject(tx.error || new Error('Media transaction failed'));};
+    try {
+      Promise.resolve(fn(tx.objectStore(STORE))).then(value=>{result=value;},error=>{
+        failed=true;try{tx.abort();}catch{ /* already completed */ }db.close();reject(error);
+      });
+    } catch(error) {if(!failed)tx.abort();db.close();reject(error);}
   }));
+}
+export async function putMediaBatch(records) {
+  await runTransaction('readwrite', store=>{for(const record of records)store.add(record);});
 }
 
 export async function putMediaRecord(record) {

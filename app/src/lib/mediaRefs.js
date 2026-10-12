@@ -26,6 +26,7 @@ export function collectMediaRefsFromTrip(trip) {
   }
   for (const entry of trip.entries || []) {
     addAll(entry.photoFiles);
+    addAll(entry.voiceFiles);
   }
 
   return out;
@@ -55,6 +56,7 @@ export function markMediaRefsSynced(trip, syncedIds) {
     entries: (trip.entries || []).map((entry) => ({
       ...entry,
       photoFiles: (entry.photoFiles || []).map(mark),
+      voiceFiles: (entry.voiceFiles || []).map(mark),
     })),
   };
 }

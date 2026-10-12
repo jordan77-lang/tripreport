@@ -1,0 +1,53 @@
+import { RecordingBar } from '../src/components/RecordingBar';
+import { buildTripManifest } from '../src/lib/tripManifest';
+import { TripSyncPanel } from '../src/components/TripSyncPanel';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import assert from 'node:assert/strict';
+import { BottomNav } from '../src/components/BottomNav';
+import { QuickCapture } from '../src/screens/QuickCapture';
+import { FieldJournal } from '../src/screens/FieldJournal';
+import { SyncChip } from '../src/components/SyncChip';
+
+const trip = { id: 'qa-trip', name: 'Field test', ownerId: 'qa-user', status: 'active', types: ['Day Hike'], entries: [], locations: [], events: [], collaborators: [], syncState: 'pending' };
+const nav = renderToStaticMarkup(<BottomNav trip={trip} active="map" />);
+for (const label of ['Trips', 'Map', 'Log', 'Journal', 'Plan', 'Trip details']) assert.ok(nav.includes(label));
+assert.match(nav, /aria-current="page"/);
+const emptyNav = renderToStaticMarkup(<BottomNav />);
+assert.ok(!emptyNav.includes('Log a moment'));
+const chooser = renderToStaticMarkup(<QuickCapture trip={trip} />);
+for (const label of ['Photo', 'Note', 'Voice', 'Expense']) assert.ok(chooser.includes(label));
+const form = renderToStaticMarkup(<QuickCapture trip={trip} initialType="note" />);
+assert.ok(form.includes('No saved location'));
+assert.ok(form.includes('Save on this phone'));
+assert.ok(!form.includes('Create a trip location'));
+const eventTrip = { ...trip, locations: [{ id: 'camp', name: 'Camp' }, { id: 'trail', name: 'Trail' }], events: [{ id: 'lunch', locationId: 'camp', name: 'Lunch', observedAt: '2026-07-20T12:00:00Z' }] };
+const eventForm = renderToStaticMarkup(<QuickCapture trip={eventTrip} initialType="note" eventId="lunch" />);
+assert.ok(eventForm.includes('Lunch'));
+assert.ok(!eventForm.includes('id="entry-location"'));
+const closed = renderToStaticMarkup(<QuickCapture trip={{ ...trip, status: 'completed' }} initialType="note" />);
+assert.ok(!closed.includes('Save on this phone'));
+const journal = renderToStaticMarkup(<FieldJournal trip={{ ...trip, entries: [{ id: 'entry', type: 'note', notes: 'At camp', authorId: 'qa-user', createdAt: 1784541600000 }] }} />);
+for (const label of ['Everyone', 'Mine', 'Photos', 'At camp']) assert.ok(journal.includes(label));
+assert.ok(!renderToStaticMarkup(<SyncChip state="pending" />).includes('Offline'));
+console.log('UI smoke checks passed: navigation, quick capture, optional location, completed-trip guard, journal, and local save status.');
+
+const panel=renderToStaticMarkup(<TripSyncPanel trip={trip}/>);
+for(const text of ['Sync &amp; offline sharing','Prepare a sharing file','Import a trip file','Trip time zone'])assert.ok(panel.includes(text));
+const timeline=renderToStaticMarkup(<FieldJournal trip={eventTrip}/>);
+assert.ok(timeline.includes('Lunch'));assert.ok(timeline.includes('Camp'));
+
+const report=buildTripManifest({...eventTrip,timeZone:'America/Phoenix',track:[{id:'a',sessionId:'one',lat:34,lng:-111},{id:'b',sessionId:'two',lat:40,lng:-120}]});
+assert.ok(report.days.some(day=>day.timeline.some(row=>row.kind==='event'&&row.title==='Lunch')));
+assert.equal(report.stats.distanceMi,'0.0');
+assert.ok(report.eventSummaries[0].observedAt);
+console.log('Sync panel, event-only timeline, and report chronology checks passed.');
+
+const recorderOff=renderToStaticMarkup(<RecordingBar trip={trip} gps={{status:'off'}}/>);
+assert.ok(recorderOff.includes('Start recording'));assert.ok(!recorderOff.includes('>Pause<'));
+const recordingTrip={...trip,gpsSessionId:'session',gpsSessionActive:true,trackSessions:[{id:'session',startedAt:Date.now()}],track:[{sessionId:'session',segmentId:'leg',lat:34,lng:-111}]};
+const recorderOn=renderToStaticMarkup(<RecordingBar trip={recordingTrip} gps={{status:'recording',lastSavedAt:Date.now()}}/>);
+for(const label of ['Recording','Pause','Finish','This phone'])assert.ok(recorderOn.includes(label));
+const recorderPaused=renderToStaticMarkup(<RecordingBar trip={{...recordingTrip,gpsSessionActive:false}} gps={{status:'off'}}/>);
+assert.ok(recorderPaused.includes('Resume'));assert.ok(!recorderPaused.includes('>Pause<'));
+console.log('Recording controls: off, recording, and paused states passed.');

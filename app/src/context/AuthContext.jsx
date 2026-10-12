@@ -1,23 +1,33 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 import { setSignedInUser } from '../lib/authUser';
 
 const AuthContext = createContext(null);
+function cachedProfile(id) { try { return JSON.parse(localStorage.getItem('tr_profile:'+id)||'null'); } catch { return null; } }
+function cacheProfile(profile) { if(profile?.id) { try {localStorage.setItem('tr_profile:'+profile.id,JSON.stringify(profile));} catch { /* Cache is optional. */ } } }
+function offlineSession(networkFailed=false) { try {return (networkFailed || navigator.onLine === false) ? JSON.parse(localStorage.getItem('tr_offline_identity')||'null') : null;} catch {return null;} }
+function cacheIdentity(session) { if(session?.user && !session.offline) {try {localStorage.setItem('tr_offline_identity',JSON.stringify({user:{id:session.user.id,email:session.user.email},offline:true}));}catch{ /* Cache is optional. */ }} }
+
 
 export function AuthProvider({ children }) {
+  const profileRequest = useRef(0);
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(supabaseConfigured);
   const [profileLoading, setProfileLoading] = useState(false);
 
   const loadProfile = useCallback(async (userId) => {
+    const request=++profileRequest.current;
     if (!supabase || !userId) {
       setProfile(null);
       setSignedInUser(null);
       return null;
     }
 
-    setProfileLoading(true);
+    const cached = cachedProfile(userId);
+    setProfile(cached);
+    setSignedInUser(userId,cached?.display_name || null);
+    setProfileLoading(!cached);
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -26,18 +36,21 @@ export function AuthProvider({ children }) {
         .maybeSingle();
 
       if (error) throw error;
+      if(request!==profileRequest.current)return null;
 
       const next = data || null;
+      cacheProfile(next);
       setProfile(next);
       setSignedInUser(userId, next?.display_name || null);
       return next;
     } catch (e) {
+      if(request!==profileRequest.current)return null;
       console.error('Failed to load profile', e);
-      setProfile(null);
-      setSignedInUser(userId, null);
-      return null;
+      setProfile(cached);
+      setSignedInUser(userId, cached?.display_name || null);
+      return cached;
     } finally {
-      setProfileLoading(false);
+      if(request===profileRequest.current)setProfileLoading(false);
     }
   }, []);
 
@@ -50,22 +63,33 @@ export function AuthProvider({ children }) {
 
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
-      setSession(data.session ?? null);
-      if (data.session?.user?.id) {
-        void loadProfile(data.session.user.id);
+      const restored = data.session || offlineSession(Boolean(error));
+      cacheIdentity(restored);
+      setSession(restored);
+      if (restored?.user?.id) {
+        void loadProfile(restored.user.id);
       } else {
         setSignedInUser(null);
       }
       setLoading(false);
+    }).catch(() => {
+      if(!mounted)return;
+      const restored=offlineSession(true);setSession(restored);
+      if(restored?.user?.id)void loadProfile(restored.user.id);
+      setLoading(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if(_event === 'SIGNED_OUT') localStorage.removeItem('tr_offline_identity');
+      nextSession = nextSession || (_event !== 'SIGNED_OUT' ? offlineSession() : null);
+      cacheIdentity(nextSession);
       setSession(nextSession);
       if (nextSession?.user?.id) {
         void loadProfile(nextSession.user.id);
       } else {
+        profileRequest.current++;
         setProfile(null);
         setSignedInUser(null);
       }
@@ -73,13 +97,17 @@ export function AuthProvider({ children }) {
 
     return () => {
       mounted = false;
+      profileRequest.current++;
       sub.subscription.unsubscribe();
     };
   }, [loadProfile]);
 
   const signInWithEmail = useCallback(async (email) => {
     requireSupabase();
-    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const redirectUrl = new URL(window.location.pathname, window.location.origin);
+    const inviteCode = new URLSearchParams(window.location.search).get('join') || new URLSearchParams(window.location.search).get('code');
+    if (inviteCode) redirectUrl.searchParams.set('join', inviteCode);
+    const redirectTo = redirectUrl.toString();
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: redirectTo },
@@ -110,10 +138,15 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
+    profileRequest.current++;
+    localStorage.removeItem('tr_offline_identity');
+    const id=session?.user?.id;
+    if(id)localStorage.removeItem('tr_profile:'+id);
     await supabase.auth.signOut();
+    setSession(null);
     setProfile(null);
     setSignedInUser(null);
-  }, []);
+  }, [session?.user?.id]);
 
   const upsertProfile = useCallback(async (displayName) => {
     const userId = session?.user?.id;
@@ -134,6 +167,7 @@ export function AuthProvider({ children }) {
       .single();
 
     if (error) throw error;
+    cacheProfile(data);
     setProfile(data);
     setSignedInUser(userId, data.display_name);
     return data;

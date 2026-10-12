@@ -1,3 +1,5 @@
+import { buildTripTimeline, trackSegments } from './tripTimeline';
+import { resolveUserDisplayName } from './tripParticipants';
 // Trip export: GPX track file and HTML trip report
 
 export function exportGpx(trip) {
@@ -14,13 +16,13 @@ export function exportGpx(trip) {
     })
     .join('\n');
 
-  const trkpts = track
-    .map((p) => {
+  const trkpts = [...trackSegments(track), ...track.filter(p=>!p.sessionId).map(p=>[p])]
+    .map(segment => '<trkseg>\n' + segment.map((p) => {
       const ele = p.alt != null ? `\n      <ele>${p.alt.toFixed(1)}</ele>` : '';
       const time = p.ts ? `\n      <time>${new Date(p.ts).toISOString()}</time>` : '';
       return `    <trkpt lat="${p.lat}" lon="${p.lng}">${ele}${time}\n    </trkpt>`;
     })
-    .join('\n');
+    .join('\n') + '\n</trkseg>').join('\n');
 
   const gpx = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="TripReport"
@@ -34,9 +36,7 @@ export function exportGpx(trip) {
 ${wpts}
   <trk>
     <name>${escXml(name)}</name>
-    <trkseg>
 ${trkpts}
-    </trkseg>
   </trk>
 </gpx>`;
 
@@ -69,16 +69,14 @@ export function exportHtmlReport(trip) {
     })
     .join('\n');
 
-  const entryRows = [...entries]
-    .sort((a, b) => new Date(a.observedAt || a.createdAt) - new Date(b.observedAt || b.createdAt))
-    .map((e) => {
-      const time = e.observedAt ? fmtDateTime(e.observedAt) : '—';
-      const loc = locations.find((l) => l.id === e.locationId);
-      const locName = loc?.name || e.locationName || '—';
-      const detail = buildEntryDetail(e);
-      return `<tr><td>${time}</td><td>${escHtml(e.type)}</td><td>${escHtml(e.title || e.type)}</td><td>${escHtml(locName)}</td><td>${escHtml(e.notes || '')}</td><td>${detail}</td></tr>`;
-    })
-    .join('\n');
+  const timeline=buildTripTimeline(trip);
+  const entryRows=timeline.map(({item:e,time,kind,authorId})=>{
+    const observed=time?new Date(time).toLocaleString(undefined,{timeZone:trip.timeZone||'UTC'}):'—';
+    const loc=locations.find(l=>l.id===e.locationId);
+    const detail=buildEntryDetail(e);
+    const author=resolveUserDisplayName(trip,authorId)||'Crew member';
+    return '<tr><td>'+escHtml(observed)+'</td><td>'+escHtml(kind+': '+(e.type||''))+'</td><td>'+escHtml(e.name||e.title||e.type)+'</td><td>'+escHtml(loc?.name||e.locationName||'—')+'</td><td>'+escHtml(e.notes||'')+'</td><td>'+escHtml(author)+'<br>'+detail+'</td></tr>';
+  }).join('\n');
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -129,9 +127,9 @@ ${locations.length ? `<table>
 <tbody>${locationRows}</tbody>
 </table>` : '<p style="color:#A09D99;font-size:13px">No locations logged.</p>'}
 
-<h2>Journal Entries (${entries.length})</h2>
-${entries.length ? `<table>
-<thead><tr><th>Time</th><th>Type</th><th>Title</th><th>Location</th><th>Notes</th><th>Data</th></tr></thead>
+<h2>Shared Timeline (${timeline.length})</h2>
+${timeline.length ? `<table>
+<thead><tr><th>Time</th><th>Type</th><th>Title</th><th>Location</th><th>Notes</th><th>Contributor / Data</th></tr></thead>
 <tbody>${entryRows}</tbody>
 </table>` : '<p style="color:#A09D99;font-size:13px">No entries logged.</p>'}
 
@@ -153,8 +151,8 @@ function computeStats(trip) {
   const days = start && end ? Math.max(1, Math.round((end - start) / 864e5) + 1) : '—';
 
   let distanceM = 0;
-  for (let i = 1; i < track.length; i++) {
-    distanceM += haversineM(track[i - 1].lat, track[i - 1].lng, track[i].lat, track[i].lng);
+  for (const segment of trackSegments(track)) for (let i = 1; i < segment.length; i++) {
+    distanceM += haversineM(segment[i - 1].lat, segment[i - 1].lng, segment[i].lat, segment[i].lng);
   }
   const distanceMi = (distanceM / 1609.34).toFixed(1);
 

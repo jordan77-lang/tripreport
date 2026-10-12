@@ -1,9 +1,11 @@
+import { tripDayKey, buildTripTimeline } from './tripTimeline';
 import { createMediaObjectUrl, getMediaRecord, isLegacyMediaRef } from './mediaStore';
 
 /** Collect photos from a trip for slideshow / report. */
 export function collectTripPhotos(trip, { scope = 'trip', day = null, locationId = null, eventId = null } = {}) {
   if (!trip) return [];
 
+  const dayKey = value => tripDayKey(value, trip.timeZone || 'UTC');
   const out = [];
   const seen = new Set();
 
@@ -117,9 +119,8 @@ export function listTripDays(trip) {
   for (const p of collectTripPhotos(trip)) {
     if (p.day && p.day !== 'unknown') days.add(p.day);
   }
-  for (const e of trip?.entries || []) {
-    const d = dayKey(e.observedAt || e.createdAt);
-    if (d !== 'unknown') days.add(d);
+  for (const point of buildTripTimeline(trip || {})) {
+    if(point.day !== 'unknown')days.add(point.day);
   }
   return [...days].sort();
 }
@@ -227,12 +228,7 @@ function dataUrlToJpegBase64(dataUrl, { maxSide, quality }) {
   return blobUrlToJpegBase64(dataUrl, { maxSide, quality });
 }
 
-function dayKey(ts) {
-  if (!ts) return 'unknown';
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return 'unknown';
-  return d.toISOString().slice(0, 10);
-}
+
 
 function truncate(s, max) {
   const t = String(s || '');

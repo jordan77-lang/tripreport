@@ -82,7 +82,7 @@ export async function runTripCloudSync(tripId) {
   })();
 
   inflight.set(tripId, promise);
-  return promise;
+  return promise.finally(() => inflight.delete(tripId));
 }
 
 /** Debounced push for one trip — call after local saves while online. */

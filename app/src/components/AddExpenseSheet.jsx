@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ic } from './Ic';
 import { T, F, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
 import { addExpense, getCurrentUserId } from '../lib/storage';
-import { savePlanningToCloud } from '../lib/planningSave';
 import {
   buildSplitPayload,
   formatCustomSplitLabel,
@@ -37,6 +36,7 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
     [event, participantIds, aliasMap],
   );
 
+  const dialogRef = useRef(null);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState(currentUserId);
@@ -57,6 +57,13 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') onClose?.();
+      if (e.key === 'Tab') {
+        const controls = [...(dialogRef.current?.querySelectorAll('button:not(:disabled), input, select, textarea, a[href]') || [])];
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -114,8 +121,7 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
         aliasMap,
       });
 
-      await savePlanningToCloud(trip.id, () => {
-        addExpense(trip.id, {
+      addExpense(trip.id, {
           description: description.trim(),
           amount: value,
           paidBy: effectivePaidBy,
@@ -125,7 +131,6 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
           eventId: event?.id || null,
           eventName: event?.name || null,
           ...splitFields,
-        });
       });
       onSaved?.();
       onClose?.();
@@ -144,6 +149,7 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 900,
                display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div
+        ref={dialogRef} role="dialog" aria-modal="true" aria-label="Add expense"
         onClick={(e) => e.stopPropagation()}
         style={{ background: T.bg, width: '100%', maxWidth: 520, maxHeight: '92vh', overflowY: 'auto',
                  borderRadius: '18px 18px 0 0', fontFamily: F,
@@ -159,8 +165,8 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
               {contextLabel}
             </div>
           </div>
-          <button type="button" onClick={onClose}
-                  style={{ width: 32, height: 32, borderRadius: 16, background: T.bg, border: 'none',
+          <button type="button" onClick={onClose} aria-label="Close expense"
+                  style={{ width: 44, height: 44, borderRadius: 16, background: T.bg, border: 'none',
                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
             <Ic d={ICONS.close} size={16} color={T.textSub} sw={2} />
           </button>
@@ -170,6 +176,7 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
 
           {/* What + how much */}
           <input
+            aria-label="Expense description"
             autoFocus
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -177,6 +184,7 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
             style={inputStyle}
           />
           <input
+            aria-label="Amount"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             inputMode="decimal"
@@ -268,7 +276,7 @@ const inputStyle = {
   border: `1.5px solid ${T.border}`,
   borderRadius: 11,
   padding: '11px 12px',
-  fontSize: 13,
+  fontSize: 16,
   fontFamily: F,
   marginBottom: 8,
   boxSizing: 'border-box',
@@ -298,6 +306,7 @@ function Chip({ active, subtle = false, onClick, children }) {
       type="button"
       onClick={onClick}
       style={{
+        minHeight: 44,
         padding: '7px 12px',
         borderRadius: 16,
         cursor: 'pointer',

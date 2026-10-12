@@ -102,6 +102,10 @@ Rules:
 - Focus: ${focusMap[settings.focus] || focusMap.balanced}
 - Voice: ${settings.tone === 'doley' ? 'first person (I / we)' : settings.voice === 'third' ? 'third person' : 'first person plural (we)'}
 - Use ONLY facts from the manifest and what you see in photos. Do not invent gauge readings, places, or events.
+- Use each day's timeline in the supplied trip time zone. Include event-only and location-only observations; do not assume a journal entry is required.
+- Entries linked to an event are contributions to that event, not separate occurrences. Preserve named contributors and distinct return visits.
+- Conflicting observations are unresolved accounts: do not present a selected version as settled fact. Audio counts are attachment references, not transcriptions; never invent spoken content.
+- Track distance is the sum of recorded session distances and may overlap between participants; do not describe it as the group's unique route length.
 - Write flowing prose only — do NOT use [Photo: ...] placeholders; photos are inserted automatically in chronological order.
 - When photos are attached, describe what you see accurately using their labels from the manifest.
 - ${settings.tone === 'doley' ? 'Prefer section headings like "Day 1 — Launch" with mile markers and camp names in the body. A brief Summary and Closing are fine.' : 'Organize sections by day when possible (heading like "Day 1 — ...").'}

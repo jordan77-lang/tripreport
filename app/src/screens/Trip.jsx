@@ -5,13 +5,13 @@ import { SyncChip } from '../components/SyncChip';
 import { TripCrewList } from '../components/TripCrewList';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { addLocation, finalizeTrip, getCurrentUserId, isTripMember, isTripOwner, reopenTrip, saveTrip, startGpsSession, stopGpsSession } from '../lib/storage';
+import { addLocation, finalizeTrip, getCurrentUserId, isTripMember, isTripOwner, reopenTrip } from '../lib/storage';
 import { getSignedInUserId } from '../lib/authUser';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
 import { shareEntity } from '../lib/share';
 import { exportGpx, exportHtmlReport } from '../lib/export';
-import { exportTripUpdateFile, formatMergeSummary, mergeTripUpdate, readTripUpdateFile } from '../lib/offlineExchange';
+import { TripSyncPanel } from '../components/TripSyncPanel';
 import { TripOverflowMenu, tripMenuIcon } from '../components/TripOverflowMenu';
 import { TripEditPanel } from '../components/TripEditPanel';
 import { LocationSaveForm } from '../components/LocationSaveForm';
@@ -59,12 +59,12 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   const [editingTrip, setEditingTrip] = useState(false);
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const [locCoverPhoto, setLocCoverPhoto] = useState(null);
-  const [exchangeStatus, setExchangeStatus] = useState(null);
+  const exchangeStatus = null;
   const [cloudSyncStatus, setCloudSyncStatus] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [tripSection, setTripSection] = useState('overview');
-  const importUpdateRef = useRef(null);
+  const [showSync, setShowSync] = useState(false);
   // Imperative map handle, supplied by TripMap once its map exists.
   const mapApiRef = useRef(null);
   const handleMapReady = useCallback((api) => { mapApiRef.current = api; }, []);
@@ -82,6 +82,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   });
 
   useEffect(() => {
+    if(!addingLocation || locationSource !== 'current')return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setCurrentPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
@@ -90,7 +91,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       (err) => setCurrentPosError(err.message),
       { enableHighAccuracy: true, timeout: 8000 },
     );
-  }, [addingLocation]);
+  }, [addingLocation, locationSource]);
 
   function startAddLocationAt(pos) {
     setAddingLocation(true);
@@ -163,8 +164,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     { id: 'gpx', label: 'Export GPX track', icon: tripMenuIcon('export'), onClick: () => exportGpx(trip) },
     { id: 'report', label: 'Export HTML report', icon: tripMenuIcon('export'), onClick: () => exportHtmlReport(trip) },
     ...(supabaseConfigured && canSyncTrip ? [{ id: 'sync', label: 'Sync to cloud', icon: tripMenuIcon('sync'), onClick: () => void syncToCloud() }] : []),
-    { id: 'export', label: 'Export offline update', icon: tripMenuIcon('export'), onClick: exportOfflineUpdate },
-    { id: 'import', label: 'Import offline update', icon: tripMenuIcon('import'), onClick: () => importUpdateRef.current?.click() },
+    { id: 'exchange', label: 'Sync & offline sharing', icon: tripMenuIcon('sync'), onClick: () => setShowSync(v=>!v) },
     ...(canEditTrip ? [{
       id: 'edit',
       label: editingTrip ? 'Close edit' : 'Edit trip details',
@@ -182,55 +182,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       onClick: () => { setTripSection('overview'); setDeleteConfirm(true); },
     }] : []),
   ];
-
-  async function exportOfflineUpdate() {
-    if (!trip) return;
-    const result = await exportTripUpdateFile(trip, currentUserId);
-    const message = result.delivery === 'shared'
-      ? 'Offline update ready to share. Choose AirDrop, Nearby Share, Files, or another app.'
-      : result.delivery === 'cancelled'
-        ? 'Offline update share was cancelled.'
-        : 'Offline update downloaded. Share the file with nearby participants.';
-    setExchangeStatus({
-      kind: result.delivery === 'cancelled' ? 'error' : 'success',
-      message,
-    });
-  }
-
-  async function importOfflineUpdate(files) {
-    const file = Array.from(files || [])[0];
-    if (!file || !trip) return;
-
-    try {
-      const update = await readTripUpdateFile(file);
-      const result = mergeTripUpdate(trip, update);
-      saveTrip(result.trip);
-      onTripUpdate?.();
-      setExchangeStatus({
-        kind: 'success',
-        message: formatMergeSummary(result.summary),
-      });
-    } catch (e) {
-      setExchangeStatus({
-        kind: 'error',
-        message: e?.message || 'Could not import that update file.',
-      });
-    } finally {
-      if (importUpdateRef.current) importUpdateRef.current.value = '';
-    }
-  }
-
-  function handleStartTrackingSession() {
-    if (!trip?.id) return;
-    startGpsSession(trip.id);
-    onTripUpdate?.();
-  }
-
-  function handleStopTrackingSession(attachLocationId = null) {
-    if (!trip?.id) return;
-    stopGpsSession(trip.id, { attachLocationId });
-    onTripUpdate?.();
-  }
 
   async function onLocationCoverSelected(files) {
     const file = Array.from(files || [])[0];
@@ -285,12 +236,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       coverPhoto: locCoverPhoto,
     });
     if (created?.id) {
-      if (trip?.gpsSessionActive && trip?.gpsSessionId) {
-        const shouldAttachAndEnd = window.confirm('Tracking session is active. End this session and attach it to this new location?');
-        if (shouldAttachAndEnd) {
-          handleStopTrackingSession(created.id);
-        }
-      }
+
       setSelectedLocationId(created.id);
       setAddingLocation(false);
       setLocationDraft({
@@ -385,14 +331,6 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       col: selectedLocationId === l.id ? '#2A5C8E' : '#3A72A8',
       symbol: l.icon || locationSymbol(l.type),
     }));
-
-  const activeSession = trip?.gpsSessionId
-    ? ((trip.trackSessions || []).find((s) => s.id === trip.gpsSessionId) || null)
-    : null;
-
-  const activeSessionPointCount = trip?.gpsSessionId
-    ? track.filter((p) => p.sessionId === trip.gpsSessionId).length
-    : 0;
 
   if (addingLocation && locationSource === 'map' && locationPin?.lat && locationPin?.lng) {
     mapEntries.push({
@@ -530,16 +468,12 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           )}
         </div>
 
-        <input
-          ref={importUpdateRef}
-          type="file"
-          accept=".json,.tripreport-update.json,application/json"
-          style={{ display: 'none' }}
-          onChange={(e) => void importOfflineUpdate(e.target.files)}
-        />
+
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+        <button onClick={() => setShowSync(v=>!v)} aria-expanded={showSync}>Sync &amp; offline sharing{trip?._sync?.conflicts?.length ? ` · ${trip._sync.conflicts.length} conflicts` : ''}</button>
+        {showSync && <TripSyncPanel trip={trip} onTripUpdate={onTripUpdate}/>} 
         {deleteConfirm && canDeleteTrip && (
           <div style={{
             background: '#FFF0F0',
@@ -753,35 +687,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           </button>
         )}
 
-        {isCompleted && <TripSummaryCard trip={trip} entries={entries} locations={locations} track={track} />}
-
-        {isOpen && (
-        <div style={{ background: trip.gpsSessionActive ? '#EAF3FB' : T.card, borderRadius: 12, border: `1px solid ${trip.gpsSessionActive ? '#BFD9EF' : T.border}`, padding: '10px 12px', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <div>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text }}>
-                {trip.gpsSessionActive ? 'GPS tracking active' : 'GPS tracking'}
-              </div>
-              <div style={{ fontSize: 10.5, color: T.textFaint }}>
-                {trip.gpsSessionActive
-                  ? `${activeSessionPointCount} points · started ${new Date(activeSession?.startedAt || trip.gpsSessionStartedAt || 0).toLocaleTimeString()}`
-                  : 'Record your route between locations.'}
-              </div>
-            </div>
-            {trip.gpsSessionActive ? (
-              <div onClick={() => handleStopTrackingSession(null)}
-                   style={{ background: '#FFEDE6', border: '1px solid #F2C8B4', borderRadius: 9, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#8A5526', cursor: 'pointer', flexShrink: 0 }}>
-                Stop
-              </div>
-            ) : (
-              <div onClick={handleStartTrackingSession}
-                   style={{ background: '#E5F4E8', border: '1px solid #A4CFAD', borderRadius: 9, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#2E6D3A', cursor: 'pointer', flexShrink: 0 }}>
-                Start
-              </div>
-            )}
-          </div>
-        </div>
-        )}
+        {isCompleted && <TripSummaryCard trip={trip} entries={entries} locations={locations} track={track} />}
 
         {canDeleteTrip && !deleteConfirm && (
           <div style={{ marginTop: 8, marginBottom: 4, paddingTop: 16, borderTop: `1px dashed ${T.border}` }}>

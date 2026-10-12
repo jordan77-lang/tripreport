@@ -1,4 +1,6 @@
+import { RecordingBar } from './components/RecordingBar';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { QuickCapture } from './screens/QuickCapture';
 import { Home }         from './screens/Home';
 import { Trip }         from './screens/Trip';
 import { Navigator }    from './screens/Navigator';
@@ -12,7 +14,7 @@ import { TripRecap }    from './screens/TripRecap';
 import { LocationPage } from './screens/LocationPage';
 import { EventPage }    from './screens/EventPage';
 import { useAuth } from './context/AuthContext';
-import { claimAnonymousTripsForUser, clearActiveTrip, getActiveTrip, getCurrentUserId, getTrips, isTripMember, isTripOpen, isTripOwner, setActiveTrip, updateEntry, updateEvent } from './lib/storage';
+import { claimAnonymousTripsForUser, clearActiveTrip, getActiveTrip, getRecordingDeviceId, getCurrentUserId, getTrips, isTripMember, isTripOpen, isTripOwner, setActiveTrip, updateEntry, updateEvent } from './lib/storage';
 import { getSignedInUserId } from './lib/authUser';
 import { Settings } from './screens/Settings';
 import { useGPS } from './hooks/useGPS';
@@ -69,15 +71,13 @@ export default function App() {
     const claimed = claimAnonymousTripsForUser(userId);
     if (claimed > 0) refreshTrip();
   }, [auth.isSignedIn, refreshTrip]);
-  const gpsEnabled = isTripOpen(trip) && (
-    Boolean(trip?.gpsSessionActive) ||
-    (Boolean(trip?.gpsTrackingEnabled) && (screen === 'map' || Boolean(trip?.gpsBackgroundTracking)))
-  );
-  const gps = useGPS(trip?.id, {
-    enabled: gpsEnabled,
-    interval: trip?.gpsIntervalMs || 5000,
-    sessionId: trip?.gpsSessionId || null,
-    onTrackPoint: refreshTrip,
+  const recordingTrip=allTrips.find(t=>t.gpsSessionId && t.gpsRecordingDeviceId===getRecordingDeviceId());
+  const recorderTrip=recordingTrip || trip;
+  const gpsEnabled=Boolean(recordingTrip?.gpsSessionActive && isTripOpen(recordingTrip) &&
+    (!auth.configured || (auth.isSignedIn && !auth.needsProfile)));
+  const gps=useGPS(recordingTrip?.id,{
+    enabled:gpsEnabled,interval:recordingTrip?.gpsIntervalMs||5000,
+    sessionId:recordingTrip?.gpsSessionId,onTrackPoint:refreshTrip,
   });
 
   const syncPendingEntryEnrichment = useCallback(async () => {
@@ -197,6 +197,15 @@ export default function App() {
   // Bottom-nav tabs replace the current screen; drill-downs push. That way back
   // from a Location goes to the Trip it came from, not through every tab visited.
   const onNav = (tab) => {
+    if (tab === 'capture' || tab.startsWith('capture-')) {
+      if (!trip || !isTripOpen(trip)) return;
+      nav.push('capture', {
+        type: tab === 'capture' ? null : tab.slice(8),
+        locationId: ['location', 'event'].includes(screen) ? params.locationId : null,
+        eventId: screen === 'event' ? params.eventId : null,
+      });
+      return;
+    }
     if (tab === 'plan-participants') {
       nav.replace('plan', { tab: 'participants' });
       return;
@@ -247,19 +256,24 @@ export default function App() {
         </div>
       );
     }
-    if (!auth.isSignedIn) return <AuthScreen />;
+    if (!auth.isSignedIn) return <AuthScreen inviteCode={screen === 'join' ? params.inviteCode : null} />;
     if (auth.needsProfile) return <ProfileSetup />;
   }
 
   const tripPages = { ...common, onTripUpdate: refreshTrip, onOpenLocation, onOpenEvent };
 
+  function renderScreen() {
   switch (screen) {
+    case 'capture': return <QuickCapture key={trip?.id} trip={trip} initialType={params.type}
+      locationId={params.locationId} eventId={params.eventId}
+      onCancel={() => nav.canGoBack ? nav.back() : nav.replace('trip')}
+      onSaved={(notice) => { refreshTrip(); nav.replace('log', { notice }); }} />;
     case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onOpenTrip={() => nav.push('trip')} onOpenPlan={() => nav.push('plan')} onJoinTrip={() => nav.push('join')} onOpenSettings={() => nav.push('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
     case 'settings': return <Settings onBack={nav.back} auth={auth} />;
     case 'recap':   return <TripRecap trip={trip} onBack={nav.back} onTripUpdate={refreshTrip} auth={auth} />;
     case 'trip':    return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
-    case 'map':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <Navigator {...common} gps={gps} />;
-    case 'log':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} />;
+    case 'map':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <Navigator {...common} gps={recordingTrip?.id===trip?.id?gps:null} />;
+    case 'log':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} notice={params.notice} />;
     case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={nav.back} initialTab={params.tab || null} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} />;
 
     case 'location': {
@@ -310,6 +324,12 @@ export default function App() {
       />;
     default:        return <Home {...common} />;
   }
+  }
+  return <div style={{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',paddingTop:'env(safe-area-inset-top, 0px)',boxSizing:'border-box'}}> 
+    {recorderTrip && (recordingTrip || (isTripOpen(trip) && !['home','settings','join','new-trip','recap'].includes(screen))) &&
+      <RecordingBar trip={recorderTrip} gps={gps} onUpdate={refreshTrip} onOpenTrip={()=>onSelectTrip(recorderTrip.id)}/>}
+    <div style={{flex:1,minHeight:0,overflow:'hidden'}}>{renderScreen()}</div>
+  </div>;
 }
 
 /**

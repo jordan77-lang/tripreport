@@ -48,3 +48,9 @@ input, select, textarea, button {
 
 /* Mapbox attribution stays small */
 .mapboxgl-ctrl-attrib { font-size: 10px !important; }
+
+/* Consistent keyboard focus, including controls with inline outline resets. */
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #2A5C8E !important;
+  outline-offset: 3px;
+}

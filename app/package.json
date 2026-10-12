@@ -8,9 +8,21 @@
     "build": "vite build",
     "icons": "node scripts/generate-icons.mjs",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:capture": "node --experimental-vm-modules --test tests/capture.test.mjs",
+    "test:ui": "node scripts/test-ui.mjs",
+    "test:sync": "node --experimental-vm-modules --test tests/sync.test.mjs tests/packages.test.mjs tests/cloud-sync.test.mjs",
+    "test:gps": "node --experimental-vm-modules --test tests/gps.test.mjs tests/capture.test.mjs",
+    "native:sync": "npm run build && cap sync",
+    "native:android": "cap open android",
+    "native:ios": "cap open ios"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/ios": "^7.6.9",
+    "@capacitor/local-notifications": "^7.0.7",
     "@mapbox/mapbox-gl-geocoder": "^5.1.2",
     "@protomaps/basemaps": "^5.7.2",
     "@supabase/supabase-js": "^2.108.2",
@@ -22,6 +34,7 @@
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.9",
     "@eslint/js": "^9.39.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

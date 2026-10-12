@@ -10,13 +10,15 @@ import {
   deleteLocalTrip,
 } from './storage';
 import { syncTripMedia } from './mediaSync';
+import { markMediaRefsSynced, collectMediaRefsFromTrip } from './mediaRefs';
+import { ensureSync, mergeSync, acknowledge, materialize } from './tripSync';
 import {
   mergeCollaboratorsFromMembers,
   memberProfilesFromRows,
   collaboratorsChanged,
   dedupeCollaborators,
 } from './tripParticipants';
-import { mergeRemotePayloadIntoTrip } from './offlineExchange';
+
 
 function randomInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -25,21 +27,6 @@ function randomInviteCode() {
     out += chars[Math.floor(Math.random() * chars.length)];
   }
   return out;
-}
-
-function resolveCloudOwnerId(localTrip, userId) {
-  const anonKey = 'tr_user_id';
-  let ownerId = localTrip.ownerId || userId;
-  try {
-    const anonId = typeof localStorage !== 'undefined' ? localStorage.getItem(anonKey) : null;
-    if (anonId && ownerId === anonId) ownerId = userId;
-  } catch {
-    // ignore
-  }
-  if (!ownerId) ownerId = userId;
-  // RLS on trips insert requires owner_id = auth.uid() — never send a stale id.
-  if (userId) ownerId = userId;
-  return ownerId;
 }
 
 /** Ensure profile row exists and return the Supabase session user id (matches auth.uid()). */
@@ -81,315 +68,93 @@ function formatSupabaseError(error, fallback) {
   return msg;
 }
 
-/** Decide owner vs contributor using local state, trip_members, and cloud owner_id. */
-async function resolveSyncAccess(tripId, userId) {
-  claimAnonymousTripsForUser(userId);
-  let trip = getTrip(tripId);
-  if (!trip) return { trip: null, role: null };
-
-  try {
-    await refreshTripMembersFromCloud(tripId);
-  } catch (e) {
-    console.warn('Member refresh during sync resolve failed', e);
-  }
-  trip = getTrip(tripId) || trip;
-
-  let cloudOwnerId = null;
-  try {
-    const supabase = requireSupabase();
-    const { data } = await supabase
-      .from('trips')
-      .select('owner_id')
-      .eq('id', tripId)
-      .maybeSingle();
-    cloudOwnerId = data?.owner_id || null;
-  } catch (e) {
-    console.warn('Could not read cloud trip owner', e);
-  }
-
-  let memberRows = [];
-  try {
-    memberRows = await fetchTripMemberRows(tripId);
-  } catch (e) {
-    console.warn('Could not fetch trip members', e);
-  }
-
-  const myMemberRow = memberRows.find((r) => r.user_id === userId);
-  const localOwner = isTripOwner(trip, userId);
-  const cloudOwner = cloudOwnerId === userId;
-  const memberOwnerRow = myMemberRow?.role === 'owner';
-
-  if (cloudOwner || localOwner || memberOwnerRow || (!cloudOwnerId && localOwner)) {
-    if (trip.ownerId !== userId) {
-      saveTrip({
-        ...trip,
-        ownerId: userId,
-        syncState: trip.syncState || 'pending',
-        updatedAt: Date.now(),
-      });
-      trip = getTrip(tripId) || trip;
-    }
-    return { trip, role: 'owner' };
-  }
-
-  const contributor = Boolean(
-    cloudOwnerId
-    && (
-      myMemberRow?.role === 'contributor'
-      || (isTripMember(trip, userId) && myMemberRow?.role !== 'viewer')
-    ),
-  );
-  if (contributor) {
-    return { trip, role: 'contributor' };
-  }
-
-  return { trip, role: null };
+const runningSyncs = new Map();
+export async function pushTripToCloud(localTrip) {
+  if (runningSyncs.has(localTrip.id)) return runningSyncs.get(localTrip.id);
+  const task = syncChanges(localTrip.id).finally(()=>runningSyncs.delete(localTrip.id));
+  runningSyncs.set(localTrip.id,task);
+  return task;
 }
 
-/** Push local trip document to Supabase (creates or updates). */
-export async function pushTripToCloud(localTrip) {
+async function syncChanges(tripId) {
   const supabase = requireSupabase();
   const userId = await ensureSignedInProfile(supabase);
-  if (getSignedInUserId() && getSignedInUserId() !== userId) {
-    console.warn('Auth session user differs from app user cache — using Supabase session');
-  }
-
-  const { trip, role } = await resolveSyncAccess(localTrip.id, userId);
-  if (!trip || !role) {
-    throw new Error('You need to be a trip member to sync. If you created this trip, sign out and sign back in, then try again.');
-  }
-
-  if (role === 'contributor') {
-    return pushTripPayloadAsMember(trip, userId);
-  }
-
-  const ownerId = resolveCloudOwnerId(trip, userId);
-  let tripForPush = trip;
-  try {
-    const refreshed = await refreshTripMembersFromCloud(trip.id);
-    tripForPush = refreshed.trip || trip;
-  } catch (e) {
-    console.warn('Trip members refresh before push failed', e);
-  }
-  const latest = getTrip(trip.id) || tripForPush;
-  const payload = buildCloudPayload(latest);
-
-  const { data: updatedAt, error } = await supabase.rpc('upsert_trip_for_owner', {
-    p_id: trip.id,
-    p_name: trip.name,
-    p_status: trip.status || 'planning',
-    p_start_date: trip.startDate || null,
-    p_end_date: trip.endDate || null,
-    p_types: trip.types || [],
-    p_location: trip.location || null,
-    p_privacy: trip.privacy || 'friends',
-    p_payload: payload,
-  });
-
-  if (error) throw new Error(formatSupabaseError(error, 'Could not sync trip to cloud'));
-
-  const data = { id: trip.id, updated_at: updatedAt };
-  const serverUpdatedAt = Date.parse(data.updated_at) || Date.now();
-
-  const saved = getTrip(trip.id);
-  if (saved) {
-    saveTrip({ ...saved, ownerId, syncState: 'synced', updatedAt: serverUpdatedAt });
-  }
-
-  try {
-    await syncTripMedia(trip.id);
-    const refreshed = getTrip(trip.id);
-    if (refreshed) {
-      const { listMediaForTrip } = await import('./mediaStore');
-      const localMedia = await listMediaForTrip(trip.id);
-      const syncedIds = new Set(localMedia.filter((r) => r.syncState === 'synced').map((r) => r.id));
-      saveTrip({ ...markMediaRefsSynced(refreshed, syncedIds), syncState: 'synced', ownerId });
+  claimAnonymousTripsForUser(userId);
+  // Read first to bootstrap pre-v2 trips. The RPC checks this snapshot's revision.
+  for (let attempt=0; attempt<4; attempt++) {
+    const {data:row,error:readError} = await supabase.from('trips').select('*').eq('id',tripId).maybeSingle();
+    if (readError) throw readError;
+    let latest=getTrip(tripId);
+    if (!latest && !row) throw new Error('Trip not found.');
+    if (!latest) latest=cloudRowToLocalTrip(row);
+    if (!row && !isTripOwner(latest,userId)) throw new Error('Join this trip online before syncing contributions.');
+    let merged=row ? mergeSync(latest,cloudRowToLocalTrip(row)) : ensureSync(latest);
+    if(row && row.owner_id !== userId) {
+      const members=await fetchTripMemberRows(tripId);
+      const membership=members.find(m=>m.user_id===userId);
+      if(membership?.role==='viewer') {
+        const remote=ensureSync(cloudRowToLocalTrip(row));
+        const readOnly=acknowledge(merged,remote._sync.ops.map(o=>o.id));
+        saveTrip(readOnly,{capture:false});
+        await syncTripMedia(tripId,{readOnly:true});
+        return {id:tripId,updated_at:row.updated_at,readOnly:true};
+      }
     }
-  } catch (e) {
-    console.warn('Media sync after trip push failed', e);
-  }
-
-  return data;
-}
-
-/** Contributors merge journal data and may update shared trip details. */
-async function pushTripPayloadAsMember(localTrip, userId) {
-  const supabase = requireSupabase();
-  const payload = buildCloudPayload(localTrip);
-  const updatedAt = new Date().toISOString();
-
-  const { data, error } = await supabase
-    .from('trips')
-    .update({
-      payload,
-      updated_at: updatedAt,
-      name: localTrip.name,
-      status: localTrip.status || 'planning',
-      start_date: localTrip.startDate || null,
-      end_date: localTrip.endDate || null,
-      types: localTrip.types || [],
-      location: localTrip.location || null,
-      privacy: localTrip.privacy || 'friends',
-    })
-    .eq('id', localTrip.id)
-    .select('updated_at')
-    .single();
-
-  if (error) throw new Error(formatSupabaseError(error, 'Could not sync trip updates'));
-
-  const trip = getTrip(localTrip.id);
-  if (trip) {
-    const serverUpdatedAt = Date.parse(data?.updated_at) || Date.now();
-    saveTrip({ ...trip, syncState: 'synced', updatedAt: serverUpdatedAt });
-  }
-
-  try {
-    await syncTripMedia(localTrip.id);
-    const refreshed = getTrip(localTrip.id);
-    if (refreshed) {
-      const { listMediaForTrip } = await import('./mediaStore');
-      const localMedia = await listMediaForTrip(localTrip.id);
-      const syncedIds = new Set(localMedia.filter((r) => r.syncState === 'synced').map((r) => r.id));
-      saveTrip({ ...markMediaRefsSynced(refreshed, syncedIds), syncState: 'synced' });
+    merged=saveTrip(merged,{capture:false});
+    const sent=merged._sync.ops;
+    const {data,error}=await supabase.rpc('sync_trip_changes',{
+      p_id:tripId,p_ops:sent,p_metadata:{name:merged.name},
+      p_legacy_updated_at:row?.payload?._sync?.version===2 ? null : (row?.updated_at || null),
+    });
+    if (error?.code==='40001') continue;
+    if (error) throw new Error(error.code==='PGRST202'
+      ? 'Cloud sync needs database migration 009. Your changes are saved on this device.'
+      : error.message || 'Cloud sync failed; local changes are still saved.');
+    // Re-read AFTER the request. Only changes actually returned by the server are acknowledged.
+    const current=getTrip(tripId) || merged;
+    const received=mergeSync(current,{...merged,_sync:{version:2,ops:data.ops,acked:[]}});
+    const saved=acknowledge({...received,ownerId:data.ownerId},data.ops.map(o=>o.id));
+    saveTrip(saved,{capture:false});
+    const acknowledged=new Set(saved._sync.acked);
+    if (saved._sync.ops.some(o=>!acknowledged.has(o.id))) continue;
+    try {
+      await syncTripMedia(tripId);
+    } catch(error) {
+      const fresh=getTrip(tripId);
+      saveTrip({...fresh,_sync:{...fresh._sync,mediaPending:Math.max(1,collectMediaRefsFromTrip(fresh).length),mediaError:error.message}},{capture:false});
+      throw error;
     }
-  } catch (e) {
-    console.warn('Media sync after member trip push failed', e);
+    const {listMediaForTrip}=await import('./mediaStore');
+    const media=await listMediaForTrip(tripId);
+    const ids=new Set(media.filter(r=>r.syncState==='synced').map(r=>r.id));
+    const fresh=getTrip(tripId);
+    const missing=collectMediaRefsFromTrip(fresh).filter(ref=>!ids.has(ref.id));
+    saveTrip({...markMediaRefsSynced(fresh,ids),_sync:{...fresh._sync,mediaPending:missing.length,mediaError:missing.length?'Some attachments still need to sync.':null}},{capture:false});
+    if (missing.length) throw new Error('Trip changes synced. '+missing.length+' attachments still need to sync; retry when online.');
+    const finalTrip=getTrip(tripId),finalAck=new Set(finalTrip._sync.acked);
+    if(finalTrip._sync.ops.some(o=>!finalAck.has(o.id)))continue;
+    return {id:tripId,updated_at:data.updatedAt};
   }
-
-  return { id: localTrip.id, updated_at: data?.updated_at || updatedAt };
-}
-
-/** Pull cloud trip into local storage. */
-function mergeCloudRowIntoLocal(localTrip, row) {
-  const p = row.payload || {};
-  const cloudUpdated = Date.parse(row.updated_at) || 0;
-  const localUpdated = localTrip.updatedAt || 0;
-  const cloudNewer = cloudUpdated > localUpdated;
-  const cloudOnly = cloudRowToLocalTrip(row);
-
-  const { trip: merged, summary } = mergeRemotePayloadIntoTrip(localTrip, {
-    ...p,
-    trip: {
-      name: row.name,
-      types: row.types || [],
-      location: row.location,
-      startDate: row.start_date,
-      endDate: row.end_date,
-      privacy: row.privacy,
-      status: row.status,
-      updatedAt: cloudUpdated,
-    },
-  }, { remoteUpdatedAt: cloudUpdated });
-
-  const hasLocalOnly = (summary.localOnlyCount || 0) > 0;
-
-  return {
-    ...merged,
-    id: row.id,
-    name: cloudNewer ? row.name : merged.name,
-    types: cloudNewer ? (row.types || []) : merged.types,
-    location: cloudNewer ? row.location : merged.location,
-    startDate: cloudNewer ? row.start_date : merged.startDate,
-    endDate: cloudNewer ? row.end_date : merged.endDate,
-    privacy: cloudNewer ? row.privacy : merged.privacy,
-    status: row.status || merged.status,
-    ownerId: row.owner_id,
-    createdAt: localTrip.createdAt || cloudOnly.createdAt,
-    coverPhoto: cloudNewer ? cloudOnly.coverPhoto : (merged.coverPhoto ?? cloudOnly.coverPhoto),
-    mapArea: cloudNewer ? cloudOnly.mapArea : (merged.mapArea ?? cloudOnly.mapArea),
-    offlineRegions: cloudNewer ? cloudOnly.offlineRegions : (merged.offlineRegions ?? cloudOnly.offlineRegions),
-    gpsTrackingEnabled: cloudNewer ? cloudOnly.gpsTrackingEnabled : merged.gpsTrackingEnabled,
-    gpsBackgroundTracking: cloudNewer ? cloudOnly.gpsBackgroundTracking : merged.gpsBackgroundTracking,
-    gpsIntervalMs: cloudNewer ? cloudOnly.gpsIntervalMs : merged.gpsIntervalMs,
-    startedAt: cloudNewer ? cloudOnly.startedAt : merged.startedAt,
-    endedAt: cloudNewer ? cloudOnly.endedAt : merged.endedAt,
-    gpsSessionActive: cloudNewer ? cloudOnly.gpsSessionActive : merged.gpsSessionActive,
-    gpsSessionId: cloudNewer ? cloudOnly.gpsSessionId : merged.gpsSessionId,
-    gpsSessionStartedAt: cloudNewer ? cloudOnly.gpsSessionStartedAt : merged.gpsSessionStartedAt,
-    recap: cloudNewer ? cloudOnly.recap : (merged.recap ?? cloudOnly.recap),
-    updatedAt: Math.max(localUpdated, cloudUpdated),
-    syncState: hasLocalOnly ? 'pending' : 'synced',
-  };
+  throw new Error('New changes are saved locally. Sync will retry.');
 }
 
 export async function pullTripFromCloud(tripId) {
-  const supabase = requireSupabase();
-  const { data, error } = await supabase
-    .from('trips')
-    .select('*')
-    .eq('id', tripId)
-    .maybeSingle();
-
+  const local=getTrip(tripId);
+  if (local) { await pushTripToCloud(local); return getTrip(tripId); }
+  const supabase=requireSupabase();
+  const {data,error}=await supabase.from('trips').select('*').eq('id',tripId).maybeSingle();
   if (error) throw error;
   if (!data) throw new Error('Trip not found in cloud');
-
-  const existing = getTrip(tripId);
-  const local = existing ? mergeCloudRowIntoLocal(existing, data) : cloudRowToLocalTrip(data);
-  saveTrip(local);
-  try {
-    await refreshTripMembersFromCloud(tripId);
-  } catch (e) {
-    console.warn('Trip members refresh after pull failed', e);
-  }
-  try {
-    await syncTripMedia(tripId);
-  } catch (e) {
-    console.warn('Media download after trip pull failed', e);
-  }
-  return getTrip(tripId) || local;
+  saveTrip(cloudRowToLocalTrip(data),{capture:false});
+  await pushTripToCloud(getTrip(tripId));
+  await refreshTripMembersFromCloud(tripId);
+  return getTrip(tripId);
 }
 
-/** Pull one trip when the cloud copy is newer; push first if local edits are pending. */
 export async function pullTripIfCloudNewer(tripId) {
-  if (!tripId || !supabaseConfigured) return { pulled: false };
-
-  async function pushPendingLocal(local) {
-    const userId = getSignedInUserId();
-    if (!local?.syncState || local.syncState !== 'pending' || !userId || !isTripMember(local, userId)) {
-      return false;
-    }
-    try {
-      await pushTripToCloud(local);
-      return true;
-    } catch (e) {
-      console.warn('Push before pull skipped', tripId, e);
-      return false;
-    }
-  }
-
-  let local = getTrip(tripId);
-  if (await pushPendingLocal(local)) {
-    return { pulled: false, pushed: true };
-  }
-
-  const supabase = requireSupabase();
-  const { data, error } = await supabase
-    .from('trips')
-    .select('updated_at')
-    .eq('id', tripId)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data) return { pulled: false, missing: true };
-
-  // Re-read after network — planning edits often land while we were fetching cloud metadata.
-  local = getTrip(tripId);
-  if (await pushPendingLocal(local)) {
-    return { pulled: false, pushed: true };
-  }
-  if (local?.syncState === 'pending') {
-    return { pulled: false, skipped: 'local-pending' };
-  }
-
-  const cloudUpdated = Date.parse(data.updated_at) || 0;
-  const localUpdated = local?.updatedAt || 0;
-
-  if (!local || cloudUpdated > localUpdated) {
-    await pullTripFromCloud(tripId);
-    return { pulled: true };
-  }
-
-  return { pulled: false };
+  if (!tripId || !supabaseConfigured) return {pulled:false};
+  await pullTripFromCloud(tripId);
+  return {pulled:true};
 }
 
 /** List trips the signed-in user can access. */
@@ -604,10 +369,10 @@ export async function syncUserTripsWithCloud() {
     for (const row of cloudList) {
       try {
         const local = getTrip(row.id);
-        if (local?.syncState === 'pending') continue;
+        // Always merge immutable changes, including when this device has edits.
         const cloudUpdated = Date.parse(row.updated_at) || 0;
         const localUpdated = local?.updatedAt || 0;
-        if (!local || cloudUpdated > localUpdated) {
+        if (!local || cloudUpdated > localUpdated || local.syncState === 'pending' || local._sync?.version === 2) {
           await pullTripFromCloud(row.id);
           pulled += 1;
         }
@@ -713,44 +478,11 @@ export async function fetchMapRegions() {
   return data || [];
 }
 
-function buildCloudPayload(trip) {
-  const {
-    entries, locations, events, track, trackSessions, collaborators,
-    gearItems, meals, expenses, expenseGroups, shoppingItems,
-    coverPhoto, mapArea, offlineRegions,
-    gpsTrackingEnabled, gpsBackgroundTracking, gpsIntervalMs,
-    startedAt, endedAt, gpsSessionActive, gpsSessionId, gpsSessionStartedAt,
-    recap,
-  } = trip;
-
-  return {
-    entries: entries || [],
-    locations: locations || [],
-    events: events || [],
-    track: track || [],
-    trackSessions: trackSessions || [],
-    collaborators: collaborators || [],
-    gearItems: gearItems || [],
-    meals: meals || [],
-    expenses: expenses || [],
-    expenseGroups: expenseGroups || [],
-    shoppingItems: shoppingItems || [],
-    coverPhoto: stripHeavyMedia(coverPhoto),
-    mapArea: mapArea || null,
-    offlineRegions: offlineRegions || [],
-    gpsTrackingEnabled: Boolean(gpsTrackingEnabled),
-    gpsBackgroundTracking: Boolean(gpsBackgroundTracking),
-    gpsIntervalMs: gpsIntervalMs || 15000,
-    startedAt: startedAt || null,
-    endedAt: endedAt || null,
-    gpsSessionActive: Boolean(gpsSessionActive),
-    gpsSessionId: gpsSessionId || null,
-    gpsSessionStartedAt: gpsSessionStartedAt || null,
-    recap: recap || null,
-  };
-}
-
 function cloudRowToLocalTrip(row) {
+  if (row.payload?._sync?.version === 2) return materialize({
+    id: row.id, ownerId: row.owner_id, createdAt: Date.parse(row.created_at),
+    _sync: { ...row.payload._sync, acked: row.payload._sync.ops.map(o=>o.id) },
+  });
   const p = row.payload || {};
   const existing = getTrip(row.id);
 
@@ -793,13 +525,3 @@ function cloudRowToLocalTrip(row) {
   };
 }
 
-function stripHeavyMedia(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(stripHeavyMedia);
-  const next = { ...obj };
-  delete next.dataUrl;
-  if (next.thumbDataUrl && next.thumbDataUrl.length > 120_000) {
-    delete next.thumbDataUrl;
-  }
-  return next;
-}

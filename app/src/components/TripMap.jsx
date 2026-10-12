@@ -1,3 +1,4 @@
+import { trackSegments } from '../lib/tripTimeline';
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -118,6 +119,8 @@ function MapboxTripMap({
 }) {
   const containerRef = useRef(null);
   const mapRef       = useRef(null);
+  const trackRef = useRef(track);
+  useEffect(()=>{trackRef.current=track;},[track]);
   const markersRef   = useRef([]);
   const pinMarkerRef = useRef(null);
   const onPinChangeRef = useRef(onPinChange);
@@ -160,7 +163,7 @@ function MapboxTripMap({
       // Track line source
       map.addSource('track', {
         type: 'geojson',
-        data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
+        data: { type: 'Feature', geometry: { type: 'MultiLineString', coordinates: trackSegments(trackRef.current).filter(s=>s.length>1).map(s=>s.map(p=>[p.lng,p.lat])) } },
       });
       map.addLayer({
         id: 'track-line',
@@ -253,11 +256,22 @@ function MapboxTripMap({
     if (!src) return;
     src.setData({
       type: 'Feature',
-      geometry: { type: 'LineString', coordinates: track.map(p => [p.lng, p.lat]) },
+      geometry: { type: 'MultiLineString', coordinates: trackSegments(track).filter(s=>s.length>1).map(s=>s.map(p=>[p.lng,p.lat])) },
     });
   }, [track]);
 
   // Update live position dot — fly to position on first fix
+  useEffect(() => {
+    const map=mapRef.current;
+    if(!map || !position || !Number.isFinite(position.lat) || !Number.isFinite(position.lng))return;
+    const dot=document.createElement('div');
+    dot.setAttribute('aria-label','Your last GPS location');
+    dot.title='Your last GPS location';
+    dot.style.cssText='width:16px;height:16px;border-radius:50%;background:#2877d4;border:3px solid white;box-shadow:0 0 0 5px #2877d433;';
+    const marker=new mapboxgl.Marker({element:dot}).setLngLat([position.lng,position.lat]).addTo(map);
+    return ()=>marker.remove();
+  },[position]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !position) return;
