@@ -1,11 +1,11 @@
-import { tripDayKey, buildTripTimeline } from './tripTimeline';
+import { tripDayKey, tripTimeZone, buildTripTimeline } from './tripTimeline';
 import { createMediaObjectUrl, getMediaRecord, isLegacyMediaRef } from './mediaStore';
 
 /** Collect photos from a trip for slideshow / report. */
 export function collectTripPhotos(trip, { scope = 'trip', day = null, locationId = null, eventId = null } = {}) {
   if (!trip) return [];
 
-  const dayKey = value => tripDayKey(value, trip.timeZone || 'UTC');
+  const dayKey = value => tripDayKey(value, tripTimeZone(trip));
   const out = [];
   const seen = new Set();
 

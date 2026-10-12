@@ -100,7 +100,16 @@ export function EntryForm({
 
   // The observation inherits the event's time. Editing an existing entry keeps
   // whatever it was saved with so re-saving never silently re-stamps it.
-  const observedAt = initialEntry?.observedAt || event?.observedAt || null;
+  // A new Weather or Gauge reading asks "now or another time?" before looking
+  // anything up — conditions and flow both depend on the moment chosen.
+  const asksWhen = !initialEntry && (isWeatherEvent || isGaugeEvent);
+  const [whenChoice, setWhenChoice] = useState(null); // null | 'now' | 'custom'
+  const [customWhen, setCustomWhen] = useState(() => toDatetimeLocal(
+    event?.observedAt || selectedLocation?.observedAt || capturedAt));
+  const customWhenIso = isValidDate(customWhen) ? new Date(customWhen).toISOString() : capturedAt;
+  const observedAt = asksWhen
+    ? (whenChoice === 'custom' ? customWhenIso : null)
+    : (initialEntry?.observedAt || event?.observedAt || null);
   const observedAtIso = observedAt || capturedAt;
   const observedIsHistoric = Boolean(observedAt);
 
@@ -160,6 +169,27 @@ export function EntryForm({
     } finally {
       setGaugesLoading(false);
     }
+  }
+
+  // Once "Now" is chosen, look up straight away. "Another time" waits for the
+  // user to set the time and tap the lookup button.
+  const hasCoords = coords?.lat != null && coords?.lng != null;
+  const runLookup = () => void (isWeatherEvent ? pullWeatherForEvent() : lookupNearbyGauges());
+  useEffect(() => {
+    if (!asksWhen || whenChoice !== 'now' || !hasCoords) return undefined;
+    const timer = setTimeout(runLookup, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [whenChoice, hasCoords]);
+
+  function chooseWhen(choice) {
+    setWhenChoice(choice);
+    // A reading belongs to one moment; changing the moment discards the old one.
+    setWeatherSnapshot(null);
+    setWeatherError(null);
+    setNearbyGauges([]);
+    setGaugeError(null);
+    if (isGaugeEvent) { setCfs(''); setGaugeSiteId(''); setGaugeSiteName(''); }
   }
 
   function importGaugeFlow(g) {
@@ -361,8 +391,32 @@ export function EntryForm({
           </div>
         )}
 
+        {asksWhen && (
+          <div style={{ marginBottom: 16 }}>
+            <Label>When was this?</Label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[{ id: 'now', label: 'Right now' }, { id: 'custom', label: 'Another time' }].map((opt) => (
+                <button key={opt.id} type="button" onClick={() => chooseWhen(opt.id)}
+                  style={{ flex: 1, height: 48, borderRadius: 12, cursor: 'pointer', fontFamily: F,
+                           fontSize: ts(14), fontWeight: 700,
+                           background: whenChoice === opt.id ? typeColor : T.card,
+                           color: whenChoice === opt.id ? 'white' : T.text,
+                           border: `1.5px solid ${whenChoice === opt.id ? typeColor : T.border}` }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {whenChoice === 'custom' && (
+              <input type="datetime-local" aria-label="Reading date and time" value={customWhen}
+                max={toDatetimeLocal(new Date().toISOString())}
+                onChange={(e) => { setCustomWhen(e.target.value); chooseWhen('custom'); }}
+                style={{ ...inputStyle(T), marginTop: 8 }} />
+            )}
+          </div>
+        )}
+
         {/* River flow — fetched for the event's time, never typed by hand. */}
-        {isGaugeEvent && (
+        {isGaugeEvent && (!asksWhen || whenChoice) && (
           <div style={{ marginBottom: 16 }}>
             <Label>River Flow{observedIsHistoric ? ' at event time' : ''}</Label>
 
@@ -413,7 +467,7 @@ export function EntryForm({
         )}
 
         {/* Weather — fetched for the event's location and time. */}
-        {isWeatherEvent && (
+        {isWeatherEvent && (!asksWhen || whenChoice) && (
           <div style={{ marginBottom: 16 }}>
             <Label>Conditions{observedIsHistoric ? ' at event time' : ''}</Label>
 
@@ -619,7 +673,7 @@ export function EntryForm({
              style={{ width: '100%', border: 'none', opacity: mediaBusy ? 0.6 : 1, background: typeColor, borderRadius: 14, padding: '15px', textAlign: 'center',
                       boxShadow: `0 4px 16px ${typeColor}50`, cursor: 'pointer' }}>
           <span style={{ fontSize: ts(16), fontWeight: 800, color: 'white', letterSpacing: -.2 }}>
-            {recording ? 'Stop recording to save' : mediaBusy ? 'Storing attachment…' : initialEntry ? 'Save changes' : 'Save on this phone'}
+            {recording ? 'Stop recording to save' : mediaBusy ? 'Storing attachment…' : initialEntry ? 'Save changes' : 'Save'}
           </span>
         </button>
       </div>
@@ -663,6 +717,17 @@ function fetchBtnStyle(loading) {
 }
 
 /** "Jul 21, 6:40 PM" — or "Today, 6:40 PM" for same-day. */
+function toDatetimeLocal(iso) {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function isValidDate(value) {
+  return Boolean(value) && Number.isFinite(new Date(value).getTime());
+}
+
 function formatWhen(iso) {
   if (!iso) return 'now';
   const d = new Date(iso);

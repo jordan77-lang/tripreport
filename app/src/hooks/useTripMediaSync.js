@@ -12,7 +12,6 @@ export function useTripMediaSync({ enabled = true } = {}) {
     if (!enabled || !supabaseConfigured) return undefined;
 
     async function run() {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       if (!getSignedInUserId()) return;
 
       const trips = getTrips();

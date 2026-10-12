@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { tripTimeZone } from '../lib/tripTimeline';
 import { Ic } from '../components/Ic';
 import { PhotoGrid, PhotoSlideshow } from '../components/PhotoSlideshow';
 import { ReportGenerateModal } from '../components/ReportGenerateModal';
@@ -178,7 +179,7 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, auth }) {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-        <p style={{fontSize:13}}>Report uses the shared timeline in {trip.timeZone || 'UTC'}. Ask every participant to sync or send their final file before publishing.</p>
+        <p style={{fontSize:13}}>Report uses the shared timeline in {tripTimeZone(trip)}. Ask every participant to sync or send their final file before publishing.</p>
         {(trip._sync?.conflicts?.length > 0 || trip.syncState === 'pending' || trip._sync?.mediaPending > 0) && <p role="status">This report is a draft: some changes, attachments, or conflicts still need review in Sync &amp; offline sharing.</p>}
         {trip.recap?.manifestHash && trip.recap.manifestHash !== manifestContentHash(buildTripManifest(trip)) && <p role="status">The trip has changed since this report was generated. Regenerate the draft to include the latest contributions.</p>}
         {!!status && (

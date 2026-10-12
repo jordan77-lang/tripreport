@@ -10,8 +10,31 @@ let passiveCleanup = null;
 let realtimeCleanup = null;
 let fullSyncInflight = null;
 
-function isOnline() {
-  return typeof navigator === 'undefined' || navigator.onLine;
+// navigator.onLine is not trusted: some phones report offline while connected,
+// which silently stopped all syncing. Attempts are cheap and fail safely, so we
+// always try and let the request's outcome say whether we are offline.
+let syncStatus = { ok: null, offline: false, message: null, at: 0 };
+const statusListeners = new Set();
+
+function isNetworkError(e) {
+  return e instanceof TypeError || /failed to fetch|networkerror|load failed|network request failed/i.test(e?.message || '');
+}
+
+function recordSyncResult(error = null) {
+  syncStatus = error
+    ? { ok: false, offline: isNetworkError(error), message: error.message || String(error), at: Date.now() }
+    : { ok: true, offline: false, message: null, at: Date.now() };
+  statusListeners.forEach((fn) => fn());
+}
+
+/** Outcome of the most recent cloud request, for status chips. */
+export function getCloudSyncStatus() {
+  return syncStatus;
+}
+
+export function subscribeCloudSyncStatus(fn) {
+  statusListeners.add(fn);
+  return () => statusListeners.delete(fn);
 }
 
 function isDocumentVisible() {
@@ -32,7 +55,7 @@ export function setTripAutoSyncHandler(onSynced) {
 
 /** Push pending trips, then pull newer cloud trips — used on interval, focus, and reconnect. */
 export async function runFullCloudSync() {
-  if (!supabaseConfigured || !isOnline()) return { skipped: 'offline' };
+  if (!supabaseConfigured) return { skipped: 'not-configured' };
   if (!getSignedInUserId()) return { skipped: 'not-signed-in' };
 
   if (fullSyncInflight) return fullSyncInflight;
@@ -40,9 +63,16 @@ export async function runFullCloudSync() {
   fullSyncInflight = (async () => {
     await flushAllPendingTripSyncs();
     const { syncUserTripsWithCloud } = await import('./tripCloud');
-    const result = await syncUserTripsWithCloud();
-    if (result.pulled || result.pushed) notifySynced();
-    return result;
+    try {
+      const result = await syncUserTripsWithCloud();
+      // Reaching the cloud clears "offline", but must not hide a push the server rejected.
+      if (syncStatus.ok !== false || syncStatus.offline) recordSyncResult();
+      if (result.pulled || result.pushed) notifySynced();
+      return result;
+    } catch (e) {
+      recordSyncResult(e);
+      throw e;
+    }
   })().finally(() => {
     fullSyncInflight = null;
   });
@@ -52,7 +82,7 @@ export async function runFullCloudSync() {
 
 /** Push a single pending trip now (skips if already running for this id). */
 export async function runTripCloudSync(tripId) {
-  if (!tripId || !supabaseConfigured || !isOnline()) return { skipped: 'offline' };
+  if (!tripId || !supabaseConfigured) return { skipped: 'not-configured' };
   if (!getSignedInUserId()) return { skipped: 'not-signed-in' };
 
   if (inflight.has(tripId)) return inflight.get(tripId);
@@ -71,10 +101,12 @@ export async function runTripCloudSync(tripId) {
 
     try {
       await pushTripToCloud(trip);
+      recordSyncResult();
       notifySynced(tripId);
       return { synced: true };
     } catch (e) {
       console.warn('Auto trip cloud sync failed', tripId, e);
+      recordSyncResult(e);
       return { error: e };
     } finally {
       inflight.delete(tripId);
@@ -87,7 +119,7 @@ export async function runTripCloudSync(tripId) {
 
 /** Debounced push for one trip — call after local saves while online. */
 export function scheduleTripCloudSync(tripId, { debounceMs = DEBOUNCE_MS } = {}) {
-  if (!tripId || !supabaseConfigured || !getSignedInUserId() || !isOnline()) return;
+  if (!tripId || !supabaseConfigured || !getSignedInUserId()) return;
 
   const existing = timers.get(tripId);
   if (existing) clearTimeout(existing);
@@ -111,7 +143,7 @@ export async function flushTripCloudSync(tripId) {
 
 /** When back online, push every trip that has pending local changes. */
 export async function flushAllPendingTripSyncs() {
-  if (!supabaseConfigured || !isOnline() || !getSignedInUserId()) return { pushed: 0 };
+  if (!supabaseConfigured || !getSignedInUserId()) return { pushed: 0 };
 
   const { getTrips, isTripMember } = await import('./storage');
   const userId = getSignedInUserId();
@@ -134,7 +166,7 @@ export function initPassiveCloudSync({ onSynced, intervalMs = BACKGROUND_SYNC_MS
   let intervalId = null;
 
   const runIfReady = () => {
-    if (!isOnline() || !isDocumentVisible()) return;
+    if (!isDocumentVisible()) return;
     void runFullCloudSync().then((result) => {
       if ((result?.pulled || result?.pushed) && onSynced) onSynced();
     });
@@ -184,7 +216,7 @@ export function initTripCloudRealtime({ onSynced } = {}) {
       { event: '*', schema: 'public', table: 'trips' },
       (payload) => {
         const tripId = payload.new?.id ?? payload.old?.id;
-        if (!tripId || !isOnline()) return;
+        if (!tripId) return;
 
         void (async () => {
           const { pullTripIfCloudNewer } = await import('./tripCloud');

@@ -18,7 +18,6 @@ export function useCloudTripSync({ enabled = true, onSynced } = {}) {
     initTripCloudRealtime({ onSynced });
 
     async function runFullSync() {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       try {
         const result = await runFullCloudSync();
         if ((result.pulled || result.pushed) && onSynced) onSynced();

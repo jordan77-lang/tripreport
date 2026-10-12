@@ -16,7 +16,7 @@ export function BottomNav({ active = 'home', onNav, trip }) {
   return (
     <nav aria-label="Trip navigation" style={{ background: T.card, borderTop: '1px solid ' + T.border,
       flexShrink: 0, fontFamily: F, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-      {hasOpenTrip && (
+      {hasOpenTrip && active !== 'trip' && (
         <button type="button" onClick={() => onNav?.('trip')} aria-current={active === 'trip' ? 'page' : undefined}
           style={{ width: '100%', minHeight: 44, border: 'none', borderBottom: '1px solid ' + T.border,
             background: T.accentLight, color: T.accent, padding: '8px 16px', fontSize: ts(12), fontWeight: 700,

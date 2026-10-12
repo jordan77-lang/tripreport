@@ -1,5 +1,5 @@
 import { collectTripPhotos } from './tripPhotos';
-import { buildTripTimeline, tripDayKey, trackSegments } from './tripTimeline';
+import { buildTripTimeline, tripDayKey, tripTimeZone, trackSegments } from './tripTimeline';
 import { resolveUserDisplayName } from './tripParticipants';
 
 /** Build structured trip data for AI report generation (text only). */
@@ -18,7 +18,7 @@ export function buildTripManifest(trip) {
   const dayMap = new Map();
 
   for (const entry of entries) {
-    const dayKey = tripDayKey(entry.observedAt || entry.createdAt, trip.timeZone || 'UTC');
+    const dayKey = tripDayKey(entry.observedAt || entry.createdAt, tripTimeZone(trip));
     if (!dayMap.has(dayKey)) dayMap.set(dayKey, { date: dayKey, entries: [], locations: new Set(), events: new Set() });
     const bucket = dayMap.get(dayKey);
     const loc = entry.locationId ? locById.get(entry.locationId) : null;
@@ -78,7 +78,7 @@ export function buildTripManifest(trip) {
 
   return {
     tripId: trip.id,
-    timeZone: trip.timeZone || 'UTC',
+    timeZone: tripTimeZone(trip),
     unresolvedConflicts: trip._sync?.conflicts?.length || 0,
     conflicts: (trip._sync?.conflicts || []).filter(c=>['events','entries','locations'].includes(c.collection)).map(c=>({collection:c.collection,id:c.recordId,field:c.field,versions:c.choices.map(o=>({authorId:o.authorId,value:o.value}))})),
     name: trip.name,

@@ -77,7 +77,8 @@ export function LocationSaveForm({
           <button
             key={tp.id}
             type="button"
-            onClick={() => set({ type: tp.id, icon: draft.icon || tp.icon })}
+            // Follow the type's icon unless someone picked a custom one.
+            onClick={() => set({ type: tp.id, icon: !draft.icon || LOCATION_TYPES.some((t) => t.icon === draft.icon) ? tp.icon : draft.icon })}
             style={{
               padding: '6px 10px',
               borderRadius: 14,

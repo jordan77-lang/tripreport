@@ -126,12 +126,28 @@ export function Home({ trip, allTrips = [], onNav, onFab, onOpenTrip, onSelectTr
         ) : (
           <div style={{ margin: '14px 16px 0', background: T.accentLight, borderRadius: 16, padding: '20px',
                         textAlign: 'center', border: `1.5px dashed ${T.accent}60` }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.accent, marginBottom: 6 }}>No trip selected</div>
-            <div style={{ fontSize: 12, color: T.accentMid, marginBottom: 14 }}>Create a trip to plan gear, shopping, and crew</div>
-            <div onClick={onFab} style={{ background: T.accent, borderRadius: 12, padding: '10px 20px',
-                                           display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <Ic d={ICONS.plus} size={16} color="white" sw={2.5} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>New Trip</span>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.accent, marginBottom: 6 }}>
+              {allTrips.length ? 'No trip selected' : 'Welcome to TripReport'}
+            </div>
+            {/* Most first-time users were invited, so joining sits beside creating. */}
+            <div style={{ fontSize: 12, color: T.accentMid, marginBottom: 14 }}>
+              {auth?.configured && onJoinTrip
+                ? 'Got an invite code from your trip leader? Join their trip — or start your own.'
+                : 'Create a trip to plan gear, shopping, and crew'}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              {auth?.configured && onJoinTrip && (
+                <button type="button" onClick={onJoinTrip} style={{ background: T.accent, border: 'none', borderRadius: 12, padding: '10px 20px',
+                  fontSize: 13, fontWeight: 700, color: 'white', cursor: 'pointer', fontFamily: F }}>
+                  Join a trip
+                </button>
+              )}
+              <button type="button" onClick={onFab} style={{ background: auth?.configured && onJoinTrip ? T.card : T.accent,
+                border: `1px solid ${T.accent}`, borderRadius: 12, padding: '10px 20px', display: 'inline-flex', alignItems: 'center', gap: 8,
+                cursor: 'pointer', fontFamily: F }}>
+                <Ic d={ICONS.plus} size={16} color={auth?.configured && onJoinTrip ? T.accent : 'white'} sw={2.5} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: auth?.configured && onJoinTrip ? T.accent : 'white' }}>New Trip</span>
+              </button>
             </div>
           </div>
         )}

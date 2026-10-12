@@ -71,7 +71,7 @@ function getContributeItems(eventType) {
 export function EventPage({
   trip, location, event, onBack, onNav, onFab, onTripUpdate,
   canEditEvent = true, canAddToEvent = true, canDeleteEvent = true,
-  initialEdit = false, initialAddType = null,
+  initialEdit = false, initialAddType = null, onInitialAddDone = null,
   onPrev = null, onNext = null, eventIndex = null, eventCount = null,
 }) {
   const currentUserId = getCurrentUserId();
@@ -186,9 +186,34 @@ export function EventPage({
     };
     if (editingEntry?.id) updateEntry(trip.id, editingEntry.id, next);
     else addEntry(trip.id, next);
+    // A Weather/River flow event is its reading: adopt the reading's time so the
+    // journal and report place the event when it actually happened.
+    if (!editingEntry && payload.type === event.type && payload.observedAt && !event.observedAt) {
+      updateEvent(trip.id, event.id, { observedAt: payload.observedAt });
+    }
+    closeEntryForm();
+    onTripUpdate?.();
+  }
+
+  // Closing lands on the event page, where + Add and the gallery take photos,
+  // notes, and anything else for this event.
+  function closeEntryForm() {
     setActiveFormType(null);
     setEditingEntry(null);
-    onTripUpdate?.();
+    onInitialAddDone?.();
+  }
+
+  // Backing out of the reading a Weather/River flow event was just created for
+  // leaves nothing behind — an empty event would clutter the journal and report.
+  function cancelEntryForm() {
+    const abandoned = initialAddType && !editingEntry && entries.length === 0 && galleryPhotos(event).length === 0;
+    if (abandoned && trip && event) {
+      removeEvent(trip.id, event.id);
+      onTripUpdate?.();
+      onBack?.();
+      return;
+    }
+    closeEntryForm();
   }
 
   function saveEventDetails() {
@@ -263,7 +288,7 @@ export function EventPage({
         defaultLocationId={location?.id || event.locationId}
         initialEntry={editingEntry}
         onSave={handleSaveEntry}
-        onCancel={() => { setActiveFormType(null); setEditingEntry(null); }}
+        onCancel={cancelEntryForm}
       />
     );
   }

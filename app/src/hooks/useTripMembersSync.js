@@ -10,7 +10,6 @@ export function useTripMembersSync({ tripId, enabled = true, onSynced } = {}) {
     if (!enabled || !tripId || !supabaseConfigured) return undefined;
 
     async function run() {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       try {
         const { pullTripIfCloudNewer } = await import('../lib/tripCloud');
         let changed = false;

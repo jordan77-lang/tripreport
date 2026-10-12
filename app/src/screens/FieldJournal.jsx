@@ -1,4 +1,4 @@
-import { buildTripTimeline, tripDayKey } from '../lib/tripTimeline';
+import { buildTripTimeline, formatTripDay, tripDayKey, tripTimeZone } from '../lib/tripTimeline';
 import { Fragment, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { Ic } from '../components/Ic';
@@ -140,12 +140,12 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
 
         {filteredEntries.map((e, i) => {
           const col = ENTRY_COLORS[e.type] || T.accent;
-          const day = tripDayKey(e.observedAt || e.createdAt, trip?.timeZone || 'UTC');
+          const day = tripDayKey(e.observedAt || e.createdAt, tripTimeZone(trip));
           const previous = filteredEntries[i - 1];
-          const previousDay = previous && tripDayKey(previous.observedAt || previous.createdAt, trip?.timeZone || 'UTC');
+          const previousDay = previous && tripDayKey(previous.observedAt || previous.createdAt, tripTimeZone(trip));
           return (
             <Fragment key={e._key || i}>
-            {day !== previousDay && <h2 style={{ fontSize: ts(15), color: T.textSub, margin: '16px 0 10px' }}>{day}</h2>}
+            {day !== previousDay && <h2 style={{ fontSize: ts(15), color: T.textSub, margin: '16px 0 10px' }}>{formatTripDay(day, trip?.startDate)}</h2>}
             <div style={{ background: T.card, borderRadius: 12, padding: '12px 13px',
                                            marginBottom: 8, border: `1px solid ${T.border}`,
                                            display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -166,7 +166,7 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
                 <div style={{ fontSize: ts(12), color: '#2A5C8E', marginBottom: 4 }}>
                   {resolveUserDisplayName(trip, e.authorId, currentUserId) || 'Crew member'} · {entryLocationLabel(e, locations)}
                 </div>
-                {e.observedAt && <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>Observed: {new Date(e.observedAt).toLocaleString(undefined, { timeZone: trip?.timeZone || 'UTC' })}</div>}
+                {e.observedAt && <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>Observed: {new Date(e.observedAt).toLocaleString(undefined, { timeZone: tripTimeZone(trip) })}</div>}
                 {e.notes && <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.4 }}>{e.notes}</div>}
                 {e.mapTagSymbol && <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>Tag: {e.mapTagSymbol}</div>}
                 {e.cfs && (

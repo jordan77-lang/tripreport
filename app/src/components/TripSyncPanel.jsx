@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { getTrip, saveTrip, getCurrentUserId } from '../lib/storage';
 import { ensureSync, materialize, resolveConflict } from '../lib/tripSync';
 import { prepareTripUpdateFile, sharePreparedUpdate, downloadTripFile, readTripUpdateFile, mergeTripUpdate, formatMergeSummary } from '../lib/offlineExchange';
-import { combineLocations, duplicateLocations } from '../lib/tripTimeline';
+import { combineLocations, duplicateLocations, tripTimeZone } from '../lib/tripTimeline';
 import { pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { T } from '../tokens';
@@ -48,7 +48,7 @@ export function TripSyncPanel({trip,onTripUpdate}) {
     {synced._sync.mediaError && <p role="status">{synced._sync.mediaError}</p>}
     <p style={{fontSize:13}}>Other phones may still have unshared updates. Exchange files during the trip and reconnect everyone before making the final report. Join the same trip online before leaving.</p>
     {synced._sync.lastCloudSync && <p style={{fontSize:13}}>Last successful data sync: {new Date(synced._sync.lastCloudSync).toLocaleString()}</p>}
-    <label>Trip time zone <input aria-label="Trip time zone" defaultValue={trip.timeZone||'UTC'} key={trip.timeZone||'UTC'}
+    <label>Trip time zone <input aria-label="Trip time zone" defaultValue={tripTimeZone(trip)} key={tripTimeZone(trip)}
       onBlur={e=>{try{new Intl.DateTimeFormat('en',{timeZone:e.target.value});saveTrip({...getTrip(trip.id),timeZone:e.target.value});refresh();}catch{setMessage('Use a time zone such as America/Phoenix.');}}}/></label>
     <div style={{display:'flex',gap:8,flexWrap:'wrap',margin:'12px 0'}}>
       {supabaseConfigured && <button disabled={busy} onClick={()=>action(async()=>{const result=await pushTripToCloud(getTrip(trip.id));refresh();setMessage(result.readOnly?'Downloaded updates. Viewer access cannot upload local changes.':'Synced changes and attachments.');})}>Sync now</button>}

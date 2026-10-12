@@ -78,7 +78,9 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
     });
     if (!created) return;
     onTripUpdate?.();
-    onOpenEvent?.(location.id, created.id);
+    // Choosing Weather or River flow already says what's being logged — go straight to it.
+    const addType = ['weather', 'gauge'].includes(type) ? type : null;
+    onOpenEvent?.(location.id, created.id, { addType });
   }
 
   function openViewEvent(eventId) {

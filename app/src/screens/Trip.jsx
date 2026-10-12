@@ -402,7 +402,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                 textAlign: 'left',
               }}
             >
-              {formatTripDateRange(trip.startDate, trip.endDate)} · Edit trip details
+              {formatTripDateRange(trip.startDate, trip.endDate)}
             </button>
             )}
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -436,7 +436,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                 fontFamily: F,
               }}
             >
-              Edit trip details
+              Edit
             </button>
             )}
             <TripOverflowMenu items={overflowItems} />
@@ -472,7 +472,14 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-        <button onClick={() => setShowSync(v=>!v)} aria-expanded={showSync}>Sync &amp; offline sharing{trip?._sync?.conflicts?.length ? ` · ${trip._sync.conflicts.length} conflicts` : ''}</button>
+        {/* Always reachable from the ⋮ menu; shown inline only when there are conflicts to review. */}
+        {trip?._sync?.conflicts?.length > 0 && (
+          <button type="button" onClick={() => setShowSync(v=>!v)} aria-expanded={showSync}
+            style={{ width: '100%', marginBottom: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid #E8C9A0',
+                     background: '#FBF0E4', color: '#7A4A14', fontSize: ts(13), fontWeight: 700, fontFamily: F, textAlign: 'left', cursor: 'pointer' }}>
+            {trip._sync.conflicts.length} sync {trip._sync.conflicts.length === 1 ? 'conflict' : 'conflicts'} to review →
+          </button>
+        )}
         {showSync && <TripSyncPanel trip={trip} onTripUpdate={onTripUpdate}/>} 
         {deleteConfirm && canDeleteTrip && (
           <div style={{
@@ -687,7 +694,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           </button>
         )}
 
-        {isCompleted && <TripSummaryCard trip={trip} entries={entries} locations={locations} track={track} />}
+        {isCompleted && <TripSummaryCard trip={trip} entries={entries} locations={locations} track={track} />}
 
         {canDeleteTrip && !deleteConfirm && (
           <div style={{ marginTop: 8, marginBottom: 4, paddingTop: 16, borderTop: `1px dashed ${T.border}` }}>

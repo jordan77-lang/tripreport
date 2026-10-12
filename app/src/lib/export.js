@@ -1,4 +1,4 @@
-import { buildTripTimeline, trackSegments } from './tripTimeline';
+import { buildTripTimeline, tripTimeZone, trackSegments } from './tripTimeline';
 import { resolveUserDisplayName } from './tripParticipants';
 // Trip export: GPX track file and HTML trip report
 
@@ -71,7 +71,7 @@ export function exportHtmlReport(trip) {
 
   const timeline=buildTripTimeline(trip);
   const entryRows=timeline.map(({item:e,time,kind,authorId})=>{
-    const observed=time?new Date(time).toLocaleString(undefined,{timeZone:trip.timeZone||'UTC'}):'—';
+    const observed=time?new Date(time).toLocaleString(undefined,{timeZone:tripTimeZone(trip)}):'—';
     const loc=locations.find(l=>l.id===e.locationId);
     const detail=buildEntryDetail(e);
     const author=resolveUserDisplayName(trip,authorId)||'Crew member';

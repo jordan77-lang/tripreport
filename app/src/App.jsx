@@ -235,9 +235,10 @@ export default function App() {
     nav.push('location', { locationId, eventId: eventId || null });
   };
 
-  const onOpenEvent = (locationId, eventId) => {
+  // addType opens that entry form straight away (a new Weather event goes to the reading).
+  const onOpenEvent = (locationId, eventId, { addType = null } = {}) => {
     if (!eventId) return;
-    nav.push('event', { locationId: locationId || null, eventId });
+    nav.push('event', { locationId: locationId || null, eventId, addType });
   };
 
   const common = { trip, onNav, onFab };
@@ -298,6 +299,9 @@ export default function App() {
         onTripUpdate={refreshTrip}
         onBack={nav.back}
         onOpenEvent={onOpenEvent}
+        initialAddType={params.addType || null}
+        // Drop addType once used so returning to this event shows the event, not the form again.
+        onInitialAddDone={() => params.addType && nav.replace('event', { ...params, addType: null })}
       />;
     }
 
