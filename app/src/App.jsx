@@ -82,7 +82,8 @@ export default function App() {
 
   const syncPendingEntryEnrichment = useCallback(async () => {
     if (!trip?.id) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    // No navigator.onLine gate: it can report offline while connected, and each
+    // lookup below already leaves the entry pending if its request fails.
     if (enrichmentRunningRef.current) return;
 
     enrichmentRunningRef.current = true;
@@ -187,9 +188,7 @@ export default function App() {
     };
 
     window.addEventListener('online', onOnline);
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
-      void syncPendingEntryEnrichment();
-    }
+    void syncPendingEntryEnrichment();
 
     return () => window.removeEventListener('online', onOnline);
   }, [syncPendingEntryEnrichment]);

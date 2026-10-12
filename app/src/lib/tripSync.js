@@ -131,6 +131,9 @@ export function materialize(trip) {
     (new Date(a.observedAt || a.ts || a.createdAt || 0).getTime()||0)-(new Date(b.observedAt || b.ts || b.createdAt || 0).getTime()||0) || String(a.id).localeCompare(String(b.id)));
   result.entries.reverse();
   const acked=new Set(synced._sync.acked || []);
+  // Per-record status for UI chips; syncState is omitted from ops so this never becomes a change.
+  const unsent=new Set(ops.filter(o=>!acked.has(o.id)).map(o=>canonical([o.collection,o.recordId])));
+  for (const c of COLLECTIONS) for (const row of result[c]) row.syncState=unsent.has(canonical([c,row.id])) ? 'pending' : 'synced';
   result._sync={...synced._sync,conflicts};
   result.syncState=ops.some(o=>!acked.has(o.id)) || synced._sync.mediaPending > 0 ? 'pending' : 'synced';
   return result;

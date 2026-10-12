@@ -79,16 +79,6 @@ export function EventWeatherEditSection({ draft, setDraft, location }) {
     const when = resolveObservedAtIso(draft);
     setDraft((d) => ({ ...d, observedTimeMode: d.observedTimeMode, observedAt: when }));
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setDraft((d) => ({
-        ...d,
-        weatherSyncPending: true,
-        observedAt: when,
-      }));
-      setError('Offline — weather will sync when you are back online.');
-      return;
-    }
-
     setLoading(true);
     try {
       const weather = await fetchWeatherAtTime(location.lat, location.lng, when);
@@ -99,6 +89,8 @@ export function EventWeatherEditSection({ draft, setDraft, location }) {
         weatherSyncPending: false,
       }));
     } catch (err) {
+      // Only a failed request means offline; then retry automatically on reconnect.
+      if (err?.offline) setDraft((d) => ({ ...d, weatherSyncPending: true, observedAt: when }));
       setError(err?.message || 'Could not fetch weather for that time.');
     } finally {
       setLoading(false);

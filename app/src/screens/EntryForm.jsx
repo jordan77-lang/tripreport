@@ -175,10 +175,6 @@ export function EntryForm({
       setWeatherError('No coordinates yet for this event.');
       return;
     }
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setWeatherError('Offline right now. Save and weather will sync once you are back online.');
-      return;
-    }
     setWeatherLoading(true);
     setWeatherError(null);
     try {
@@ -187,7 +183,9 @@ export function EntryForm({
       const weather = await fetchWeatherAtTime(coords.lat, coords.lng, observedAtIso);
       setWeatherSnapshot(weather);
     } catch (err) {
-      setWeatherError(err?.message || 'Could not fetch weather for that time.');
+      setWeatherError(err?.offline
+        ? 'Offline right now. Save and weather will sync once you are back online.'
+        : (err?.message || 'Could not fetch weather for that time.'));
     } finally {
       setWeatherLoading(false);
     }
@@ -196,7 +194,7 @@ export function EntryForm({
   function handleSave() {
     if (mediaBusy || recording) return;
     const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-    const weatherPending = isWeatherEvent && coords?.lat != null && coords?.lng != null && (!weatherSnapshot || isOffline);
+    const weatherPending = isWeatherEvent && coords?.lat != null && coords?.lng != null && !weatherSnapshot;
     const gaugePending = isGaugeEvent && Boolean(gaugeSiteId) && (!cfs || isOffline);
 
     onSave({

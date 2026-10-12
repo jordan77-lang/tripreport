@@ -12,7 +12,7 @@ export async function fetchCurrentWeather(lat, lng) {
   url.searchParams.set('current', 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m');
   url.searchParams.set('timezone', 'auto');
 
-  const res = await fetch(url.toString());
+  const res = await request(url);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     const details = body ? ` :: ${body.slice(0, 220)}` : '';
@@ -53,7 +53,7 @@ export async function fetchWeatherAtTime(lat, lng, observedAt) {
   url.searchParams.set('start_date', dateKey);
   url.searchParams.set('end_date', dateKey);
 
-  const res = await fetch(url.toString());
+  const res = await request(url);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     const details = body ? ` :: ${body.slice(0, 220)}` : '';
@@ -147,4 +147,17 @@ function weatherCodeLabel(code) {
     99: 'Severe thunderstorm with hail',
   };
   return map[code] || 'Unknown';
+}
+
+// navigator.onLine is unreliable (some phones report offline while connected),
+// so lookups always try the network and only call it offline when fetch fails.
+async function request(url) {
+  try {
+    return await fetch(url.toString());
+  } catch (cause) {
+    const err = new Error('Offline — weather will sync when you are back online.');
+    err.offline = true;
+    err.cause = cause;
+    throw err;
+  }
 }
