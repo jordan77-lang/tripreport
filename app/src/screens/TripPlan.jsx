@@ -12,7 +12,7 @@ import {
   isTripOwner,
   isTripMember,
   addGearItem, updateGearItem, removeGearItem,
-  addMeal, updateMeal, removeMeal,
+  addMeal, updateMeal, removeMeal, getTrips,
   addShoppingItem, updateShoppingItem, removeShoppingItem,
   generateShoppingList,
 } from '../lib/storage';
@@ -23,16 +23,21 @@ import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants } from '../lib/expenses';
 import { supabaseConfigured } from '../lib/supabase';
 import { getSignedInUserId } from '../lib/authUser';
+import { listSavedIngredients, listSavedMeals, publishSavedMeal, refreshSharedMeals, rememberMeal } from '../lib/mealLibrary';
 
 const TABS = [
-  { id: 'details', label: 'Details' },
   { id: 'participants', label: 'Crew' },
   { id: 'gear', label: 'Gear' },
   { id: 'meals', label: 'Meals' },
   { id: 'shopping', label: 'Shopping' },
-  { id: 'expenses', label: 'Expenses' },
+  { id: 'expenses', label: 'Money' },
   { id: 'maps', label: 'Maps' },
 ];
+
+function planTab(tab) {
+  if (!tab || tab === 'pack') return 'gear';
+  return tab;
+}
 
 const GEAR_CATEGORIES = ['group', 'shelter', 'cooking', 'safety', 'personal'];
 const GEAR_NEED_LABEL = 'To bring';
@@ -64,7 +69,13 @@ export function TripPlan({
   newTripInviteCode = null,
   onDismissInvite,
 }) {
-  const [tab, setTab] = useState(initialTab || 'gear');
+  const [tab, setTab] = useState(() => planTab(initialTab));
+  const [detailsReturn, setDetailsReturn] = useState('gear');
+  const [seenInitialTab, setSeenInitialTab] = useState(initialTab);
+  if (initialTab !== seenInitialTab) {
+    setSeenInitialTab(initialTab);
+    if (initialTab) setTab(planTab(initialTab));
+  }
   const [tripDraft, setTripDraft] = useState(() => buildTripDraft(trip));
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
@@ -93,12 +104,11 @@ export function TripPlan({
     onSynced: onTripUpdate,
   });
 
-  useEffect(() => {
-    if (initialTab) setTab(initialTab);
-  }, [initialTab]);
-
   function selectTab(nextTab) {
-    if (nextTab === 'details') setTripDraft(buildTripDraft(trip));
+    if (nextTab === 'details') {
+      setDetailsReturn(tab === 'details' ? detailsReturn : (tab || 'gear'));
+      setTripDraft(buildTripDraft(trip));
+    }
     setTab(nextTab);
   }
 
@@ -123,11 +133,17 @@ export function TripPlan({
             </span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -.4 }}>Trip Planning</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -.4 }}>Plan</div>
             <div style={{ fontSize: ts(13), color: T.textSub }}>{trip.name}</div>
             <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>
               {formatTripDateRange(trip.startDate, trip.endDate)}
             </div>
+            {canEditTrip && tab !== 'details' && (
+              <button type="button" onClick={() => selectTab('details')}
+                style={{ marginTop: 4, border: 'none', background: 'transparent', color: '#2A5C8E', fontWeight: 800, fontSize: ts(12), cursor: 'pointer', fontFamily: F, padding: 0 }}>
+                Edit trip details
+              </button>
+            )}
           </div>
           <SyncChip state={tripSyncState} compact />
         </div>
@@ -149,9 +165,10 @@ export function TripPlan({
           <TripEditPanel
             trip={trip}
             draft={tripDraft}
-            onCancel={() => setTab('gear')}
+            onCancel={() => setTab(detailsReturn)}
             onSaved={() => {
               onTripUpdate?.();
+              setTab(detailsReturn);
             }}
             onDraftChange={setTripDraft}
           />
@@ -165,9 +182,15 @@ export function TripPlan({
             onDismissInvite={onDismissInvite}
           />
         )}
-        {tab === 'gear' && <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
-        {tab === 'meals' && <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />}
-        {tab === 'shopping' && <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />}
+        {tab === 'gear' && (
+          <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />
+        )}
+        {tab === 'meals' && (
+          <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />
+        )}
+        {tab === 'shopping' && (
+          <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />
+        )}
         {tab === 'expenses' && (
           <TripExpenses trip={trip} onTripUpdate={onTripUpdate} showTitle />
         )}
@@ -386,6 +409,44 @@ function GearTab({ trip, participants, onTripUpdate }) {
   );
 }
 
+function toggleIngredient(current, ingredient) {
+  const parts = current.split(',').map((part) => part.trim()).filter(Boolean);
+  const key = ingredient.toLowerCase();
+  const index = parts.findIndex((part) => part.toLowerCase() === key);
+  if (index >= 0) parts.splice(index, 1);
+  else parts.push(ingredient);
+  return parts.join(', ');
+}
+
+function ChoiceRow({ label, children }) {
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{children}</div>
+    </div>
+  );
+}
+
+function ChoiceChip({ selected, onClick, children }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{
+        minHeight: 32,
+        padding: '4px 10px',
+        borderRadius: 14,
+        border: selected ? 'none' : `1px solid ${T.border}`,
+        background: selected ? T.accent : T.bg,
+        color: selected ? 'white' : T.text,
+        fontSize: 12,
+        fontWeight: 700,
+        cursor: 'pointer',
+        fontFamily: F,
+      }}>
+      {children}
+    </button>
+  );
+}
+
 function MealsTab({ trip, participants, onTripUpdate }) {
   const [name, setName] = useState('');
   const [dayIndex, setDayIndex] = useState(1);
@@ -394,7 +455,24 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   const [ingredients, setIngredients] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [sharedTick, setSharedTick] = useState(0);
   const meals = trip.meals || [];
+  const savedMeals = useMemo(() => {
+    const others = getTrips().filter((item) => item.id !== trip.id);
+    return listSavedMeals([...others, { meals }]);
+  }, [meals, trip.id, sharedTick]);
+  const savedIngredients = useMemo(() => {
+    const others = getTrips().filter((item) => item.id !== trip.id);
+    return listSavedIngredients([...others, { meals }]);
+  }, [meals, trip.id, sharedTick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    refreshSharedMeals().then(() => {
+      if (!cancelled) setSharedTick((tick) => tick + 1);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   function resetForm() {
     setEditingId(null);
@@ -435,6 +513,8 @@ function MealsTab({ trip, participants, onTripUpdate }) {
           addMeal(trip.id, payload);
         }
       });
+      rememberMeal(payload);
+      void publishSavedMeal(payload).then(() => setSharedTick((tick) => tick + 1));
       resetForm();
       onTripUpdate?.();
     } finally {
@@ -461,6 +541,28 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     <div>
       <Composer title={editingId ? 'Edit meal' : 'Add meal'} onCancel={editingId ? resetForm : null}>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Meal name (chili, oatmeal…)" style={inputStyle} />
+        {(savedMeals.length > 0 || savedIngredients.length > 0) && (
+          <p style={{ fontSize: 11, color: T.textSub, lineHeight: 1.4, margin: '8px 0 0' }}>
+            Saved for everyone who is signed in.
+          </p>
+        )}
+        {savedMeals.length > 0 && (
+          <ChoiceRow label="Saved meals">
+            {savedMeals.map((meal) => (
+              <ChoiceChip
+                key={meal.nameKey}
+                selected={meal.nameKey === name.trim().toLowerCase()}
+                onClick={() => {
+                  setName(meal.name);
+                  if (meal.slot) setSlot(meal.slot);
+                  setIngredients((meal.ingredients || []).map((item) => item.name).join(', '));
+                }}
+              >
+                {meal.name}
+              </ChoiceChip>
+            ))}
+          </ChoiceRow>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <select value={dayIndex} onChange={(e) => setDayIndex(e.target.value)} style={selectStyle}>
             {[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>Day {d}</option>)}
@@ -475,6 +577,22 @@ function MealsTab({ trip, participants, onTripUpdate }) {
         </div>
         <input value={ingredients} onChange={(e) => setIngredients(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
                placeholder="Ingredients, comma separated" style={{ ...inputStyle, marginTop: 8 }} />
+        {savedIngredients.length > 0 && (
+          <ChoiceRow label="Saved ingredients">
+            {savedIngredients.map((ingredient) => {
+              const selected = ingredients.split(',').some((part) => part.trim().toLowerCase() === ingredient.toLowerCase());
+              return (
+                <ChoiceChip
+                  key={ingredient.toLowerCase()}
+                  selected={selected}
+                  onClick={() => setIngredients(toggleIngredient(ingredients, ingredient))}
+                >
+                  {ingredient}
+                </ChoiceChip>
+              );
+            })}
+          </ChoiceRow>
+        )}
         <div style={{ marginTop: 8 }}><SaveButton onClick={() => void save()} busy={saving} wide label={editingId ? 'Update meal' : 'Save'} /></div>
       </Composer>
 

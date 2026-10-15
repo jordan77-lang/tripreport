@@ -4,6 +4,7 @@ import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { buildOfflineMapStyle } from '../lib/offlineMapStyle';
+import { syncPinMarker } from './mapPin';
 
 let protocolInstalled = false;
 
@@ -25,12 +26,25 @@ export function OfflineTripMap({
   onMapClick,
   onEntrySelect,
   selectedEntryId,
+  pin = null,
+  onPinChange,
+  onReady = null,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const trackRef = useRef(track);
   useEffect(()=>{trackRef.current=track;},[track]);
   const markersRef = useRef([]);
+  const pinMarkerRef = useRef(null);
+  const onPinChangeRef = useRef(onPinChange);
+  const onMapClickRef = useRef(onMapClick);
+  const pinRef = useRef(pin);
+  const lastCenterRef = useRef(null);
+  useEffect(() => {
+    onPinChangeRef.current = onPinChange;
+    onMapClickRef.current = onMapClick;
+    pinRef.current = pin;
+  }, [onPinChange, onMapClick, pin]);
 
   useEffect(() => {
     if (!pmtilesUrl || mapRef.current) return;
@@ -57,7 +71,11 @@ export function OfflineTripMap({
       showUserHeading: true,
     }), 'top-right');
 
+    map.on('click', (e) => onMapClickRef.current?.({ lng: e.lngLat.lng, lat: e.lngLat.lat }));
+
     map.on('load', () => {
+      map.resize();
+      syncPinMarker(maplibregl.Marker, map, pinMarkerRef, pinRef.current, onPinChangeRef);
       map.addSource('track', {
         type: 'geojson',
         data: { type: 'Feature', geometry: { type: 'MultiLineString', coordinates: trackSegments(trackRef.current).filter(s=>s.length>1).map(s=>s.map(p=>[p.lng,p.lat])) } },
@@ -78,12 +96,33 @@ export function OfflineTripMap({
   }, [pmtilesUrl]);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !onMapClick) return;
-    const handleClick = (e) => onMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat });
-    map.on('click', handleClick);
-    return () => map.off('click', handleClick);
-  }, [onMapClick]);
+    if (!onReady) return undefined;
+    const flyTo = ({ lng, lat, bbox, zoom: toZoom } = {}) => {
+      const map = mapRef.current;
+      if (!map) return;
+      if (bbox) {
+        map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 40, duration: 700, maxZoom: 15 });
+        return;
+      }
+      if (lng == null || lat == null) return;
+      map.flyTo({ center: [lng, lat], zoom: toZoom ?? Math.max(map.getZoom(), 13), duration: 700 });
+    };
+    const getCenter = () => {
+      const c = mapRef.current?.getCenter();
+      return c ? { lng: c.lng, lat: c.lat } : null;
+    };
+    onReady({ flyTo, getCenter });
+    return () => onReady(null);
+  }, [onReady]);
+
+  useEffect(() => {
+    syncPinMarker(maplibregl.Marker, mapRef.current, pinMarkerRef, pin, onPinChangeRef);
+  }, [pin]);
+
+  useEffect(() => () => {
+    pinMarkerRef.current?.remove();
+    pinMarkerRef.current = null;
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -98,7 +137,10 @@ export function OfflineTripMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !center) return;
+    if (!map || !center || center.lng == null || center.lat == null) return;
+    const prev = lastCenterRef.current;
+    if (prev && Math.abs(prev.lng - center.lng) < 1e-9 && Math.abs(prev.lat - center.lat) < 1e-9) return;
+    lastCenterRef.current = { lng: center.lng, lat: center.lat };
     map.flyTo({ center: [center.lng, center.lat], zoom, speed: 1.1 });
   }, [center, zoom]);
 

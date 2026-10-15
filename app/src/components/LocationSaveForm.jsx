@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { T, F } from '../tokens';
 import { ts } from '../lib/textScale';
-import { LOCATION_TYPES } from '../lib/locationTypes';
+import { LOCATION_TYPES, canonicalLocationType } from '../lib/locationTypes';
 import { EmojiPicker } from './EmojiPicker';
 import { MediaThumb } from './MediaThumb';
 import { PlaceSearch } from './PlaceSearch';
@@ -36,6 +36,8 @@ export function LocationSaveForm({
   showPinControls = true,
   title = 'New location',
   onSearchPick = null,
+  nowHint = null,
+  pinSourceIds = null,
 }) {
   const [showMore, setShowMore] = useState(false);
   const set = (patch) => onDraftChange((d) => ({ ...d, ...patch }));
@@ -66,9 +68,8 @@ export function LocationSaveForm({
       <input
         value={draft.name}
         onChange={(e) => set({ name: e.target.value })}
-        placeholder="Name (Put-In, Camp 2, takeout…)"
+        placeholder="Name (put-in, ruin, hotel, grocery stop…)"
         style={inputStyle}
-        autoFocus
       />
 
       <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Type</div>
@@ -86,9 +87,9 @@ export function LocationSaveForm({
               fontSize: ts(11),
               fontWeight: 700,
               fontFamily: F,
-              background: draft.type === tp.id ? '#2A5C8E' : T.bg,
-              color: draft.type === tp.id ? 'white' : T.textSub,
-              border: draft.type === tp.id ? 'none' : `1px solid ${T.border}`,
+              background: canonicalLocationType(draft.type) === tp.id ? '#2A5C8E' : T.bg,
+              color: canonicalLocationType(draft.type) === tp.id ? 'white' : T.textSub,
+              border: canonicalLocationType(draft.type) === tp.id ? 'none' : `1px solid ${T.border}`,
             }}
           >
             {tp.icon} {tp.label}
@@ -104,7 +105,7 @@ export function LocationSaveForm({
         <PlaceSearch onPick={onSearchPick} />
       )}
       <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-        {PIN_SOURCES.map((opt) => (
+        {(pinSourceIds ? PIN_SOURCES.filter((opt) => pinSourceIds.includes(opt.id)) : PIN_SOURCES).map((opt) => (
           <button
             key={opt.id}
             type="button"
@@ -154,7 +155,7 @@ export function LocationSaveForm({
       </div>
       {draft.timeMode === 'current' && (
         <div style={{ fontSize: ts(11), color: T.textFaint, marginBottom: 10 }}>
-          Stamped when you save — {new Date().toLocaleString()}
+          {nowHint || `Stamped when you save — ${new Date().toLocaleString()}`}
         </div>
       )}
       {draft.timeMode === 'custom' && (

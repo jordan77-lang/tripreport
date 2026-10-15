@@ -25,7 +25,7 @@ const ENTRY_COLORS = {
   campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
   weather: '#517EA3', rapid: '#3A72A8', 'river-feature': '#3A72A8',
   note: '#6B6763', food: '#B06030', voice: '#5B8DD9', video: '#C05050',
-  gauge: '#2A5C8E', 'custom-event': '#2C5F3E',
+  gauge: '#2A5C8E', expense: '#2A5C8E', 'custom-event': '#2C5F3E',
 };
 
 // SVG path for each entry type (maps to ICONS)
@@ -33,17 +33,15 @@ const ENTRY_ICON = {
   campsite: ICONS.tent, water: ICONS.drop, wildlife: ICONS.leaf,
   weather: ICONS.compass, rapid: ICONS.drop, 'river-feature': ICONS.drop,
   note: ICONS.note, food: ICONS.fork, voice: ICONS.mic,
-  video: ICONS.video, gauge: ICONS.gauge, 'custom-event': ICONS.plus,
+  video: ICONS.video, gauge: ICONS.gauge, expense: ICONS.expense, 'custom-event': ICONS.plus,
 };
 
 // Core contributions always available for any event.
 // Photos are NOT here — the gallery on the page adds them in one tap, so routing
 // them through an entry form would be a slower second path to the same place.
 const CORE_CONTRIBUTE = [
-  { icon: ICONS.note,    label: 'Add Note',        col: '#6B6763', type: 'note' },
-  { icon: ICONS.mic,     label: 'Voice Memo',      col: '#5B8DD9', type: 'voice' },
-  { icon: ICONS.compass, label: 'Weather',         col: '#517EA3', type: 'weather' },
-  { icon: ICONS.gauge,   label: 'Gauge Reading',   col: '#2A5C8E', type: 'gauge' },
+  { icon: ICONS.compass, label: 'Weather',    col: '#517EA3', type: 'weather' },
+  { icon: ICONS.gauge,   label: 'River Flow', col: '#2A5C8E', type: 'gauge' },
 ];
 
 // Additional items specific to certain event types
@@ -54,12 +52,17 @@ const CONTEXTUAL_CONTRIBUTE = {
   campsite: [{ icon: ICONS.tent,  label: 'Camp Note',   col: '#B8702E', type: 'campsite' }],
 };
 
-// Event types offered in the edit form. Derived from the same list the creation
-// picker uses, plus 'note' — which events can hold but the picker doesn't offer.
-const EVENT_TYPE_OPTIONS = [
-  ...EVENT_CAPTURE_TYPES.map(({ type, label }) => ({ type, label })),
-  { type: 'note', label: 'Note' },
-];
+// Same choices as logging a new event. Older note or voice events keep their
+// saved type so the control still shows what they are.
+const EVENT_TYPE_OPTIONS = EVENT_CAPTURE_TYPES.map(({ type, label }) => ({ type, label }));
+
+function eventTypeOptions(current) {
+  if (current && !EVENT_TYPE_OPTIONS.some((option) => option.type === current)) {
+    const legacy = current === 'note' ? 'Note' : current === 'voice' ? 'Voice' : current;
+    return [...EVENT_TYPE_OPTIONS, { type: current, label: legacy }];
+  }
+  return EVENT_TYPE_OPTIONS;
+}
 
 function getContributeItems(eventType) {
   const contextual = CONTEXTUAL_CONTRIBUTE[eventType] || [];
@@ -79,14 +82,15 @@ export function EventPage({
   const coverRef = useRef(null);
 
   const [activeFormType, setActiveFormType] = useState(
-    initialAddType && initialAddType !== 'custom-event' ? initialAddType : null,
+    initialAddType && !['custom-event', 'expense'].includes(initialAddType) ? initialAddType : null,
   );
   const [editingEntry, setEditingEntry] = useState(null);
   const [editingEvent, setEditingEvent] = useState(initialEdit || initialAddType === 'custom-event');
   const [editEventError, setEditEventError] = useState(null);
   const [contributeOpen, setContributeOpen] = useState(false);
-  const [addingExpense, setAddingExpense] = useState(false);
+  const [addingExpense, setAddingExpense] = useState(initialAddType === 'expense');
   const [photoIdx, setPhotoIdx] = useState(0);
+  const editPanelRef = useRef(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const eventCrewCount = event?.memberIds?.length || 0;
   const [eventDraft, setEventDraft] = useState(() => ({
@@ -95,19 +99,14 @@ export function EventPage({
     type: event?.type || 'note',
     coverPhoto: event?.coverPhoto,
     memberIds: event?.memberIds || [],
+    locationId: event?.locationId || '',
     ...buildCustomEventDraft(event),
   }));
 
   useEffect(() => {
-    setEventDraft({
-      name: event?.name || '',
-      notes: event?.notes || '',
-      type: event?.type || 'note',
-      coverPhoto: event?.coverPhoto,
-      memberIds: event?.memberIds || [],
-      ...buildCustomEventDraft(event),
-    });
-  }, [event?.id, event?.name, event?.notes, event?.type, event?.coverPhoto, event?.memberIds, event?.observedAt, event?.weatherSummary, event?.weatherTempC, event?.weatherSyncPending, event?.weatherObservation]);
+    if (!editingEvent) return;
+    editPanelRef.current?.scrollIntoView({ block: 'start' });
+  }, [editingEvent]);
 
   const entries = useMemo(() => {
     const list = (trip?.entries || []).filter((e) => e.eventId === event?.id);
@@ -188,9 +187,15 @@ export function EventPage({
     else addEntry(trip.id, next);
     // A Weather/River flow event is its reading: adopt the reading's time so the
     // journal and report place the event when it actually happened.
+    const eventPatch = {};
     if (!editingEntry && payload.type === event.type && payload.observedAt && !event.observedAt) {
-      updateEvent(trip.id, event.id, { observedAt: payload.observedAt });
+      eventPatch.observedAt = payload.observedAt;
     }
+    if (!editingEntry && event.type === 'food' && payload.title) {
+      eventPatch.name = payload.title;
+      eventPatch.mealId = payload.mealId || null;
+    }
+    if (Object.keys(eventPatch).length) updateEvent(trip.id, event.id, eventPatch);
     closeEntryForm();
     onTripUpdate?.();
   }
@@ -239,6 +244,7 @@ export function EventPage({
         type: eventDraft.type,
         coverPhoto: eventDraft.coverPhoto,
         memberIds: eventDraft.memberIds,
+        locationId: eventDraft.locationId || event.locationId,
         observedAt,
         ...weatherPatch,
       });
@@ -246,8 +252,23 @@ export function EventPage({
       setEditingEvent(false);
       onTripUpdate?.();
     }).catch((e) => {
-      setEditEventError(e?.message || 'Could not save event.');
+      onTripUpdate?.();
+      setEditEventError(e?.message || 'Saved on this phone. Cloud sync did not finish — use Sync now when you have service.');
     });
+  }
+
+  function beginEditEvent() {
+    setEventDraft({
+      name: event?.name || '',
+      notes: event?.notes || '',
+      type: event?.type || 'note',
+      coverPhoto: event?.coverPhoto,
+      memberIds: [...(event?.memberIds || [])],
+      locationId: event?.locationId || '',
+      ...buildCustomEventDraft(event),
+    });
+    setEditEventError(null);
+    setEditingEvent(true);
   }
 
   async function handleDeleteEvent() {
@@ -286,6 +307,7 @@ export function EventPage({
         event={event}
         locations={location ? [location] : []}
         defaultLocationId={location?.id || event.locationId}
+        lockLocation={Boolean(location)}
         initialEntry={editingEntry}
         onSave={handleSaveEntry}
         onCancel={cancelEntryForm}
@@ -316,10 +338,31 @@ export function EventPage({
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
             {canEditEvent && (
-              <div onClick={() => { setEditingEvent((v) => !v); setEditEventError(null); }}
-                   style={{ fontSize: 10.5, color: editingEvent ? T.textFaint : accentCol, fontWeight: 700, cursor: 'pointer' }}>
-                {editingEvent ? 'Cancel' : 'Edit'}
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (editingEvent) {
+                    setEditingEvent(false);
+                    setEditEventError(null);
+                  } else {
+                    beginEditEvent();
+                  }
+                }}
+                style={{
+                  minHeight: 36,
+                  padding: '0 12px',
+                  borderRadius: 9,
+                  border: editingEvent ? `1px solid ${T.border}` : 'none',
+                  background: editingEvent ? T.bg : accentCol,
+                  color: editingEvent ? T.textSub : 'white',
+                  fontWeight: 800,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  fontFamily: F,
+                }}
+              >
+                {editingEvent ? 'Close' : 'Edit'}
+              </button>
             )}
             {canAddToEvent && (
               <div onClick={() => setContributeOpen((v) => !v)}
@@ -356,7 +399,7 @@ export function EventPage({
       <div style={{ flex: 1, overflowY: 'auto' }}>
 
         {/* ── Photo carousel ── */}
-        {photos.length > 0 && (
+        {photos.length > 0 && !editingEvent && (
           <div style={{ position: 'relative', background: '#111', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180, maxHeight: 340 }}>
             <MediaThumb
               media={photos[safePhotoIdx]?.media}
@@ -397,7 +440,7 @@ export function EventPage({
 
           {/* ── Edit event form ── */}
           {editingEvent && canEditEvent && (
-            <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: '13px 14px', marginBottom: 14 }}>
+            <div ref={editPanelRef} style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: '13px 14px', marginBottom: 14 }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Event</div>
               <input
                 value={eventDraft.name}
@@ -405,14 +448,14 @@ export function EventPage({
                 placeholder="Event name (required)"
                 style={{ width: '100%', border: `1.5px solid ${editEventError && !eventDraft.name.trim() ? '#C0392B' : T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: editEventError && !eventDraft.name.trim() ? 4 : 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
               />
-              {editEventError && !eventDraft.name.trim() && (
+              {editEventError && (
                 <div style={{ fontSize: 11, color: '#C0392B', fontWeight: 600, marginBottom: 8, padding: '5px 9px', background: '#FFF0EE', borderRadius: 7, border: '1px solid #F5C6C0' }}>
                   {editEventError}
                 </div>
               )}
               {/* Same type list as the picker that created the event, with real labels. */}
               <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 8 }}>
-                {EVENT_TYPE_OPTIONS.map(({ type: tp, label }) => (
+                {eventTypeOptions(eventDraft.type).map(({ type: tp, label }) => (
                   <div key={tp} onClick={() => setEventDraft((d) => ({ ...d, type: tp }))}
                        style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
                                 background: eventDraft.type === tp ? accentCol : T.bg,
@@ -422,6 +465,17 @@ export function EventPage({
                   </div>
                 ))}
               </div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Location</div>
+              <select
+                value={eventDraft.locationId || ''}
+                onChange={(e) => setEventDraft((d) => ({ ...d, locationId: e.target.value }))}
+                style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
+              >
+                {(trip?.locations || []).length === 0 && <option value="">No saved place</option>}
+                {(trip?.locations || []).map((loc) => (
+                  <option key={loc.id} value={loc.id}>{loc.name}</option>
+                ))}
+              </select>
               <textarea
                 value={eventDraft.notes}
                 onChange={(e) => setEventDraft((d) => ({ ...d, notes: e.target.value }))}
@@ -688,7 +742,6 @@ function EntryCard({ entry: e, canEdit, onEdit }) {
             {e.observedAt && (
               <span style={{ fontSize: 9.5, color: T.textFaint }}>{fmtTime(e.observedAt)}</span>
             )}
-            <SyncChip state={e.syncState || 'pending'} compact />
           </div>
         </div>
 

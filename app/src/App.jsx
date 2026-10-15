@@ -93,7 +93,10 @@ export default function App() {
 
       let changed = false;
       for (const entry of active.entries || []) {
-        if (entry.type === 'gauge' && (entry.gaugeSyncPending || entry.cfs == null)) {
+        const wantsGauge = entry.type === 'conditions'
+          ? entry.gaugeSyncPending
+          : entry.type === 'gauge' && (entry.gaugeSyncPending || entry.cfs == null);
+        if (wantsGauge) {
           try {
             let siteId = entry.gaugeSiteId;
             let siteName = entry.gaugeSiteName;
@@ -115,28 +118,26 @@ export default function App() {
               }
             }
 
-            if (!siteId) {
-              continue;
+            if (siteId) {
+              // Reading for when the entry was observed, not when we reconnected.
+              const when = entry.gaugeRequestedAt || entry.observedAt || null;
+              const gauge = await fetchGauge(siteId, { at: when });
+              updateEntry(active.id, entry.id, {
+                gaugeSiteId: siteId,
+                cfs: gauge.cfs ?? entry.cfs,
+                gaugeHt: gauge.gaugeHt ?? entry.gaugeHt,
+                gaugeSiteName: gauge.siteName || siteName || entry.gaugeSiteName,
+                gaugeFetchedAt: gauge.updatedAt || when || new Date().toISOString(),
+                gaugeSyncPending: false,
+              });
+              changed = true;
             }
-
-            // Reading for when the entry was observed, not when we reconnected.
-            const when = entry.gaugeRequestedAt || entry.observedAt || null;
-            const gauge = await fetchGauge(siteId, { at: when });
-            updateEntry(active.id, entry.id, {
-              gaugeSiteId: siteId,
-              cfs: gauge.cfs ?? entry.cfs,
-              gaugeHt: gauge.gaugeHt ?? entry.gaugeHt,
-              gaugeSiteName: gauge.siteName || siteName || entry.gaugeSiteName,
-              gaugeFetchedAt: gauge.updatedAt || when || new Date().toISOString(),
-              gaugeSyncPending: false,
-            });
-            changed = true;
           } catch {
             // Leave pending for next reconnect.
           }
         }
 
-        if (entry.type === 'weather' && entry.weatherSyncPending && entry.lat != null && entry.lng != null) {
+        if ((entry.type === 'weather' || entry.type === 'conditions') && entry.weatherSyncPending && entry.lat != null && entry.lng != null) {
           try {
             const when = entry.weatherRequestedAt || entry.observedAt || new Date().toISOString();
             const weather = await fetchWeatherAtTime(entry.lat, entry.lng, when);
@@ -198,18 +199,26 @@ export default function App() {
   const onNav = (tab) => {
     if (tab === 'capture' || tab.startsWith('capture-')) {
       if (!trip || !isTripOpen(trip)) return;
+      const atPlace = ['location', 'event', 'log'].includes(screen) ? params.locationId : null;
       nav.push('capture', {
         type: tab === 'capture' ? null : tab.slice(8),
-        locationId: ['location', 'event'].includes(screen) ? params.locationId : null,
-        eventId: screen === 'event' ? params.eventId : null,
+        locationId: atPlace || null,
+        eventId: screen === 'event' || (screen === 'log' && params.eventId) ? params.eventId : null,
       });
       return;
     }
-    if (tab === 'plan-participants') {
-      nav.replace('plan', { tab: 'participants' });
+    if (tab === 'log') {
+      const atPlace = ['location', 'event'].includes(screen) ? params.locationId : null;
+      nav.replace('log', atPlace
+        ? { locationId: atPlace, eventId: screen === 'event' ? params.eventId : null }
+        : {});
       return;
     }
-    const map = { home: 'home', map: 'map', log: 'log', trip: 'trip', plan: 'plan' };
+    if (tab === 'plan-participants' || tab === 'plan-money') {
+      nav.replace('plan', { tab: tab === 'plan-money' ? 'expenses' : 'participants' });
+      return;
+    }
+    const map = { home: 'home', map: 'map', trip: 'trip', plan: 'plan' };
     const target = map[tab];
     if (!target) return;
     nav.replace(target, target === 'plan' ? {} : undefined);
@@ -230,15 +239,15 @@ export default function App() {
     nav.push('recap', { tripId });
   };
 
-  const onOpenLocation = (locationId, eventId = null) => {
+  const onOpenLocation = (locationId, eventId = null, { edit = false } = {}) => {
     if (!locationId) return;
-    nav.push('location', { locationId, eventId: eventId || null });
+    nav.push('location', { locationId, eventId: eventId || null, edit: edit || null });
   };
 
   // addType opens that entry form straight away (a new Weather event goes to the reading).
-  const onOpenEvent = (locationId, eventId, { addType = null } = {}) => {
+  const onOpenEvent = (locationId, eventId, { addType = null, edit = false } = {}) => {
     if (!eventId) return;
-    nav.push('event', { locationId: locationId || null, eventId, addType });
+    nav.push('event', { locationId: locationId || null, eventId, addType, edit: edit || null });
   };
 
   const common = { trip, onNav, onFab };
@@ -264,7 +273,7 @@ export default function App() {
 
   function renderScreen() {
   switch (screen) {
-    case 'capture': return <QuickCapture key={trip?.id} trip={trip} initialType={params.type}
+    case 'capture': return <QuickCapture key={`${trip?.id || ''}:${params.locationId || ''}:${params.eventId || ''}:${params.type || ''}`} trip={trip} initialType={params.type}
       locationId={params.locationId} eventId={params.eventId}
       onCancel={() => nav.canGoBack ? nav.back() : nav.replace('trip')}
       onSaved={(notice) => { refreshTrip(); nav.replace('log', { notice }); }} />;
@@ -272,17 +281,19 @@ export default function App() {
     case 'settings': return <Settings onBack={nav.back} auth={auth} />;
     case 'recap':   return <TripRecap trip={trip} onBack={nav.back} onTripUpdate={refreshTrip} auth={auth} />;
     case 'trip':    return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
-    case 'map':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <Navigator {...common} gps={recordingTrip?.id===trip?.id?gps:null} />;
-    case 'log':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} notice={params.notice} />;
+    case 'map':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <Navigator {...common} onTripUpdate={refreshTrip} gps={recordingTrip?.id===trip?.id?gps:null} />;
+    case 'log':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} onOpenLocation={onOpenLocation} onOpenEvent={onOpenEvent} notice={params.notice} locationId={params.locationId || null} />;
     case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={nav.back} initialTab={params.tab || null} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} />;
 
     case 'location': {
       const location = (trip?.locations || []).find((l) => l.id === params.locationId) || null;
       return <LocationPage
+        key={location?.id || 'missing-location'}
         {...tripPages}
         location={location}
         onBack={nav.back}
         initialEventId={params.eventId || null}
+        initialEdit={Boolean(params.edit)}
       />;
     }
 
@@ -300,6 +311,7 @@ export default function App() {
         onBack={nav.back}
         onOpenEvent={onOpenEvent}
         initialAddType={params.addType || null}
+        initialEdit={Boolean(params.edit)}
         // Drop addType once used so returning to this event shows the event, not the form again.
         onInitialAddDone={() => params.addType && nav.replace('event', { ...params, addType: null })}
       />;

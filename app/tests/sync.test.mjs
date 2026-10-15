@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ensureSync, materialize, captureChanges, mergeSync, acknowledge, resolveConflict, canonical } from '../src/lib/tripSync.js';
-import { buildTripTimeline, tripDayKey, trackSegments, combineLocations } from '../src/lib/tripTimeline.js';
+import { buildTripTimeline, groupJournalDays, tripDayKey, trackSegments, combineLocations, suggestImportPlacements, applyImportPlacement } from '../src/lib/tripTimeline.js';
 const base=()=>materialize(ensureSync({id:'trip',name:'River',timeZone:'America/Phoenix',locations:[{id:'camp',name:'Camp',lat:34,lng:-111}],events:[{id:'lunch',locationId:'camp',name:'Lunch',notes:'original',photos:[],observedAt:'2026-07-20T01:00:00Z'}],entries:[]}));
 const edit=(trip,fn,author='A')=>{const copy=structuredClone(trip);fn(copy);return captureChanges(copy,trip,{authorId:author});};
 const visible=t=>canonical({locations:t.locations,events:t.events,entries:t.entries,conflicts:t._sync.conflicts});
@@ -62,6 +62,43 @@ test('events without entries appear on the same trip day on every device',()=>{
  assert.ok(timeline.some(p=>p.kind==='event'&&p.day==='2026-07-19'));
  assert.equal(tripDayKey('2026-07-20T01:00:00Z','America/Phoenix'),'2026-07-19');
  assert.equal(trackSegments([{sessionId:'a',lat:1,lng:1},{sessionId:'b',lat:2,lng:2},{lat:3,lng:3}]).length,2);
+});
+test('a river flow reading is one timeline row',()=>{
+ const t=base();
+ t.events.push({id:'flow',locationId:'camp',name:'River flow',type:'gauge',observedAt:'2026-07-20T18:00:00Z'});
+ t.entries.push({id:'reading',eventId:'flow',title:'River Flow Check',type:'gauge',cfs:458,observedAt:'2026-07-20T18:00:00Z'});
+ const rows=buildTripTimeline(t).filter(p=>p.item.id==='flow'||p.item.id==='reading');
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].kind,'entry');
+ assert.equal(rows[0].item.cfs,458);
+ assert.ok(buildTripTimeline(t).some(p=>p.kind==='event'&&p.item.name==='Lunch'));
+});
+test('events tagged at a place nest under that place',()=>{
+ const points=[
+  {id:'camp',_kind:'location',_day:'2026-10-14',name:'test 1',title:'test 1',observedAt:'2026-10-14T23:00:00Z'},
+  {id:'reading',_kind:'entry',_day:'2026-10-14',title:'River Flow Check',type:'gauge',eventId:'flow',eventName:'River flow',eventType:'gauge',locationId:'camp',cfs:458,observedAt:'2026-10-14T23:06:00Z'},
+ ];
+ const [day]=groupJournalDays(points,[{id:'camp',name:'test 1'}]);
+ assert.equal(day.places.length,1);
+ assert.equal(day.places[0].location.name,'test 1');
+ assert.equal(day.places[0].events[0].event.name,'River flow');
+ assert.equal(day.places[0].events[0].entries[0].cfs,458);
+ assert.equal(day.loose.length,0);
+});
+test('an imported place near a saved one defaults to adding onto it',()=>{
+ const local={locations:[{id:'camp',name:'Camp',lat:45,lng:-115}],events:[],entries:[],expenses:[]};
+ const merged={locations:[...local.locations,{id:'theirs',name:'Camp 2',lat:45.0001,lng:-115}],events:[{id:'flow',name:'River Flow',locationId:'theirs',lat:45.0001,lng:-115}],entries:[],expenses:[]};
+ const placement=suggestImportPlacements(local,merged);
+ assert.equal(placement.places[0].action,'add');
+ assert.equal(placement.places[0].targetId,'camp');
+ const applied=applyImportPlacement(merged,placement);
+ assert.equal(applied.locations.length,1);
+ assert.equal(applied.events[0].locationId,'camp');
+ const kept=applyImportPlacement(merged,{places:[{...placement.places[0],action:'keep'}],items:[]});
+ assert.equal(kept.locations.length,2);
+ const mergedPlaces=applyImportPlacement(merged,{places:[{...placement.places[0],action:'merge'}],items:[]});
+ assert.equal(mergedPlaces.locations.length,1);
+ assert.equal(mergedPlaces.events[0].locationId,'camp');
 });
 test('confirmed duplicate places preserve notes, photos, events and references',()=>{
  const b=base();b.locations.push({id:'camp2',name:'Camp',notes:'other',photos:[{id:'p'}]});

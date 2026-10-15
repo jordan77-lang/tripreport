@@ -1,9 +1,10 @@
 import { Ic } from './Ic';
 import { T, F } from '../tokens';
 import { ts } from '../lib/textScale';
-import { EVENT_CAPTURE_TYPES } from '../lib/eventTypes';
+import { eventTypesForTrip } from '../lib/eventTypes';
 
-export function EventTypePicker({ onSelect, title = 'Log an event', hint = 'Creates an event at this location — add photos, gauge readings, and notes on the next screen.', compact = false }) {
+export function EventTypePicker({ trip, onSelect, title = 'Add an event', hint = 'Starts a visit at this stop. Everyone can add photos and notes to it.', compact = false }) {
+  const types = eventTypesForTrip(trip);
   return (
     <div style={{ marginBottom: compact ? 0 : 12 }}>
       <div style={{ fontSize: ts(13), fontWeight: 800, color: T.text, marginBottom: 4 }}>{title}</div>
@@ -11,7 +12,7 @@ export function EventTypePicker({ onSelect, title = 'Log an event', hint = 'Crea
         <div style={{ fontSize: ts(11), color: T.textSub, lineHeight: 1.45, marginBottom: 10 }}>{hint}</div>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {EVENT_CAPTURE_TYPES.map((item) => (
+        {types.map((item) => (
           <button
             key={item.type}
             type="button"

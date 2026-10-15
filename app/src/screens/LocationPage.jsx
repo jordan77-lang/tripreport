@@ -3,25 +3,20 @@ import { BottomNav } from '../components/BottomNav';
 import { SyncChip } from '../components/SyncChip';
 import { TripMap } from '../components/TripMap';
 import { Ic } from '../components/Ic';
-import { T, F, ICONS } from '../tokens';
-import { addEvent, getCurrentUserId, isTripMember, isTripOwner, removeLocation, updateEntityPhotos, updateLocation } from '../lib/storage';
-import { getSignedInUserId, getSignedInDisplayName } from '../lib/authUser';
+import { T, F } from '../tokens';
+import { getCurrentUserId, isTripMember, isTripOwner, removeLocation, updateLocation } from '../lib/storage';
+import { getSignedInUserId } from '../lib/authUser';
 import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
-import { MediaThumb } from '../components/MediaThumb';
 import { PhotoGallery } from '../components/PhotoGallery';
-import {
-  appendPhotosPatch, captionPhotoPatch, createGalleryPhotos,
-  galleryCount, removePhotoPatch, setCoverPatch,
-} from '../lib/gallery';
 import { shareEntity } from '../lib/share';
-import { AddExpenseSheet } from '../components/AddExpenseSheet';
 import { LocationSaveForm } from '../components/LocationSaveForm';
-import { EventTypePicker } from '../components/EventTypePicker';
-import { EVENT_CAPTURE_TYPES, EVENT_COLORS, EVENT_SYMBOLS, defaultEventName } from '../lib/eventTypes';
+import { collectTripPhotos } from '../lib/tripPhotos';
+import { EVENT_CAPTURE_TYPES, EVENT_COLORS } from '../lib/eventTypes';
 import { locationTypeLabel } from '../lib/locationTypes';
+import { resolveUserDisplayName } from '../lib/tripParticipants';
 
-export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdate, onOpenEvent, initialEventId }) {
+export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdate, onOpenEvent, initialEventId, initialEdit = false }) {
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
   const userId = signedInUserId || currentUserId;
@@ -31,31 +26,44 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
   const canDeleteLocation = isOwner;
   const canEditLocation = isMember;
   const canAddToEvents = isMember;
-  const [editingLocation, setEditingLocation] = useState(false);
-  const [addingExpense, setAddingExpense] = useState(false);
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const [locationDraft, setLocationDraft] = useState({
-    name: location?.name || '',
-    type: location?.type || 'point-of-interest',
-    icon: location?.icon || '📍',
-    notes: location?.notes || '',
-    timeMode: location?.timeMode || 'current',
-    observedAt: location?.observedAt ? toDatetimeLocal(new Date(location.observedAt)) : toDatetimeLocal(new Date()),
-    observedStartAt: location?.observedStartAt ? toDatetimeLocal(new Date(location.observedStartAt)) : toDatetimeLocal(new Date()),
-    observedEndAt: location?.observedEndAt ? toDatetimeLocal(new Date(location.observedEndAt)) : toDatetimeLocal(addHours(new Date(), 1)),
-    coverPhoto: location?.coverPhoto || null,
-  });
+  const [editingLocation, setEditingLocation] = useState(Boolean(initialEdit));
+  const [locationSaveError, setLocationSaveError] = useState(null);
+  const [locationSource, setLocationSource] = useState('map');
+  const [locationPin, setLocationPin] = useState(() => (
+    location?.lat != null && location?.lng != null ? { lat: location.lat, lng: location.lng } : null
+  ));
+  const [currentPos, setCurrentPos] = useState(null);
+  const [currentPosError, setCurrentPosError] = useState(null);
+  const [viewingMedia, setViewingMedia] = useState(false);
+  const [locationDraft, setLocationDraft] = useState(() => locationDraftFrom(location));
   // Chronological order for prev/next navigation
   const events = useMemo(() => {
     const list = (trip?.events || []).filter((e) => e.locationId === location?.id);
-    return list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    return list.sort((a, b) => new Date(a.observedAt || a.createdAt || 0) - new Date(b.observedAt || b.createdAt || 0));
   }, [trip?.events, location?.id]);
+  const placeCosts = useMemo(
+    () => (trip?.expenses || []).filter((cost) => cost.locationId === location?.id),
+    [trip?.expenses, location?.id],
+  );
 
   // Arriving from an entry that belongs to an event — go straight to it.
   useEffect(() => {
     if (initialEventId) onOpenEvent?.(location?.id, initialEventId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEventId]);
+
+  useEffect(() => {
+    if (!editingLocation || locationSource !== 'current' || typeof navigator === 'undefined' || !navigator.geolocation) return undefined;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCurrentPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setCurrentPosError(null);
+      },
+      (err) => setCurrentPosError(err.message),
+      { enableHighAccuracy: true, timeout: 8000 },
+    );
+    return undefined;
+  }, [editingLocation, locationSource]);
 
   if (!location) {
     return (
@@ -68,45 +76,75 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
     );
   }
 
-  function startNewEvent(type) {
-    if (!canAddToEvents || !trip || !location) return;
-    const created = addEvent(trip.id, {
-      locationId: location.id,
-      type,
-      name: defaultEventName(type),
-      observedAt: type === 'custom-event' ? new Date().toISOString() : undefined,
-    });
-    if (!created) return;
-    onTripUpdate?.();
-    // Choosing Weather or River flow already says what's being logged — go straight to it.
-    const addType = ['weather', 'gauge'].includes(type) ? type : null;
-    onOpenEvent?.(location.id, created.id, { addType });
-  }
-
   function openViewEvent(eventId) {
     if (!eventId) return;
     onOpenEvent?.(location.id, eventId);
   }
 
+  function beginEditLocation() {
+    setLocationDraft(locationDraftFrom(location));
+    setLocationPin(location?.lat != null && location?.lng != null ? { lat: location.lat, lng: location.lng } : null);
+    setLocationSource('map');
+    setCurrentPos(null);
+    setCurrentPosError(null);
+    setLocationSaveError(null);
+    setEditingLocation(true);
+  }
+
   async function saveLocationDetails() {
-    if (!trip || !location || !locationDraft.name.trim()) return;
-    await savePlanningToCloud(trip.id, () => {
-      updateLocation(trip.id, location.id, {
-        name: locationDraft.name.trim(),
-        type: locationDraft.type,
-        icon: locationDraft.icon,
-        notes: locationDraft.notes,
-        timeMode: locationDraft.timeMode,
-        observedAt: locationDraft.timeMode === 'current'
-          ? new Date().toISOString()
-          : (locationDraft.timeMode === 'custom' ? new Date(locationDraft.observedAt).toISOString() : undefined),
-        observedStartAt: locationDraft.timeMode === 'range' ? new Date(locationDraft.observedStartAt).toISOString() : undefined,
-        observedEndAt: locationDraft.timeMode === 'range' ? new Date(locationDraft.observedEndAt).toISOString() : undefined,
-        coverPhoto: locationDraft.coverPhoto || null,
+    if (!trip || !location) return;
+    if (!locationDraft.name.trim()) {
+      setLocationSaveError('Give this place a name.');
+      return;
+    }
+    let resolved = null;
+    if (locationSource === 'current') {
+      resolved = currentPos;
+    } else if (locationSource === 'custom') {
+      const lat = parseFloat(locationDraft.customLat);
+      const lng = parseFloat(locationDraft.customLng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        setLocationSaveError('Enter valid latitude and longitude.');
+        return;
+      }
+      resolved = { lat, lng };
+    } else {
+      resolved = locationPin;
+    }
+    if (resolved?.lat == null || resolved?.lng == null) {
+      setLocationSaveError(
+        locationSource === 'current'
+          ? (currentPosError || 'Current GPS location is not available yet.')
+          : 'Set a pin or coordinates for this place.',
+      );
+      return;
+    }
+    const keepSavedTime = locationDraft.timeMode === 'current' && location.timeMode === 'current' && location.observedAt;
+    setLocationSaveError(null);
+    try {
+      await savePlanningToCloud(trip.id, () => {
+        updateLocation(trip.id, location.id, {
+          name: locationDraft.name.trim(),
+          type: locationDraft.type,
+          icon: locationDraft.icon,
+          notes: locationDraft.notes,
+          timeMode: locationDraft.timeMode,
+          observedAt: locationDraft.timeMode === 'current'
+            ? (keepSavedTime ? location.observedAt : new Date().toISOString())
+            : (locationDraft.timeMode === 'custom' ? new Date(locationDraft.observedAt).toISOString() : undefined),
+          observedStartAt: locationDraft.timeMode === 'range' ? new Date(locationDraft.observedStartAt).toISOString() : undefined,
+          observedEndAt: locationDraft.timeMode === 'range' ? new Date(locationDraft.observedEndAt).toISOString() : undefined,
+          coverPhoto: locationDraft.coverPhoto || null,
+          lat: resolved.lat,
+          lng: resolved.lng,
+        });
       });
-    });
-    setEditingLocation(false);
-    onTripUpdate?.();
+      setEditingLocation(false);
+      onTripUpdate?.();
+    } catch (e) {
+      onTripUpdate?.();
+      setLocationSaveError(e?.message || 'Saved on this phone. Cloud sync did not finish — use Sync now when you have service.');
+    }
   }
 
   async function handleDeleteLocation() {
@@ -117,29 +155,6 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
     });
     onTripUpdate?.();
     onBack();
-  }
-
-  // ── Location gallery ──
-  // Any member contributes photos; the owner and each photo's author manage them.
-  function applyPhotoPatch(patch) {
-    if (!patch || !trip || !location) return;
-    updateEntityPhotos(trip.id, { kind: 'location', id: location.id }, patch);
-    onTripUpdate?.();
-  }
-
-  async function addLocationPhotos(files) {
-    if (!canAddToEvents || !trip?.id || !location) return;
-    setPhotoBusy(true);
-    try {
-      const refs = await createGalleryPhotos(files, {
-        tripId: trip.id,
-        authorId: userId,
-        authorName: getSignedInDisplayName() || null,
-      });
-      applyPhotoPatch(appendPhotosPatch(location, refs));
-    } finally {
-      setPhotoBusy(false);
-    }
   }
 
   async function onLocationCoverSelected(files) {
@@ -180,12 +195,23 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                 <span>{location.icon || '📍'}</span>
                 <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{location.name}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <div onClick={shareLocation} style={{ fontSize: 10.5, color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}>Share</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button type="button" onClick={shareLocation} style={headerBtn(false)}>Share</button>
                 {canEditLocation && (
-                <div onClick={() => setEditingLocation((v) => !v)} style={{ fontSize: 10.5, color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}>
-                  {editingLocation ? 'Close Edit' : 'Edit'}
-                </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingLocation) {
+                        setEditingLocation(false);
+                        setLocationSaveError(null);
+                      } else {
+                        beginEditLocation();
+                      }
+                    }}
+                    style={headerBtn(!editingLocation)}
+                  >
+                    {editingLocation ? 'Close' : 'Edit'}
+                  </button>
                 )}
               </div>
             </div>
@@ -201,36 +227,25 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-        {/* Photos of the place itself — any member can add, caption, set cover. */}
-        <PhotoGallery
-          entity={location}
-          title="Photos here"
-          canAdd={canAddToEvents}
-          canManage={canEditLocation}
-          currentUserId={userId}
-          busy={photoBusy}
-          onAdd={(files) => void addLocationPhotos(files)}
-          onCaption={(photo, caption) => applyPhotoPatch(captionPhotoPatch(location, photo, caption))}
-          onRemove={(photo) => applyPhotoPatch(removePhotoPatch(location, photo))}
-          onSetCover={(photo) => applyPhotoPatch(setCoverPatch(location, photo))}
-          emptyHint="Add photos or videos of this place — tap Camera or Upload. Everyone on the trip can contribute."
-        />
-
         {editingLocation && (
           <LocationSaveForm
             title="Edit location"
-            showPinControls={false}
+            showPinControls
             draft={locationDraft}
             onDraftChange={setLocationDraft}
-            locationSource="map"
-            onLocationSourceChange={() => {}}
-            locationPin={{ lat: location.lat, lng: location.lng }}
+            locationSource={locationSource}
+            onLocationSourceChange={setLocationSource}
+            locationPin={locationPin}
+            currentPos={currentPos}
+            currentPosError={currentPosError}
+            nowHint={location.observedAt ? 'Keeps the time already saved. Choose Set time to change it.' : null}
+            error={locationSaveError}
             coverPhoto={locationDraft.coverPhoto}
             onCoverPhotoChange={(files) => {
               if (!files) { setLocationDraft((d) => ({ ...d, coverPhoto: null })); return; }
               void onLocationCoverSelected(files);
             }}
-            onCancel={() => setEditingLocation(false)}
+            onCancel={() => { setEditingLocation(false); setLocationSaveError(null); }}
             onSave={() => void saveLocationDetails()}
             saveLabel="Save changes"
           />
@@ -242,67 +257,94 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
           </button>
         )}
 
-        {events.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          {canAddToEvents && (
+            <button type="button" onClick={() => onNav?.('capture')} style={placeActionBtn(true)}>
+              Add
+            </button>
+          )}
+          <button type="button" onClick={() => setViewingMedia(true)} style={placeActionBtn(false)}>
+            Photos & videos
+          </button>
+        </div>
+
+        {viewingMedia && (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Events here</span>
-              <span style={{ fontSize: 11.5, color: T.textSub }}>{events.length}</span>
-            </div>
-            {events.length > 1 && (
-              <div onClick={() => openViewEvent(events[0].id)}
-                   style={{ background: T.accent, borderRadius: 11, padding: '10px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'white' }}>View all in order</div>
-                  <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.7)', marginTop: 2 }}>Step through with Next</div>
-                </div>
-                <Ic d="M9 18l6-6-6-6" size={18} color="white" sw={2.2} />
-              </div>
-            )}
-            {events.map((ev, idx) => {
-              const sym = EVENT_SYMBOLS[ev.type] || '📍';
-              const typeLabel = EVENT_CAPTURE_TYPES.find((t) => t.type === ev.type)?.label || ev.type;
-              const entryCount = (trip?.entries || []).filter((e) => e.eventId === ev.id).length;
-              const photoCount = galleryCount(ev);
-              return (
-                <div key={ev.id} onClick={() => openViewEvent(ev.id)}
-                     style={{ background: T.card, borderRadius: 11, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                  {ev.coverPhoto ? (
-                    <MediaThumb media={ev.coverPhoto} alt={ev.name}
-                         style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
-                  ) : (
-                    <div style={{ width: 44, height: 44, borderRadius: 10, background: (EVENT_COLORS[ev.type] || T.accent) + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 20 }}>
-                      {sym}
-                    </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.name}</div>
-                    <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 1 }}>
-                      <span style={{ background: (EVENT_COLORS[ev.type] || T.accent) + '18', color: EVENT_COLORS[ev.type] || T.accent, borderRadius: 5, padding: '1px 6px', fontWeight: 700 }}>{typeLabel}</span>
-                      {photoCount > 0 && <span style={{ marginLeft: 6 }}>{photoCount} {photoCount === 1 ? 'photo' : 'photos'}</span>}
-                      {entryCount > 0 && <span style={{ marginLeft: 6 }}>{entryCount} {entryCount === 1 ? 'entry' : 'entries'}</span>}
-                    </div>
-                    {ev.notes && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.notes}</div>}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                    <span style={{ fontSize: 10, color: T.textFaint }}>{idx + 1}/{events.length}</span>
-                    <Ic d="M9 18l6-6-6-6" size={14} color={T.textFaint} sw={2} />
-                  </div>
-                </div>
-              );
-            })}
+            <button type="button" onClick={() => setViewingMedia(false)}
+              style={{ minHeight: 36, marginBottom: 8, border: 'none', background: 'transparent', color: T.accent, fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: F, padding: 0 }}>
+              ← Hide photos
+            </button>
+            <PhotoGallery
+              entity={{ photos: mediaAtLocation(trip, location.id) }}
+              title="Photos & videos"
+              canAdd={false}
+              emptyHint="None yet. Use Add to put a photo or video here."
+            />
           </div>
         )}
 
-        {canAddToEvents && (
-          <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 13px', marginBottom: 12 }}>
-            {events.length === 0 && (
-              <div style={{ fontSize: 11.5, color: T.textFaint, lineHeight: 1.45, marginBottom: 10, textAlign: 'center' }}>
-                No events yet — pick a type below to log your first one.
-              </div>
-            )}
-            <EventTypePicker compact onSelect={startNewEvent} />
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>At this place</span>
+            <span style={{ fontSize: 11.5, color: T.textSub }}>{events.length} {events.length === 1 ? 'visit' : 'visits'}</span>
           </div>
-        )}
+          {events.length === 0 && (
+            <div style={{ fontSize: 12, color: T.textFaint, lineHeight: 1.45, marginBottom: 10 }}>
+              Nothing here yet. A put-in, hike, hotel, shop, or meeting all work the same way. Everyone on the trip can add to this stop.
+            </div>
+          )}
+          {events.map((ev) => {
+            const typeLabel = EVENT_CAPTURE_TYPES.find((t) => t.type === ev.type)?.label || ev.type;
+            const moments = (trip?.entries || [])
+              .filter((entry) => entry.eventId === ev.id)
+              .sort((a, b) => new Date(a.observedAt || a.createdAt || 0) - new Date(b.observedAt || b.createdAt || 0));
+            const who = resolveUserDisplayName(trip, ev.createdBy, currentUserId) || 'Crew member';
+            return (
+              <div key={ev.id} style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 13px', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <button type="button" onClick={() => openViewEvent(ev.id)}
+                    style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: F }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{ev.name}</div>
+                    <div style={{ fontSize: 12, color: EVENT_COLORS[ev.type] || T.accent, fontWeight: 700, marginTop: 2 }}>{typeLabel} · {who}</div>
+                    <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>{formatEventWhen(ev)}</div>
+                  </button>
+                  {canEditLocation && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenEvent?.(location.id, ev.id, { edit: true })}
+                      style={headerBtn(false)}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+                {moments.map((entry) => (
+                  <div key={entry.id} style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{entry.title || entry.type}</div>
+                    <div style={{ fontSize: 12, color: '#2A5C8E', marginTop: 2 }}>
+                      {resolveUserDisplayName(trip, entry.authorId, currentUserId) || 'Crew member'}
+                    </div>
+                    {entry.notes && <div style={{ fontSize: 13, color: T.textSub, marginTop: 2, lineHeight: 1.4 }}>{entry.notes}</div>}
+                    {(entry.weatherSummary || entry.weatherTempC != null) && (
+                      <div style={{ fontSize: 12, color: '#2A5C8E', marginTop: 2 }}>
+                        {entry.weatherSummary || 'Weather'}{entry.weatherTempC != null ? ` · ${Math.round(entry.weatherTempC * 9 / 5 + 32)}°F` : ''}
+                      </div>
+                    )}
+                    {entry.cfs != null && <div style={{ fontSize: 12, color: '#3A72A8', fontWeight: 700, marginTop: 2 }}>{entry.cfs} CFS{entry.gaugeSiteName ? ` · ${entry.gaugeSiteName}` : ''}</div>}
+                    {(entry.weatherSyncPending || entry.gaugeSyncPending) && (
+                      <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>Reading will fill in when you have service</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {placeCosts.length > 0 && (
+            <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>
+              {placeCosts.length} {placeCosts.length === 1 ? 'cost' : 'costs'} tagged here · settle in Money
+            </div>
+          )}
+        </div>
 
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 12 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>Map</div>
@@ -310,53 +352,106 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
             <TripMap
               style="outdoors-v12"
               entries={markerEntries}
-              center={{ lng: location.lng, lat: location.lat }}
+              center={editingLocation && locationPin ? { lng: locationPin.lng, lat: locationPin.lat } : { lng: location.lng, lat: location.lat }}
               selectedEntryId={location.id}
               showHoverPopup
               interactive
               zoom={12}
+              pin={editingLocation && locationSource === 'map' && locationPin ? { ...locationPin, symbol: locationDraft.icon || '📍' } : null}
+              onPinChange={(pos) => setLocationPin(pos)}
+              onMapClick={(pos) => {
+                if (editingLocation && locationSource === 'map') setLocationPin(pos);
+              }}
             />
           </div>
         </div>
 
-        {/* Log a cost from where it happened — the ledger itself lives in Plan → Expenses. */}
-        {canAddToEvents && (
-          <div style={{ padding: '0 0 12px' }}>
-            <button
-              type="button"
-              onClick={() => setAddingExpense(true)}
-              style={{ width: '100%', background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
-                       padding: '12px 13px', display: 'flex', alignItems: 'center', gap: 10,
-                       cursor: 'pointer', fontFamily: F, textAlign: 'left' }}>
-              <div style={{ width: 30, height: 30, borderRadius: 9, background: T.accentLight,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Ic d={ICONS.plus} size={15} color={T.accent} sw={2} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>Add expense here</div>
-                <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 1 }}>
-                  Tagged to {location.name} · settle up in Plan
-                </div>
-              </div>
-              <Ic d="M9 18l6-6-6-6" size={14} color={T.textFaint} sw={2} />
-            </button>
-          </div>
-        )}
-
       </div>
-
-      {addingExpense && (
-        <AddExpenseSheet
-          trip={trip}
-          location={location}
-          onClose={() => setAddingExpense(false)}
-          onSaved={onTripUpdate}
-        />
-      )}
 
       <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
     </div>
   );
+}
+
+function locationDraftFrom(location) {
+  return {
+    name: location?.name || '',
+    type: location?.type || 'interest',
+    icon: location?.icon || '📍',
+    notes: location?.notes || '',
+    timeMode: location?.timeMode || 'current',
+    observedAt: location?.observedAt ? toDatetimeLocal(new Date(location.observedAt)) : toDatetimeLocal(new Date()),
+    observedStartAt: location?.observedStartAt ? toDatetimeLocal(new Date(location.observedStartAt)) : toDatetimeLocal(new Date()),
+    observedEndAt: location?.observedEndAt ? toDatetimeLocal(new Date(location.observedEndAt)) : toDatetimeLocal(addHours(new Date(), 1)),
+    coverPhoto: location?.coverPhoto || null,
+    customLat: location?.lat != null ? String(location.lat) : '',
+    customLng: location?.lng != null ? String(location.lng) : '',
+  };
+}
+
+function mediaAtLocation(trip, locationId) {
+  const photos = collectTripPhotos(trip, { scope: 'location', locationId }).map((item) => ({
+    ...item.media,
+    caption: item.media?.caption || item.caption || '',
+  }));
+  const seen = new Set(photos.map((item) => item.id).filter(Boolean));
+  const videos = [];
+  for (const entry of trip?.entries || []) {
+    const event = (trip.events || []).find((ev) => ev.id === entry.eventId);
+    if (entry.locationId !== locationId && event?.locationId !== locationId) continue;
+    for (const file of entry.videoFiles || []) {
+      if (!file || (file.id && seen.has(file.id))) continue;
+      if (file.id) seen.add(file.id);
+      videos.push(file);
+    }
+  }
+  return [...photos, ...videos];
+}
+
+function placeActionBtn(filled) {
+  return {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 12,
+    border: filled ? 'none' : `1px solid ${T.border}`,
+    background: filled ? T.accent : T.card,
+    color: filled ? 'white' : T.text,
+    fontWeight: 800,
+    fontSize: 14,
+    cursor: 'pointer',
+    fontFamily: F,
+  };
+}
+
+function formatEventWhen(event) {
+  if (event?.timeMode === 'range' && event.observedStartAt) {
+    const start = formatWhen(event.observedStartAt);
+    const end = event.observedEndAt ? formatWhen(event.observedEndAt) : '';
+    return end ? `${start} – ${end}` : start;
+  }
+  return formatWhen(event?.observedAt || event?.createdAt);
+}
+
+function formatWhen(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Time not set';
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function headerBtn(filled) {
+  return {
+    minHeight: 36,
+    padding: '0 12px',
+    borderRadius: 9,
+    border: filled ? 'none' : `1px solid ${T.border}`,
+    background: filled ? '#2A5C8E' : T.bg,
+    color: filled ? 'white' : '#2A5C8E',
+    fontWeight: 800,
+    fontSize: 13,
+    cursor: 'pointer',
+    fontFamily: F,
+    flexShrink: 0,
+  };
 }
 
 function toDatetimeLocal(date) {

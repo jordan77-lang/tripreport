@@ -301,11 +301,27 @@ export function createTrip({
   return saved;
 }
 
+function latestVisitAtLocation(trip, locationId) {
+  const events = (trip.events || []).filter((event) => event.locationId === locationId);
+  if (!events.length) return null;
+  return events.reduce((best, event) => {
+    const bestObserved = new Date(best.observedAt || 0).getTime() || best.createdAt || 0;
+    const nextObserved = new Date(event.observedAt || 0).getTime() || event.createdAt || 0;
+    if (nextObserved !== bestObserved) return nextObserved > bestObserved ? event : best;
+    return (event.createdAt || 0) >= (best.createdAt || 0) ? event : best;
+  });
+}
+
 function ensureEntryEvent(trip, entry) {
   const direct = resolveEntryEvent(trip, entry.eventId);
   if (direct) return direct;
   const location = resolveEntryLocation(trip, entry.locationId);
   if (!location) return null;
+  // Logging at a place joins its current visit. A new night is an explicit newVisit.
+  if (!entry.newVisit) {
+    const current = latestVisitAtLocation(trip, location.id);
+    if (current) return current;
+  }
   const entryType = entry.type || 'note';
   // A new visit is a new event. Explicit eventId links contributions to an existing visit.
   const now = Date.now();
@@ -314,7 +330,8 @@ function ensureEntryEvent(trip, entry) {
     locationId: location.id,
     locationName: location.name,
     type: entryType,
-    name: defaultEventName(entryType),
+    name: entry.type === 'food' && entry.title ? entry.title : defaultEventName(entryType),
+    mealId: entry.mealId || null,
     notes: '',
     coverPhoto: null,
     photos: [],
@@ -339,8 +356,10 @@ export function addEntry(tripId, entry) {
   const now = Date.now();
   const linkedEvent = ensureEntryEvent(trip, entry);
   const linkedLocation = resolveEntryLocation(trip, linkedEvent?.locationId || entry.locationId);
+  const fields = { ...entry };
+  delete fields.newVisit;
   const full = {
-    ...entry,
+    ...fields,
     id: crypto.randomUUID(),
     eventId: linkedEvent?.id || entry.eventId,
     eventName: linkedEvent?.name || entry.eventName,
@@ -370,14 +389,16 @@ export function updateEntry(tripId, entryId, patch) {
 
   const now = Date.now();
   const existing = trip.entries[idx];
-  const merged = { ...existing, ...patch };
+  const cleanPatch = { ...patch };
+  delete cleanPatch.newVisit;
+  const merged = { ...existing, ...cleanPatch, newVisit: patch.newVisit };
   const linkedEvent = ensureEntryEvent(trip, merged);
   const requestedEventId = linkedEvent?.id || patch.eventId || existing.eventId;
   const requestedLocationId = linkedEvent?.locationId || patch.locationId || existing.locationId;
   const linkedLocation = resolveEntryLocation(trip, requestedLocationId);
   const updated = {
     ...existing,
-    ...patch,
+    ...cleanPatch,
     eventId: linkedEvent?.id || requestedEventId,
     eventName: linkedEvent?.name || patch.eventName || existing.eventName,
     eventType: linkedEvent?.type || patch.eventType || existing.eventType,

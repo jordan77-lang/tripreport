@@ -4,6 +4,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { OfflineTripMap } from './OfflineTripMap';
 import { resolveOfflineMapForTrip } from '../lib/offlineMaps';
+import { syncPinMarker } from './mapPin';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -77,6 +78,9 @@ export function TripMap({
         onMapClick={onMapClick}
         onEntrySelect={onEntrySelect}
         selectedEntryId={selectedEntryId}
+        pin={pin}
+        onPinChange={onPinChange}
+        onReady={onReady}
       />
     );
   }
@@ -124,6 +128,8 @@ function MapboxTripMap({
   const markersRef   = useRef([]);
   const pinMarkerRef = useRef(null);
   const onPinChangeRef = useRef(onPinChange);
+  const onMapClickRef = useRef(onMapClick);
+  const pinRef = useRef(pin);
   const lastCenterRef = useRef(null);
   const initialConfigRef = useRef(null);
   if (initialConfigRef.current == null) {
@@ -133,7 +139,9 @@ function MapboxTripMap({
   // Keep the drag callback fresh without re-creating the marker on every render.
   useEffect(() => {
     onPinChangeRef.current = onPinChange;
-  }, [onPinChange]);
+    onMapClickRef.current = onMapClick;
+    pinRef.current = pin;
+  }, [onPinChange, onMapClick, pin]);
 
   // Init map
   useEffect(() => {
@@ -159,7 +167,11 @@ function MapboxTripMap({
       showUserHeading: true,
     }), 'top-right');
 
+    map.on('click', (e) => onMapClickRef.current?.({ lng: e.lngLat.lng, lat: e.lngLat.lat }));
+
     map.on('load', () => {
+      map.resize();
+      syncPinMarker(mapboxgl.Marker, map, pinMarkerRef, pinRef.current, onPinChangeRef);
       // Track line source
       map.addSource('track', {
         type: 'geojson',
@@ -177,14 +189,6 @@ function MapboxTripMap({
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !onMapClick) return;
-    const handleClick = (e) => onMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat });
-    map.on('click', handleClick);
-    return () => map.off('click', handleClick);
-  }, [onMapClick]);
-
   // Hand the caller an imperative flyTo so place search can move the viewport
   // without remounting the map or disturbing the pin.
   useEffect(() => {
@@ -199,48 +203,17 @@ function MapboxTripMap({
       if (lng == null || lat == null) return;
       map.flyTo({ center: [lng, lat], zoom: toZoom ?? Math.max(map.getZoom(), 13), duration: 700 });
     };
-    onReady({ flyTo });
+    const getCenter = () => {
+      const c = mapRef.current?.getCenter();
+      return c ? { lng: c.lng, lat: c.lat } : null;
+    };
+    onReady({ flyTo, getCenter });
     return () => onReady(null);
   }, [onReady]);
 
   // Draggable pin — the coordinate the user is actually choosing.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (!pin || pin.lng == null || pin.lat == null) {
-      pinMarkerRef.current?.remove();
-      pinMarkerRef.current = null;
-      return;
-    }
-
-    if (!pinMarkerRef.current) {
-      const el = document.createElement('div');
-      el.style.cssText = 'width:0;height:0;display:flex;align-items:center;justify-content:center;cursor:grab;';
-      el.innerHTML = `
-        <svg width="34" height="46" viewBox="0 0 34 46" style="transform:translateY(-23px);filter:drop-shadow(0 3px 6px rgba(0,0,0,.4))">
-          <path d="M17 1C8.7 1 2 7.7 2 16c0 10.5 15 29 15 29s15-18.5 15-29C32 7.7 25.3 1 17 1z"
-                fill="#2A5C8E" stroke="white" stroke-width="2.5"/>
-          <circle cx="17" cy="16" r="5" fill="white"/>
-        </svg>`;
-      const marker = new mapboxgl.Marker({ element: el, draggable: true })
-        .setLngLat([pin.lng, pin.lat])
-        .addTo(map);
-      marker.on('dragstart', () => { el.style.cursor = 'grabbing'; });
-      marker.on('dragend', () => {
-        el.style.cursor = 'grab';
-        const { lng, lat } = marker.getLngLat();
-        onPinChangeRef.current?.({ lng, lat });
-      });
-      pinMarkerRef.current = marker;
-      return;
-    }
-
-    // Keep an existing marker in sync without recreating it (avoids killing a drag).
-    const current = pinMarkerRef.current.getLngLat();
-    if (Math.abs(current.lng - pin.lng) > 1e-9 || Math.abs(current.lat - pin.lat) > 1e-9) {
-      pinMarkerRef.current.setLngLat([pin.lng, pin.lat]);
-    }
+    syncPinMarker(mapboxgl.Marker, mapRef.current, pinMarkerRef, pin, onPinChangeRef);
   }, [pin]);
 
   useEffect(() => () => {

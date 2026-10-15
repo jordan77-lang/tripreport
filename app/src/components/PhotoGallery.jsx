@@ -83,7 +83,7 @@ export function PhotoGallery({
 
       {photos.length === 0 && !busy && (
         <div style={{ fontSize: ts(11.5), color: T.textFaint, lineHeight: 1.45, textAlign: 'center', padding: '10px 0' }}>
-          {canAdd ? emptyHint : 'No photos yet.'}
+          {emptyHint}
         </div>
       )}
 

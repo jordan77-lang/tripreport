@@ -1,4 +1,4 @@
-import { buildTripTimeline, formatTripDay, tripDayKey, tripTimeZone } from '../lib/tripTimeline';
+import { buildTripTimeline, formatTripDay, groupJournalDays, tripTimeZone } from '../lib/tripTimeline';
 import { Fragment, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { Ic } from '../components/Ic';
@@ -9,16 +9,17 @@ import { AudioAttachment } from '../components/AudioAttachment';
 import { MediaThumb } from '../components/MediaThumb';
 import { CaptureActions } from '../components/CaptureActions';
 import { resolveUserDisplayName } from '../lib/tripParticipants';
+import { locationTypeLabel } from '../lib/locationTypes';
 import { ts } from '../lib/textScale';
 import { EntryForm } from './EntryForm';
 
 const ENTRY_COLORS = {
-  photo: '#2C5F3E', campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
+  photo: '#2C5F3E', campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34', conditions: '#2A5C8E',
   weather: '#517EA3', rapid: '#3A72A8', 'river-feature': '#3A72A8', note: '#6B6763', food: '#B06030',
-  voice: '#5B8DD9', video: '#C05050', gauge: '#2A5C8E', 'custom-event': '#2C5F3E',
+  voice: '#5B8DD9', video: '#C05050', gauge: '#2A5C8E', expense: '#2A5C8E', 'custom-event': '#2C5F3E',
 };
 
-export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
+export function FieldJournal({ trip, onNav, onFab, onTripUpdate, onOpenLocation, onOpenEvent, notice, locationId = null }) {
   const [activeForm, setActiveForm] = useState(null); // entry type string or null
   const [editingEntry, setEditingEntry] = useState(null);
   const [saveError, setSaveError] = useState(null);
@@ -27,7 +28,7 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
   const currentUserId = getCurrentUserId();
   const [search, setSearch] = useState('');
   const entries = buildTripTimeline(trip || {}).map(point => ({...point.item,
-    _kind: point.kind, _key: point.id, authorId: point.authorId,
+    _kind: point.kind, _key: point.id, _day: point.day, authorId: point.authorId,
     title: point.item.title || point.item.name,
     photoFiles: point.item.photoFiles || point.item.photos || [],
     observedAt: point.time,
@@ -41,6 +42,12 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
     const locName = locations.find(l => l.id === e.locationId)?.name || e.locationName || '';
     return !q || [e.title, e.type, e.notes, e.featureType, locName].join(' ').toLowerCase().includes(q);
   }).sort((a, b) => new Date(b.observedAt || b.createdAt) - new Date(a.observedAt || a.createdAt));
+  const journalDays = groupJournalDays(filteredEntries, locations);
+  function editEntry(entry) {
+    setSaveError(null);
+    setEditingEntry(trip.entries.find(item => item.id === entry.id));
+    setActiveForm(entry.type || 'note');
+  }
   const tripSyncState = trip?.syncState || (entries.some(e => e.syncState === 'pending') ? 'pending' : 'synced');
 
   function handleSave(entry) {
@@ -102,7 +109,12 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
 
         {(savedNotice || notice) && <p role="status" style={{ padding: 12, marginBottom: 12, background: T.accentLight, color: T.accent, borderRadius: 10, fontSize: ts(14) }}>{savedNotice || notice}</p>}
         <div style={{ marginBottom: 20 }}>
-          <CaptureActions trip={trip} onCapture={(type) => onNav('capture-' + type)} />
+          <CaptureActions trip={trip} hideLocation={Boolean(locationId)} onCapture={(type) => onNav('capture-' + type)} />
+          {locationId && (
+            <p style={{ fontSize: ts(14), color: T.accent, fontWeight: 700, margin: '12px 0 0' }}>
+              Adding to {locations.find((item) => item.id === locationId)?.name || 'this place'}
+            </p>
+          )}
         </div>
 
         {/* Entries */}
@@ -138,91 +150,44 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
           </div>
         )}
 
-        {filteredEntries.map((e, i) => {
-          const col = ENTRY_COLORS[e.type] || T.accent;
-          const day = tripDayKey(e.observedAt || e.createdAt, tripTimeZone(trip));
-          const previous = filteredEntries[i - 1];
-          const previousDay = previous && tripDayKey(previous.observedAt || previous.createdAt, tripTimeZone(trip));
-          return (
-            <Fragment key={e._key || i}>
-            {day !== previousDay && <h2 style={{ fontSize: ts(15), color: T.textSub, margin: '16px 0 10px' }}>{formatTripDay(day, trip?.startDate)}</h2>}
-            <div style={{ background: T.card, borderRadius: 12, padding: '12px 13px',
-                                           marginBottom: 8, border: `1px solid ${T.border}`,
-                                           display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <div style={{ width: 36, height: 36, borderRadius: 9, background: col + '1C',
-                             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Ic d={typeIcon(e.type)} size={16} color={col} sw={1.8} />
+        {journalDays.map((day) => (
+          <Fragment key={day.day}>
+            <h2 style={{ fontSize: ts(15), color: T.textSub, margin: '16px 0 10px' }}>{formatTripDay(day.day, trip?.startDate)}</h2>
+            {day.places.map((place) => (
+              <div key={place.id} style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 10, overflow: 'hidden' }}>
+                <button type="button" onClick={() => onOpenLocation?.(place.location.id)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', padding: '12px 13px', textAlign: 'left', cursor: onOpenLocation ? 'pointer' : 'default', fontFamily: F }}>
+                  <div style={{ fontSize: ts(15), fontWeight: 800, color: T.text }}>{place.location.icon || '📍'} {place.location.name}</div>
+                  <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 2 }}>{locationTypeLabel(place.location.type)}</div>
+                </button>
+                {(place.events.length > 0 || place.loose.length > 0) && (
+                  <div style={{ borderTop: `1px solid ${T.border}`, padding: '4px 10px 8px 14px' }}>
+                    {place.events.map((group) => (
+                      <div key={group.id} style={{ marginTop: 8, paddingLeft: 10, borderLeft: `2px solid ${T.border}` }}>
+                        <button type="button" onClick={() => onOpenEvent?.(place.location.id, group.event.id)}
+                          style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0', textAlign: 'left', cursor: onOpenEvent ? 'pointer' : 'default', fontFamily: F }}>
+                          <div style={{ fontSize: ts(14), fontWeight: 800, color: T.text }}>{group.event.title || group.event.name || group.event.type}</div>
+                          <div style={{ fontSize: ts(12), color: ENTRY_COLORS[group.event.type] || T.accent, fontWeight: 700 }}>{entryTypeLabel(group.event)}</div>
+                        </button>
+                        {group.entries.map((entry) => (
+                          <JournalCard key={entry._key || entry.id} entry={entry} trip={trip} currentUserId={currentUserId} locations={locations} hideLocation onEdit={editEntry} />
+                        ))}
+                      </div>
+                    ))}
+                    {place.loose.map((entry) => (
+                      <div key={entry._key || entry.id} style={{ marginTop: 8, paddingLeft: 10, borderLeft: `2px solid ${T.border}` }}>
+                        <JournalCard entry={entry} trip={trip} currentUserId={currentUserId} locations={locations} hideLocation onEdit={editEntry} />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                  <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{e.title || e.type}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: ts(12), color: T.textFaint }}>{timeAgo(e.createdAt)}</span>
-                    <SyncChip state={tripSyncState} compact />
-                  </div>
-                </div>
-                <div style={{ fontSize: ts(12), color: col, fontWeight: 700, marginBottom: e.notes ? 4 : 0,
-                               textTransform: 'capitalize' }}>{entryTypeLabel(e)} · {e._kind}</div>
-                <div style={{ fontSize: ts(12), color: '#2A5C8E', marginBottom: 4 }}>
-                  {resolveUserDisplayName(trip, e.authorId, currentUserId) || 'Crew member'} · {entryLocationLabel(e, locations)}
-                </div>
-                {e.observedAt && <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>Observed: {new Date(e.observedAt).toLocaleString(undefined, { timeZone: tripTimeZone(trip) })}</div>}
-                {e.notes && <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.4 }}>{e.notes}</div>}
-                {e.mapTagSymbol && <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>Tag: {e.mapTagSymbol}</div>}
-                {e.cfs && (
-                  <div style={{ fontSize: ts(13), color: '#3A72A8', fontWeight: 600 }}>
-                    {e.cfs} CFS{e.rapidClass ? ` · Class ${e.rapidClass}` : ''}
-                  </div>
-                )}
-                {e.gaugeSyncPending && (
-                  <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>
-                    Gauge flow pending sync when back online
-                  </div>
-                )}
-                {e.type === 'weather' && (e.weatherSummary || e.weatherTempC != null) && (
-                  <div style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 600 }}>
-                    {e.weatherSummary || 'Weather'}
-                    {e.weatherTempC != null ? ` · ${Math.round(cToF(e.weatherTempC))}°F` : ''}
-                    {e.weatherWindKph != null ? ` · Wind ${Math.round(e.weatherWindKph)} km/h` : ''}
-                  </div>
-                )}
-                {e.weatherSyncPending && (
-                  <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>
-                    Weather conditions pending sync when back online
-                  </div>
-                )}
-                {e.weatherObservation && (
-                  <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 3 }}>
-                    Obs: {e.weatherObservation}
-                  </div>
-                )}
-                {e.rating && <div style={{ fontSize: ts(14), color: T.amber }}>{'★'.repeat(e.rating)}{'☆'.repeat(5 - e.rating)}</div>}
-                {e.lat && <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>📍 GPS tagged</div>}
-                {(e.photoNotes || e.videoNotes || e.voiceNotes) && (
-                  <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>
-                    {(e.photoNotes ? '📷 ' : '') + (e.videoNotes ? '🎥 ' : '') + (e.voiceNotes ? '🎙 ' : '')}Media notes added
-                  </div>
-                )}
-                {(e.photoFiles?.length || e.videoFiles?.length || e.voiceFiles?.length) && (
-                  <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>
-                    {(e.photoFiles?.length || 0)} photos · {(e.videoFiles?.length || 0)} videos · {(e.voiceFiles?.length || 0)} audio
-                  </div>
-                )}
-                {!!e.photoFiles?.length && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginTop: 8 }}>{e.photoFiles.map((photo, index) => <MediaThumb key={photo.id || index} media={photo} alt={photo.caption || 'Journal photo'} style={{ width: 96, height: 96, borderRadius: 10, objectFit: 'cover' }} />)}</div>}
-                {e.voiceFiles?.map((audio, index) => <AudioAttachment key={audio.id || index} media={audio} />)}
-                {e._kind === 'entry' && <div style={{ marginTop: 7 }}>
-                  <button type="button"
-                    onClick={() => { setSaveError(null); setEditingEntry(trip.entries.find(item=>item.id===e.id)); setActiveForm(e.type || 'note'); }}
-                    style={{ minHeight: 44, padding: '8px 0', border: 'none', background: 'transparent', fontSize: ts(14), color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    Edit entry
-                  </button>
-                </div>}
-              </div>
-            </div>
-            </Fragment>
-          );
-        })}
+            ))}
+            {day.loose.map((entry) => (
+              <JournalCard key={entry._key || entry.id} entry={entry} trip={trip} currentUserId={currentUserId} locations={locations} onEdit={editEntry} />
+            ))}
+          </Fragment>
+        ))}
         <div style={{ height: 4 }} />
       </div>
 
@@ -231,22 +196,110 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, notice }) {
   );
 }
 
+function JournalCard({ entry: e, trip, currentUserId, locations, hideLocation = false, onEdit }) {
+  const col = ENTRY_COLORS[e.type] || T.accent;
+  return (
+    <div style={{ background: hideLocation ? 'transparent' : T.card, borderRadius: hideLocation ? 0 : 12, padding: hideLocation ? '8px 0' : '12px 13px',
+                  marginBottom: hideLocation ? 0 : 8, border: hideLocation ? 'none' : `1px solid ${T.border}`,
+                  display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <div style={{ width: 36, height: 36, borderRadius: 9, background: col + '1C',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Ic d={typeIcon(e.type)} size={16} color={col} sw={1.8} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+          <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>{e.title || e.type}</span>
+          <span style={{ fontSize: ts(12), color: T.textFaint }}>{timeAgo(e.createdAt)}</span>
+        </div>
+        <div style={{ fontSize: ts(12), color: col, fontWeight: 700, marginBottom: e.notes ? 4 : 0, textTransform: 'capitalize' }}>{journalKindLabel(e)}</div>
+        <div style={{ fontSize: ts(12), color: '#2A5C8E', marginBottom: 4 }}>
+          {resolveUserDisplayName(trip, e.authorId, currentUserId) || 'Crew member'}
+          {!hideLocation && ` · ${entryLocationLabel(e, locations)}`}
+        </div>
+        {e.observedAt && <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: 4 }}>Observed: {new Date(e.observedAt).toLocaleString(undefined, { timeZone: tripTimeZone(trip) })}</div>}
+        {e.notes && <div style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.4 }}>{e.notes}</div>}
+        {e.mapTagSymbol && <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>Tag: {e.mapTagSymbol}</div>}
+        {e.cfs && (
+          <div style={{ fontSize: ts(13), color: '#3A72A8', fontWeight: 600 }}>
+            {e.cfs} CFS{e.rapidClass ? ` · Class ${e.rapidClass}` : ''}
+          </div>
+        )}
+        {e.gaugeSyncPending && (
+          <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>
+            Gauge flow pending sync when back online
+          </div>
+        )}
+        {(e.type === 'weather' || e.type === 'conditions') && (e.weatherSummary || e.weatherTempC != null) && (
+          <div style={{ fontSize: ts(13), color: '#2A5C8E', fontWeight: 600 }}>
+            {e.weatherSummary || 'Weather'}
+            {e.weatherTempC != null ? ` · ${Math.round(cToF(e.weatherTempC))}°F` : ''}
+            {e.weatherWindKph != null ? ` · Wind ${Math.round(e.weatherWindKph)} km/h` : ''}
+          </div>
+        )}
+        {e.weatherSyncPending && (
+          <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>
+            Weather conditions pending sync when back online
+          </div>
+        )}
+        {e.weatherObservation && (
+          <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 3 }}>
+            Obs: {e.weatherObservation}
+          </div>
+        )}
+        {e.rating && <div style={{ fontSize: ts(14), color: T.amber }}>{'★'.repeat(e.rating)}{'☆'.repeat(5 - e.rating)}</div>}
+        {e.lat && <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>📍 GPS tagged</div>}
+        {(e.photoNotes || e.videoNotes || e.voiceNotes) && (
+          <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>
+            {(e.photoNotes ? '📷 ' : '') + (e.videoNotes ? '🎥 ' : '') + (e.voiceNotes ? '🎙 ' : '')}Media notes added
+          </div>
+        )}
+        {(e.photoFiles?.length || e.videoFiles?.length || e.voiceFiles?.length) && (
+          <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 3 }}>
+            {(e.photoFiles?.length || 0)} photos · {(e.videoFiles?.length || 0)} videos · {(e.voiceFiles?.length || 0)} audio
+          </div>
+        )}
+        {!!e.photoFiles?.length && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginTop: 8 }}>{e.photoFiles.map((photo, index) => <MediaThumb key={photo.id || index} media={photo} alt={photo.caption || 'Journal photo'} style={{ width: 96, height: 96, borderRadius: 10, objectFit: 'cover' }} />)}</div>}
+        {e.voiceFiles?.map((audio, index) => <AudioAttachment key={audio.id || index} media={audio} />)}
+        {e._kind === 'entry' && <div style={{ marginTop: 7 }}>
+          <button type="button" onClick={() => onEdit?.(e)}
+            style={{ minHeight: 44, padding: '8px 0', border: 'none', background: 'transparent', fontSize: ts(14), color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}>
+            Edit entry
+          </button>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
 function typeIcon(type) {
   const map = {
     photo: ICONS.camera, campsite: ICONS.tent, water: ICONS.drop, wildlife: ICONS.leaf,
-    weather: ICONS.compass, rapid: ICONS.drop, 'river-feature': ICONS.drop, note: ICONS.note, food: ICONS.fork,
-    voice: ICONS.mic, video: ICONS.video, gauge: ICONS.gauge,
+    weather: ICONS.compass, conditions: ICONS.compass, rapid: ICONS.drop, 'river-feature': ICONS.drop, note: ICONS.note, food: ICONS.fork,
+    voice: ICONS.mic, video: ICONS.video, gauge: ICONS.gauge, expense: ICONS.expense,
     'custom-event': ICONS.plus,
   };
   return map[type] || ICONS.note;
 }
 
 function entryTypeLabel(entry) {
+  if (entry.type === 'conditions') return 'Weather & flow';
+  if (entry.type === 'gauge') return 'River Flow';
+  if (entry.type === 'weather') return 'Weather';
+  if (entry.type === 'campsite') return 'Campsite';
+  if (entry.type === 'expense') return 'Expense';
+  if (entry.type === 'custom-event') return 'Custom';
+  if (entry.type === 'video') return 'Photo/video';
   if (entry.type === 'river-feature') {
     const ft = entry.featureType || 'river feature';
     return `River Feature · ${ft}`;
   }
   return entry.type;
+}
+
+function journalKindLabel(entry) {
+  const label = entryTypeLabel(entry);
+  if (['gauge', 'weather', 'conditions'].includes(entry.type) && entry._kind === 'entry') return label;
+  return `${label} · ${entry._kind}`;
 }
 
 function timeAgo(ts) {

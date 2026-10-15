@@ -1,15 +1,21 @@
 import { materialize } from './tripSync';
 import { getTrip, saveTrip } from './storage';
+import { applyImportPlacement } from './tripTimeline';
 import { createTripUpdate, mergeTripUpdate, storeUpdateMedia } from './offlineExchange';
 // The checkpoint is saved first, attachments are one atomic additive batch,
 // then the latest local trip is merged and committed synchronously.
 // If the final save fails, the original trip is intact and retry is safe.
-export async function importTripPackage(tripId,update) {
+export async function importTripPackage(tripId, update, placement = null) {
   const before=getTrip(tripId);
   mergeTripUpdate(before,update); // Validate trip identity before any write.
   localStorage.setItem('tr_import_backup:'+tripId,JSON.stringify(createTripUpdate(before)));
   await storeUpdateMedia(update);
   const result=mergeTripUpdate(getTrip(tripId),update);
+  const placed=placement ? applyImportPlacement(result.trip, placement) : result.trip;
+  if (placed !== result.trip) {
+    saveTrip(result.trip,{capture:false,schedule:false});
+    return {...result, trip: saveTrip(placed)};
+  }
   saveTrip(result.trip,{capture:false,schedule:true});
   return result;
 }

@@ -2,11 +2,13 @@ import { routeStats } from '../lib/gpsRecorder';
 import { useState, useEffect } from 'react';
 import { TripMap } from '../components/TripMap';
 import { BottomNav } from '../components/BottomNav';
+import { DuplicatePlacesBanner } from '../components/DuplicatePlacesBanner';
+import { duplicateLocations } from '../lib/tripTimeline';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { getTripOfflineMapReadiness } from '../lib/offlineMaps';
 
-export function Navigator({ trip, onNav, onFab, gps }) {
+export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
   const [mapStyle, setMapStyle] = useState('outdoors-v12');
   const [offlineReadiness, setOfflineReadiness] = useState(null);
   const { position:recordingPosition, tracking, error } = gps || {};
@@ -165,7 +167,12 @@ export function Navigator({ trip, onNav, onFab, gps }) {
         </div>
       </div>
 
-      <BottomNav active="map" onNav={onNav} onFab={onFab} trip={trip} />
+      {duplicateLocations(trip || {}).length > 0 && (
+        <div style={{ background: T.bg, padding: '8px 12px 0' }}>
+          <DuplicatePlacesBanner trip={trip} onCombined={onTripUpdate} />
+        </div>
+      )}
+      <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
     </div>
   );
 }
@@ -179,9 +186,18 @@ function locationSymbol(type) {
   const map = {
     'put-in': '🟢',
     'take-out': '🔴',
+    scout: '👀',
+    'rapid-scout': '👀',
+    hike: '🥾',
+    'hiking-location': '🥾',
     camp: '⛺',
-    hazard: '⚠',
+    campsite: '⛺',
+    interest: '🏛',
     'point-of-interest': '📍',
+    shopping: '🛒',
+    hotel: '🏨',
+    meeting: '🗒',
+    hazard: '⚠',
   };
   return map[type] || '📍';
 }

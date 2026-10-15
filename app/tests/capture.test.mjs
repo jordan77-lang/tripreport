@@ -59,6 +59,21 @@ test('an unlinked observation can be assigned a location later', async () => {
   assert.equal(updated.notes, 'Camp');
 });
 
+test('a later log at a place joins the current visit', async () => {
+  const { storage } = await fixture();
+  const trip = storage.createTrip({ name: 'Field test', types: [] });
+  const location = storage.addLocation(trip.id, { name: 'Camp', lat: 34, lng: -111 });
+  const event = storage.addEvent(trip.id, { locationId: location.id, type: 'campsite', name: 'Night 1' });
+  const entry = storage.addEntry(trip.id, { type: 'note', notes: 'Stars', locationId: location.id });
+  assert.equal(entry.eventId, event.id);
+  assert.equal(entry.newVisit, undefined);
+  assert.equal(storage.getTrip(trip.id).events.length, 1);
+  const next = storage.addEntry(trip.id, { type: 'note', notes: 'Morning', locationId: location.id, newVisit: true });
+  assert.notEqual(next.eventId, event.id);
+  assert.equal(next.newVisit, undefined);
+  assert.equal(storage.getTrip(trip.id).events.length, 2);
+});
+
 test('capture within an existing event retains that event', async () => {
   const { storage } = await fixture();
   const trip = storage.createTrip({ name: 'Field test', types: [] });

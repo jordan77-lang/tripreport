@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { TripMap } from '../components/TripMap';
 import { PlaceSearch } from '../components/PlaceSearch';
 import { Ic } from '../components/Ic';
@@ -11,6 +11,8 @@ import { VoiceRecorder } from '../components/VoiceRecorder';
 import { AudioAttachment } from '../components/AudioAttachment';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 import { ts } from '../lib/textScale';
+import { addMeal, getTrips } from '../lib/storage';
+import { listSavedMeals, publishSavedMeal, refreshSharedMeals, rememberMeal, savedMealByName } from '../lib/mealLibrary';
 
 /**
  * Entry capture inside an event.
@@ -33,6 +35,7 @@ export function EntryForm({
   defaultLocationId = null,
   event = null,
   allowUnlinked = false,
+  lockLocation = false,
   saveError = null,
 }) {
   const [notes, setNotes]         = useState(initialEntry?.notes || '');
@@ -81,6 +84,17 @@ export function EntryForm({
   const [mediaBusy, setMediaBusy] = useState(false);
   const [mediaError, setMediaError] = useState(null);
   const [capturedAt] = useState(() => new Date().toISOString());
+  const [selectedMealId, setSelectedMealId] = useState(initialEntry?.mealId || null);
+  const [addingNewMeal, setAddingNewMeal] = useState(() => {
+    if (initialEntry?.mealId) return false;
+    if (type === 'food' && initialEntry) return true;
+    return type === 'food' && !(trip?.meals || []).length;
+  });
+  const [newMealName, setNewMealName] = useState(
+    initialEntry?.mealId ? '' : (initialEntry?.title && initialEntry.title !== 'Meal' ? initialEntry.title : ''),
+  );
+  const [newMealSlot, setNewMealSlot] = useState(initialEntry?.mealSlot || slotForNow());
+  const [mealError, setMealError] = useState(null);
   const photoCaptureRef = useRef(null);
   const photoAttachRef = useRef(null);
   const videoCaptureRef = useRef(null);
@@ -90,13 +104,29 @@ export function EntryForm({
   // Imperative map handle, supplied by TripMap once its map exists.
   const mapApiRef = useRef(null);
   const handleMapReady = useCallback((api) => { mapApiRef.current = api; }, []);
+  const chooseSavedPlace = useCallback((entry) => {
+    setSelectedLocationId(entry.id);
+    setPinPos(null);
+  }, []);
+  const chooseMapSpot = useCallback((spot) => setPinPos(spot), []);
 
   const isRiver = ['river-feature', 'rapid', 'gauge'].includes(type);
   const isCamp  = type === 'campsite';
+  const placeOnMap = ['campsite', 'river-feature', 'rapid', 'wildlife', 'food', 'water'].includes(type);
   const isRiverFeature = type === 'river-feature' || type === 'rapid';
   const isGaugeEvent = type === 'gauge';
   const isWeatherEvent = type === 'weather';
   const selectedLocation = locations.find((l) => l.id === selectedLocationId) || null;
+  const placeEntries = useMemo(() => locations
+    .filter((loc) => loc.lat != null && loc.lng != null)
+    .map((loc) => ({
+      id: loc.id,
+      lng: loc.lng,
+      lat: loc.lat,
+      title: loc.name,
+      symbol: loc.icon || '📍',
+      col: loc.id === selectedLocationId ? '#2A5C8E' : '#3A72A8',
+    })), [locations, selectedLocationId]);
 
   // The observation inherits the event's time. Editing an existing entry keeps
   // whatever it was saved with so re-saving never silently re-stamps it.
@@ -221,8 +251,41 @@ export function EntryForm({
     }
   }
 
+  function resolveMeal() {
+    if (type !== 'food') return { ok: true, meal: null };
+    const planned = trip?.meals || [];
+    if (!addingNewMeal && selectedMealId) {
+      const meal = planned.find((item) => item.id === selectedMealId);
+      if (!meal) return { ok: false, error: 'That planned meal is no longer on this trip.' };
+      return { ok: true, meal };
+    }
+    const name = newMealName.trim();
+    if (!name) return { ok: false, error: planned.length ? 'Pick a planned meal, or name a new one.' : 'Name this meal.' };
+    const saved = savedMealByName(name, getTrips());
+    const ingredients = saved?.ingredients || [];
+    const created = addMeal(trip.id, {
+      name,
+      slot: newMealSlot,
+      dayIndex: tripDayIndex(trip),
+      ingredients,
+    });
+    if (created) {
+      rememberMeal({ name, slot: newMealSlot, ingredients }, { keepIngredientsIfEmpty: true });
+      void publishSavedMeal({ name, slot: newMealSlot, ingredients });
+    }
+    if (!created) return { ok: false, error: 'Could not add that meal to the plan.' };
+    return { ok: true, meal: created };
+  }
+
   function handleSave() {
     if (mediaBusy || recording) return;
+    const mealPick = resolveMeal();
+    if (!mealPick.ok) {
+      setMealError(mealPick.error);
+      return;
+    }
+    setMealError(null);
+    const meal = mealPick.meal;
     const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
     const weatherPending = isWeatherEvent && coords?.lat != null && coords?.lng != null && !weatherSnapshot;
     const gaugePending = isGaugeEvent && Boolean(gaugeSiteId) && (!cfs || isOffline);
@@ -232,7 +295,10 @@ export function EntryForm({
       locationId: selectedLocationId || undefined,
       locationName: selectedLocation?.name,
       locationType: selectedLocation?.type,
-      title: defaultTitle(type),
+      title: meal?.name || defaultTitle(type),
+      mealId: meal?.id,
+      mealSlot: meal?.slot,
+      mealDayIndex: meal?.dayIndex,
       notes,
       photoFiles: photoFiles.length ? photoFiles : undefined,
       videoFiles: videoFiles.length ? videoFiles : undefined,
@@ -342,8 +408,23 @@ export function EntryForm({
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
 
+        {type === 'food' && (
+          <MealChoice
+            meals={trip?.meals || []}
+            selectedMealId={selectedMealId}
+            addingNewMeal={addingNewMeal}
+            newMealName={newMealName}
+            newMealSlot={newMealSlot}
+            error={mealError}
+            onPick={(id) => { setSelectedMealId(id); setAddingNewMeal(false); setMealError(null); }}
+            onStartNew={() => { setAddingNewMeal(true); setSelectedMealId(null); setMealError(null); }}
+            onName={setNewMealName}
+            onSlot={setNewMealSlot}
+          />
+        )}
+
         {/* Location picker only when there is a real choice to make. */}
-        {(allowUnlinked || locations.length > 1) && (
+        {!lockLocation && (allowUnlinked || locations.length > 1) && (
           <div style={{ marginBottom: 16 }}>
             <label htmlFor="entry-location" style={{ display: 'block', fontSize: ts(14), fontWeight: 700, marginBottom: 8 }}>Location{allowUnlinked ? ' (optional)' : ''}</label>
             <select id="entry-location" value={selectedLocationId || ''}
@@ -351,6 +432,45 @@ export function EntryForm({
               {allowUnlinked && <option value="">No saved location — use current GPS if available</option>}
               {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
             </select>
+          </div>
+        )}
+
+        {placeOnMap && !lockLocation && (
+          <div style={{ marginBottom: 16 }}>
+            <Label>Place on the map</Label>
+            <PlaceSearch
+              onPick={({ lng, lat, bbox, setPin }) => {
+                if (setPin) setPinPos({ lat, lng });
+                mapApiRef.current?.flyTo({ lng, lat, bbox, zoom: setPin ? 15 : undefined });
+              }}
+              placeholder="Search a place, or paste coordinates…"
+            />
+            <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', height: 240 }}>
+              <TripMap
+                trip={trip}
+                zoom={14}
+                center={coords || undefined}
+                track={trip?.track ?? []}
+                entries={placeEntries}
+                selectedEntryId={selectedLocationId}
+                interactive
+                pin={pinPos}
+                onEntrySelect={chooseSavedPlace}
+                onPinChange={chooseMapSpot}
+                onMapClick={chooseMapSpot}
+                onReady={handleMapReady}
+              />
+            </div>
+            <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 6, lineHeight: 1.4 }}>
+              Tap a saved place to use it, or tap the map to set this spot.
+              {coords ? ` ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : ''}
+              {pinPos ? ' · adjusted' : selectedLocation ? ` · ${selectedLocation.name}` : ''}
+              {pinPos && selectedLocation && (
+                <button type="button" onClick={() => setPinPos(null)} style={{ ...linkBtnStyle, marginLeft: 6 }}>
+                  Reset to {selectedLocation.name}
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -626,12 +746,14 @@ export function EntryForm({
                 {pinPos ? ' · adjusted' : selectedLocation ? ` · from ${selectedLocation.name}` : ''}
               </div>
             </div>
-            <button type="button" onClick={() => setAdjustingPin((v) => !v)} style={linkBtnStyle}>
-              {adjustingPin ? 'Done' : 'Adjust'}
-            </button>
+            {!placeOnMap && !lockLocation && (
+              <button type="button" onClick={() => setAdjustingPin((v) => !v)} style={linkBtnStyle}>
+                {adjustingPin ? 'Done' : 'Adjust'}
+              </button>
+            )}
           </div>
 
-          {adjustingPin && (
+          {adjustingPin && !placeOnMap && !lockLocation && (
             <>
               <PlaceSearch
                 onPick={({ lng, lat, bbox, setPin }) => {
@@ -643,13 +765,17 @@ export function EntryForm({
               />
               <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', height: 240 }}>
                 <TripMap
+                  trip={trip}
                   zoom={14}
                   center={coords || undefined}
                   track={trip?.track ?? []}
+                  entries={placeEntries}
+                  selectedEntryId={selectedLocationId}
                   interactive
-                  pin={coords}
-                  onPinChange={(p) => setPinPos(p)}
-                  onMapClick={(p) => setPinPos(p)}
+                  pin={pinPos}
+                  onEntrySelect={chooseSavedPlace}
+                  onPinChange={chooseMapSpot}
+                  onMapClick={chooseMapSpot}
                   onReady={handleMapReady}
                 />
               </div>
@@ -677,6 +803,139 @@ export function EntryForm({
           </span>
         </button>
       </div>
+    </div>
+  );
+}
+
+const MEAL_SLOTS = [
+  { id: 'breakfast', label: 'Breakfast' },
+  { id: 'lunch', label: 'Lunch' },
+  { id: 'dinner', label: 'Dinner' },
+  { id: 'snack', label: 'Snack' },
+];
+
+function slotForNow(date = new Date()) {
+  const hour = date.getHours();
+  if (hour < 10) return 'breakfast';
+  if (hour < 15) return 'lunch';
+  if (hour < 21) return 'dinner';
+  return 'snack';
+}
+
+function tripDayIndex(trip, date = new Date()) {
+  const start = trip?.startDate;
+  if (!/^\d{4}-\d{2}-\d{2}/.test(start || '')) return 1;
+  const startDay = new Date(start.slice(0, 10) + 'T12:00:00');
+  const today = new Date(date);
+  today.setHours(12, 0, 0, 0);
+  const diff = Math.round((today - startDay) / 864e5) + 1;
+  return diff >= 1 ? diff : 1;
+}
+
+function SavedMealChoices({ name, onPick }) {
+  const [sharedTick, setSharedTick] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    refreshSharedMeals().then(() => {
+      if (!cancelled) setSharedTick((tick) => tick + 1);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const saved = useMemo(() => listSavedMeals(getTrips()), [sharedTick]);
+  const match = savedMealByName(name, getTrips());
+  if (!saved.length && !match?.ingredients?.length) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      {saved.length > 0 && (
+        <>
+          <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>Saved meals</div>
+          <p style={{ fontSize: ts(12), color: T.textSub, lineHeight: 1.4, margin: '0 0 6px' }}>Anyone signed in can use these.</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {saved.map((meal) => {
+              const selected = meal.nameKey === name.trim().toLowerCase();
+              return (
+                <button key={meal.nameKey} type="button" onClick={() => onPick(meal)}
+                  style={{ minHeight: 32, padding: '4px 10px', borderRadius: 14, cursor: 'pointer', fontFamily: F, fontSize: ts(12), fontWeight: 700,
+                    border: selected ? 'none' : `1px solid ${T.border}`, background: selected ? '#B06030' : T.bg, color: selected ? 'white' : T.text }}>
+                  {meal.name}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {match?.ingredients?.length > 0 && (
+        <p style={{ fontSize: ts(12), color: T.textSub, lineHeight: 1.4, margin: '8px 0 0' }}>
+          Saved ingredients: {match.ingredients.map((item) => item.name).join(', ')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function mealSlotLabel(slot) {
+  return MEAL_SLOTS.find((item) => item.id === slot)?.label || 'Meal';
+}
+
+function MealChoice({
+  meals, selectedMealId, addingNewMeal, newMealName, newMealSlot, error,
+  onPick, onStartNew, onName, onSlot,
+}) {
+  const ordered = [...meals].sort((a, b) => {
+    const day = (a.dayIndex || 1) - (b.dayIndex || 1);
+    if (day) return day;
+    return MEAL_SLOTS.findIndex((item) => item.id === a.slot) - MEAL_SLOTS.findIndex((item) => item.id === b.slot);
+  });
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Label>Meal</Label>
+      <p style={{ fontSize: ts(13), color: T.textSub, lineHeight: 1.45, margin: '0 0 8px' }}>
+        {ordered.length ? 'Pick a meal from the plan, or add a new one.' : 'Nothing is planned yet. Add this meal and it goes on the plan too.'}
+      </p>
+      {ordered.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+          {ordered.map((meal) => {
+            const selected = !addingNewMeal && selectedMealId === meal.id;
+            return (
+              <button key={meal.id} type="button" onClick={() => onPick(meal.id)}
+                style={{ textAlign: 'left', minHeight: 44, padding: '8px 12px', borderRadius: 12, cursor: 'pointer', fontFamily: F,
+                  border: `1.5px solid ${selected ? '#B06030' : T.border}`, background: selected ? '#F8EDE4' : T.card }}>
+                <span style={{ display: 'block', fontSize: ts(14), fontWeight: 800, color: T.text }}>{meal.name}</span>
+                <span style={{ display: 'block', fontSize: ts(12), color: T.textSub, marginTop: 2 }}>
+                  Day {meal.dayIndex || 1} · {mealSlotLabel(meal.slot)}{meal.assignedToLabel ? ` · ${meal.assignedToLabel}` : ''}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <button type="button" onClick={onStartNew}
+        style={{ width: '100%', minHeight: 44, marginBottom: addingNewMeal ? 8 : 0, borderRadius: 12, cursor: 'pointer', fontFamily: F,
+          fontSize: ts(14), fontWeight: 800, border: `1.5px solid ${addingNewMeal ? '#B06030' : T.border}`,
+          background: addingNewMeal ? '#F8EDE4' : T.card, color: T.text }}>
+        New meal
+      </button>
+      {addingNewMeal && (
+        <>
+          <input value={newMealName} onChange={(e) => onName(e.target.value)} placeholder="Meal name (chili, oatmeal…)" style={{ ...inputStyle(T), marginTop: 0 }} />
+          <SavedMealChoices
+            name={newMealName}
+            onPick={(meal) => { onName(meal.name); if (meal.slot) onSlot(meal.slot); }}
+          />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {MEAL_SLOTS.map((slot) => (
+              <button key={slot.id} type="button" onClick={() => onSlot(slot.id)}
+                style={{ minHeight: 36, padding: '6px 10px', borderRadius: 14, cursor: 'pointer', fontFamily: F, fontSize: ts(12), fontWeight: 700,
+                  border: newMealSlot === slot.id ? 'none' : `1px solid ${T.border}`,
+                  background: newMealSlot === slot.id ? '#B06030' : T.bg,
+                  color: newMealSlot === slot.id ? 'white' : T.textSub }}>
+                {slot.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {error && <p role="alert" style={{ color: '#8A1414', fontSize: ts(13), margin: '8px 0 0' }}>{error}</p>}
     </div>
   );
 }
@@ -746,7 +1005,7 @@ function defaultTitle(type) {
 }
 
 function typeLabel(type) {
-  const map = { photo: 'Photo', 'river-feature': 'River Feature', 'custom-event': 'Custom Event', gauge: 'River Flow', weather: 'Weather', video: mediaCaptureLabel('Photo / Video'), note: 'Note' };
+  const map = { photo: 'Photo', food: 'Meal', 'river-feature': 'River Feature', 'custom-event': 'Custom Event', gauge: 'River Flow', weather: 'Weather', video: mediaCaptureLabel('Photo / Video'), note: 'Note' };
   return map[type] || type;
 }
 
