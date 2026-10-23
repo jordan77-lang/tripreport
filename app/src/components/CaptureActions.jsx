@@ -1,19 +1,15 @@
 import { Ic } from './Ic';
-import { T } from '../tokens';
+import { T, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
 import { eventTypesForTrip } from '../lib/eventTypes';
+import { VIDEO_ENABLED } from '../lib/featureFlags';
 
-export function CaptureActions({ trip, onCapture, hideLocation = false }) {
-  const types = eventTypesForTrip(trip).filter((item) => !(hideLocation && item.type === 'campsite'));
+export function CaptureActions({ trip, onCapture }) {
+  const types = eventTypesForTrip(trip).filter(item => item.type !== 'campsite');
+  if (VIDEO_ENABLED) types.push({ type: 'video', label: 'Video', icon: ICONS.video, col: '#C05050' });
   return (
-    <section aria-label="Quick capture">
-      {!hideLocation && (
-        <button type="button" onClick={() => onCapture('location')}
-          style={{ width: '100%', minHeight: 48, marginBottom: 10, border: '1px solid ' + T.border,
-            borderRadius: 12, background: T.card, color: T.text, fontSize: ts(14), fontWeight: 800, cursor: 'pointer' }}>
-          Location
-        </button>
-      )}
+    <section aria-label="Places and observations">
+      <p style={{ color: T.textSub, fontSize: ts(14), margin: '12px 0 10px', fontWeight: 700 }}>Places &amp; observations</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
         {types.map((item) => (
           <button type="button" key={item.type} onClick={() => onCapture(item.type)}

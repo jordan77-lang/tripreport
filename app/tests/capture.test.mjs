@@ -84,6 +84,69 @@ test('capture within an existing event retains that event', async () => {
   assert.equal(storage.getTrip(trip.id).events.length, 1);
 });
 
+test('a meal and bear sighting stay linked to the selected campsite and its visit', async () => {
+  const { storage } = await fixture();
+  const trip = storage.createTrip({ name: 'Camping', types: ['River Camping'] });
+  const camp = storage.addLocation(trip.id, { name: 'Pine campsite', type: 'campsite', lat: 34, lng: -111 });
+  const visit = storage.addEvent(trip.id, { locationId: camp.id, type: 'campsite', name: 'Night at Pine' });
+  for (const observation of [{ type: 'food', title: 'Camp chili' }, { type: 'wildlife', notes: 'Bear near camp' }]) {
+    const saved = storage.addEntry(trip.id, { ...observation, locationId: camp.id });
+    assert.equal(saved.locationId, camp.id);
+    assert.equal(saved.locationName, camp.name);
+    assert.equal(saved.eventId, visit.id);
+    assert.equal(saved.lat, camp.lat);
+  }
+  assert.equal(storage.getTrip(trip.id).locations.length, 1);
+  assert.equal(storage.getTrip(trip.id).entries.length, 2);
+});
+
+test('moving an observation changes its place and visit without moving other contributions', async () => {
+  const { storage } = await fixture();
+  const trip = storage.createTrip({ name: 'Camping', types: [] });
+  const camp = storage.addLocation(trip.id, { name: 'Campsite', lat: 34, lng: -111 });
+  const river = storage.addLocation(trip.id, { name: 'Riverbank', lat: 35, lng: -112 });
+  const campVisit = storage.addEvent(trip.id, { locationId: camp.id, name: 'Camp visit' });
+  const riverVisit = storage.addEvent(trip.id, { locationId: river.id, name: 'River visit' });
+  const meal = storage.addEntry(trip.id, { type: 'food', locationId: camp.id, title: 'Dinner' });
+  const bear = storage.addEntry(trip.id, { type: 'wildlife', locationId: camp.id, notes: 'Bear near the water' });
+  const moved = storage.updateEntry(trip.id, bear.id, { locationId: river.id });
+  assert.equal(moved.locationId, river.id);
+  assert.equal(moved.eventId, riverVisit.id);
+  assert.equal(moved.locationName, river.name);
+  assert.equal(moved.lat, river.lat);
+  assert.equal(moved.notes, bear.notes);
+  const saved = storage.getTrip(trip.id);
+  assert.equal(saved.entries.find(entry => entry.id === meal.id).eventId, campVisit.id);
+  assert.equal(saved.events.find(event => event.id === campVisit.id).locationId, camp.id);
+});
+
+test('new events at one location keep distinct titles and preserve earlier contributions', async () => {
+  const { storage } = await fixture();
+  const trip = storage.createTrip({ name: 'Camping', types: [] });
+  const camp = storage.addLocation(trip.id, { name: 'Pine campsite', lat: 34, lng: -111 });
+  const meal = storage.addEntry(trip.id, { type: 'food', title: 'Dinner', locationId: camp.id, newVisit: true });
+  const custom = storage.addEntry(trip.id, { type: 'custom-event', title: 'Evening at camp', notes: 'A quiet evening', locationId: camp.id, newVisit: true });
+  assert.notEqual(meal.eventId, custom.eventId);
+  const saved = storage.getTrip(trip.id);
+  assert.equal(saved.events.find(event => event.id === meal.eventId).name, 'Dinner');
+  assert.equal(saved.events.find(event => event.id === custom.eventId).name, 'Evening at camp');
+  assert.ok(saved.events.every(event => event.locationId === camp.id));
+  assert.equal(saved.entries.find(entry => entry.id === custom.id).notes, 'A quiet evening');
+});
+
+test('removing a saved location clears its event and location labels', async () => {
+  const { storage } = await fixture();
+  const trip = storage.createTrip({ name: 'Camping', types: [] });
+  const camp = storage.addLocation(trip.id, { name: 'Campsite', lat: 34, lng: -111 });
+  const bear = storage.addEntry(trip.id, { type: 'wildlife', locationId: camp.id, notes: 'Bear' });
+  const updated = storage.updateEntry(trip.id, bear.id, { locationId: null });
+  assert.equal(updated.locationId, null);
+  assert.equal(updated.eventId, undefined);
+  assert.equal(updated.locationName, undefined);
+  assert.equal(updated.eventName, undefined);
+  assert.equal(updated.notes, 'Bear');
+});
+
 test('audio bytes survive capture and participate in media sync', async () => {
   const { attachments, media, refs } = await fixture();
   const file = new File(['recorded bytes'], 'voice.webm', { type: 'audio/webm' });

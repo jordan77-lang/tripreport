@@ -4,10 +4,9 @@ import { BottomNav } from '../components/BottomNav';
 import { Ic } from '../components/Ic';
 import { SyncChip } from '../components/SyncChip';
 import { T, F, ICONS } from '../tokens';
-import { addEntry, updateEntry, getCurrentUserId } from '../lib/storage';
+import { addEntry, updateEntry, getCurrentUserId, isTripMember, isTripOpen } from '../lib/storage';
 import { AudioAttachment } from '../components/AudioAttachment';
 import { MediaThumb } from '../components/MediaThumb';
-import { CaptureActions } from '../components/CaptureActions';
 import { resolveUserDisplayName } from '../lib/tripParticipants';
 import { locationTypeLabel } from '../lib/locationTypes';
 import { ts } from '../lib/textScale';
@@ -34,10 +33,12 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, onOpenLocation,
     observedAt: point.time,
   }));
   const locations = trip?.locations ?? [];
+  const unassignedCount = (trip?.entries || []).filter(entry => !entry.locationId).length;
 
   const filteredEntries = entries.filter(e => {
     if (filter === 'mine' && e.authorId !== currentUserId) return false;
     if (filter === 'photos' && !e.photoFiles?.length) return false;
+    if (filter === 'unassigned' && (e._kind !== 'entry' || e.locationId)) return false;
     const q = search.trim().toLowerCase();
     const locName = locations.find(l => l.id === e.locationId)?.name || e.locationName || '';
     return !q || [e.title, e.type, e.notes, e.featureType, locName].join(' ').toLowerCase().includes(q);
@@ -85,10 +86,10 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, onOpenLocation,
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: ts(20), fontWeight: 800, color: T.text, letterSpacing: -.5 }}>
-              {trip?.name || 'No active trip'}
+              Journal
             </div>
             <div style={{ fontSize: ts(13), color: T.textSub, marginTop: 2 }}>
-              {entries.length} entries logged
+              {trip?.name || 'No active trip'} · {entries.length} moments
             </div>
             <div style={{ marginTop: 6 }}>
               <SyncChip state={tripSyncState} compact />
@@ -109,13 +110,20 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, onOpenLocation,
 
         {(savedNotice || notice) && <p role="status" style={{ padding: 12, marginBottom: 12, background: T.accentLight, color: T.accent, borderRadius: 10, fontSize: ts(14) }}>{savedNotice || notice}</p>}
         <div style={{ marginBottom: 20 }}>
-          <CaptureActions trip={trip} hideLocation={Boolean(locationId)} onCapture={(type) => onNav('capture-' + type)} />
+          {isTripOpen(trip) && isTripMember(trip, currentUserId) && <button className="dashboard-button primary" type="button" onClick={() => onNav?.('capture')}>
+            <Ic d={ICONS.plus} size={18} color="currentColor" /> {locationId ? 'Add entry at this location' : 'Choose a location to add entries'}
+          </button>}
           {locationId && (
             <p style={{ fontSize: ts(14), color: T.accent, fontWeight: 700, margin: '12px 0 0' }}>
               Adding to {locations.find((item) => item.id === locationId)?.name || 'this place'}
             </p>
           )}
         </div>
+
+        {unassignedCount > 0 && <div style={{ padding: 14, borderRadius: 12, background: T.accentLight, marginBottom: 16 }}>
+          <p style={{ fontSize: ts(14), color: T.accent, lineHeight: 1.5 }}>{unassignedCount} earlier {unassignedCount === 1 ? 'entry has' : 'entries have'} no saved location. Use Edit entry to assign a place.</p>
+          <button className="dashboard-text-button" type="button" onClick={() => { setFilter('unassigned'); setSearch(''); }}>Show entries without a location</button>
+        </div>}
 
         {/* Entries */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -124,7 +132,7 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, onOpenLocation,
         </div>
 
         <div aria-label="Journal filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {[['everyone', 'Everyone'], ['mine', 'Mine'], ['photos', 'Photos']].map(([value, label]) =>
+          {[['everyone', 'Everyone'], ['mine', 'Mine'], ['photos', 'Photos'], ...(unassignedCount ? [['unassigned', 'Needs a location']] : [])].map(([value, label]) =>
             <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}
               style={{ minHeight: 44, padding: '8px 14px', borderRadius: 12, border: '1px solid ' + T.border,
                 background: filter === value ? T.accent : T.card, color: filter === value ? 'white' : T.text,
@@ -140,7 +148,7 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, onOpenLocation,
 
         {entries.length === 0 && (
           <div style={{ textAlign: 'center', padding: '32px 0', color: T.textFaint, fontSize: ts(14) }}>
-            No entries yet — tap a capture button above
+            Your shared story starts with a location. Add a place, then collect its photos, notes, meals, and sightings.
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CaptureActions } from '../components/CaptureActions';
+import { BottomNav } from '../components/BottomNav';
 import { AddExpenseSheet } from '../components/AddExpenseSheet';
 import { ConditionsSheet } from '../components/ConditionsSheet';
 import { LocationSaveForm } from '../components/LocationSaveForm';
@@ -8,51 +9,32 @@ import { EntryForm } from './EntryForm';
 import { addEntry, addLocation, getCurrentUserId, isTripMember, isTripOpen } from '../lib/storage';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { defaultLocationKind } from '../lib/locationTypes';
-import { nearestLocation } from '../lib/tripTimeline';
 import { T, F } from '../tokens';
 import { ts } from '../lib/textScale';
 
-export function QuickCapture({ trip, initialType = null, locationId = null, eventId = null, onCancel, onSaved }) {
-  const [type, setType] = useState(initialType);
+export function QuickCapture({ trip, initialType = null, locationId = null, eventId = null, onCancel, onSaved, onNav }) {
+  const [type, setType] = useState(initialType === 'event' ? null : initialType);
+  const [addingEvent, setAddingEvent] = useState(Boolean(locationId || eventId || (initialType && initialType !== 'location')));
   const [error, setError] = useState(null);
-  const [suggestedId, setSuggestedId] = useState(locationId);
-  const [placeReady, setPlaceReady] = useState(() => Boolean(locationId || eventId) || typeof navigator === 'undefined' || !navigator.geolocation);
   const event = (trip?.events || []).find(e => e.id === eventId) || null;
-  const location = (trip?.locations || []).find(l => l.id === (event?.locationId || suggestedId || locationId)) || null;
-
-  useEffect(() => {
-    if (locationId || eventId || typeof navigator === 'undefined' || !navigator.geolocation) return undefined;
-    let cancelled = false;
-    const timer = setTimeout(() => { if (!cancelled) setPlaceReady(true); }, 4000);
-    navigator.geolocation.getCurrentPosition((pos) => {
-      if (cancelled) return;
-      clearTimeout(timer);
-      const nearest = nearestLocation(trip?.locations, pos.coords.latitude, pos.coords.longitude, 200);
-      if (nearest) setSuggestedId(nearest.id);
-      setPlaceReady(true);
-    }, () => {
-      if (cancelled) return;
-      clearTimeout(timer);
-      setPlaceReady(true);
-    }, { enableHighAccuracy: true, timeout: 3500, maximumAge: 60000 });
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [locationId, eventId, trip?.locations]);
+  const [selectedLocationId, setSelectedLocationId] = useState(event?.locationId || locationId || null);
+  const location = (trip?.locations || []).find(l => l.id === (event?.locationId || selectedLocationId)) || null;
   const canCapture = isTripOpen(trip) && isTripMember(trip, getCurrentUserId());
-  const fixedPlace = Boolean(locationId || eventId);
 
   function save(entry) {
     setError(null);
     try {
       if (!canCapture) throw new Error('Select an open trip you belong to before logging.');
-      const saved = addEntry(trip.id, { ...entry, eventId: event?.id });
+      if (!location) throw new Error('Add or choose a location before saving an entry.');
+      const saved = addEntry(trip.id, { ...entry, locationId: location.id, eventId: event?.id, newVisit: !event });
       if (!saved) throw new Error('This trip is no longer available. Your entry has not been saved.');
-      onSaved('Entry saved on this phone.');
+      onSaved(`Entry saved at ${saved.locationName} on this phone.`, { locationId: saved.locationId });
     } catch (e) {
       setError(e.message || 'Could not save. Please try again.');
     }
   }
 
-  if (canCapture && type === 'location' && !fixedPlace) {
+  if (canCapture && type === 'location') {
     return (
       <LogLocation
         trip={trip}
@@ -62,40 +44,51 @@ export function QuickCapture({ trip, initialType = null, locationId = null, even
     );
   }
 
-  if (canCapture && type === 'conditions') {
-    return <ConditionsSheet trip={trip} defaultLocationId={location?.id || null}
-      onCancel={() => setType(null)} onSaved={onSaved} />;
+  if (canCapture && location && type === 'conditions') {
+    return <ConditionsSheet trip={trip} defaultLocationId={location.id} lockLocation
+      onCancel={() => setType(null)} onSaved={notice => onSaved(notice, { locationId: location.id })} />;
   }
 
-  if (canCapture && type && type !== 'expense' && !(fixedPlace && type === 'campsite')) {
-    if (!placeReady) {
-      return <div style={{ height: '100%', background: T.bg, fontFamily: F, padding: 20, color: T.textSub }}>Finding the nearest place…</div>;
-    }
-    const places = fixedPlace && location ? [location] : (trip.locations || []);
-    return <EntryForm type={type} trip={trip} event={event} locations={places}
-      defaultLocationId={location?.id || null} allowUnlinked={!fixedPlace} lockLocation={fixedPlace}
-      saveError={error} onSave={save} onCancel={onCancel} />;
+  if (canCapture && location && type && type !== 'expense' && type !== 'campsite') {
+    return <EntryForm type={type} trip={trip} event={event} locations={[location]}
+      defaultLocationId={location.id} lockLocation
+      saveError={error} onSave={save} onCancel={() => setType(null)} />;
   }
 
-  return <div style={{ height: '100%', overflowY: 'auto', background: T.bg, fontFamily: F, padding: 20 }}>
+  return <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, fontFamily: F }}><div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 20 }}>
     <button type="button" onClick={onCancel} style={{ minHeight: 44, padding: '8px 12px', border: '1px solid ' + T.border,
       borderRadius: 10, background: T.card, color: T.text, fontSize: ts(14), cursor: 'pointer' }}>← Back</button>
-    <h1 style={{ fontSize: ts(24), marginTop: 20, color: T.text }}>Add a moment</h1>
+    <h1 style={{ fontSize: ts(24), marginTop: 20, color: T.text }}>{!addingEvent ? 'Add' : location ? `Add event to ${location.name}` : 'Choose a location first'}</h1>
     <p style={{ fontSize: ts(16), color: T.textSub, lineHeight: 1.5, margin: '8px 0 20px' }}>
       {trip?.name || 'No trip selected'}{location ? ' · ' + location.name : ''}
     </p>
     {canCapture ? <>
-      <CaptureActions trip={trip} hideLocation={fixedPlace} onCapture={setType} />
-      <p style={{ fontSize: ts(14), color: T.textSub, lineHeight: 1.5, marginTop: 16 }}>
-        {fixedPlace
-          ? `This stays at ${location?.name || 'this place'}.`
-          : 'Save now, organize later. A saved location is optional. Entries stay on this phone when you are offline.'}
-      </p>
-      {location && !event && <p style={{ fontSize: ts(14), color: T.accent, fontWeight: 700, marginTop: 12 }}>Adding to {location.name}</p>}
-      {type === 'expense' && <AddExpenseSheet trip={trip} location={location} event={event}
-        onClose={() => setType(null)} onSaved={() => onSaved('Expense saved on this phone. Find it in Plan → Expenses.')} />}
+      {!addingEvent ? <>
+        <p className="dashboard-description" style={{ marginBottom: 20 }}>Build your trip with locations, then add what happened at each place.</p>
+        <button className="dashboard-button primary" type="button" onClick={() => setType('location')} style={{ width: '100%', minHeight: 90, justifyContent: 'flex-start', textAlign: 'left', padding: 20, marginBottom: 14 }}>
+          <span aria-hidden="true" style={{ fontSize: 28 }}>+</span><span><span style={{ display: 'block', fontSize: ts(18) }}>Add a location</span><span style={{ display: 'block', marginTop: 6, fontSize: ts(13), fontWeight: 500 }}>A campsite, stop, or point of interest</span></span>
+        </button>
+        <button className="dashboard-button secondary" type="button" onClick={() => setAddingEvent(true)} style={{ width: '100%', minHeight: 90, justifyContent: 'flex-start', textAlign: 'left', padding: 20 }}>
+          <span aria-hidden="true" style={{ fontSize: 28 }}>+</span><span><span style={{ display: 'block', fontSize: ts(18) }}>Add an event to a location</span><span style={{ display: 'block', marginTop: 6, fontSize: ts(13), fontWeight: 500 }}>Photo, meal, sighting, conditions, or Custom</span></span>
+        </button>
+      </> : !location ? <>
+        <p className="dashboard-description" style={{ marginBottom: 18 }}>Start with a campsite, stop, or other place. Then add its meals, sightings, photos, notes, and trip entries.</p>
+        <button className="dashboard-button primary" type="button" onClick={() => setType('location')}>+ Add a location</button>
+        {(trip.locations || []).length > 0 && <div style={{ marginTop: 24 }}><h2 style={{ fontSize: ts(17), marginBottom: 12 }}>Or open a saved location</h2>
+          {trip.locations.map(place => <button key={place.id} type="button" onClick={() => setSelectedLocationId(place.id)}
+            style={{ width: '100%', minHeight: 64, display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, padding: '14px 16px', background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, fontFamily: F, textAlign: 'left', color: T.text, cursor: 'pointer' }}>
+            <span aria-hidden="true" style={{ fontSize: 24 }}>{place.icon || '📍'}</span><span style={{ flex: 1, fontSize: ts(15), fontWeight: 800 }}>{place.name}</span><span aria-hidden="true">→</span>
+          </button>)}
+        </div>}
+      </> : <>
+        <p style={{ fontSize: ts(14), color: T.accent, fontWeight: 700, marginBottom: 16 }}>Entries will be saved at {location.name}{event ? ` · ${event.name}` : ''}.</p>
+        {!event && <button className="dashboard-text-button" type="button" onClick={() => setSelectedLocationId(null)}>Choose another location</button>}
+        <CaptureActions trip={trip} onCapture={setType} />
+        {type === 'expense' && <AddExpenseSheet trip={trip} location={location} event={event} lockLocation
+          onClose={() => setType(null)} onSaved={() => onSaved(`Expense saved at ${location.name} on this phone.`, { locationId: location.id })} />}
+      </>}
     </> : <p style={{ color: T.textSub }}>Choose an open trip you belong to before adding a moment.</p>}
-  </div>;
+  </div><BottomNav active="capture" trip={trip} onNav={onNav} /></div>;
 }
 
 function blankLocationDraft() {
@@ -206,7 +199,7 @@ function LogLocation({ trip, onCancel, onSaved }) {
       setError('This trip is no longer available. The location was not saved.');
       return;
     }
-    onSaved('Location saved on this phone.');
+    onSaved('Location saved. Add trip entries here.', { locationId: created.id });
   }
 
   const savedPlaces = useMemo(

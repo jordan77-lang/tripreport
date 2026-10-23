@@ -9,6 +9,7 @@ import { createPhotoMediaFromFile, createAudioMediaFromFile } from '../lib/media
 import { MediaThumb } from '../components/MediaThumb';
 import { VoiceRecorder } from '../components/VoiceRecorder';
 import { AudioAttachment } from '../components/AudioAttachment';
+import { EntryLocationPicker } from '../components/EntryLocationPicker';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 import { ts } from '../lib/textScale';
 import { addMeal, getTrips } from '../lib/storage';
@@ -80,6 +81,8 @@ export function EntryForm({
   });
   const [weatherObservation, setWeatherObservation] = useState(initialEntry?.weatherObservation || '');
   const [mediaMode, setMediaMode] = useState(type === 'voice' ? 'voice' : type === 'video' && VIDEO_ENABLED ? 'video' : 'photo');
+  const canUseAudio = type === 'custom-event' || type === 'voice' || (initialEntry?.voiceFiles || []).length > 0;
+  const [customTitle, setCustomTitle] = useState(type === 'custom-event' ? initialEntry?.title || '' : '');
   const [recording, setRecording] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [mediaError, setMediaError] = useState(null);
@@ -295,7 +298,7 @@ export function EntryForm({
       locationId: selectedLocationId || undefined,
       locationName: selectedLocation?.name,
       locationType: selectedLocation?.type,
-      title: meal?.name || defaultTitle(type),
+      title: meal?.name || (type === 'custom-event' && customTitle.trim()) || defaultTitle(type),
       mealId: meal?.id,
       mealSlot: meal?.slot,
       mealDayIndex: meal?.dayIndex,
@@ -408,6 +411,19 @@ export function EntryForm({
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
 
+        {!lockLocation && (allowUnlinked || locations.length > 1) && <EntryLocationPicker
+          locations={locations} value={selectedLocationId} allowUnlinked={allowUnlinked}
+          onChange={id => { setSelectedLocationId(id); setPinPos(null); }} />}
+
+        {type === 'custom-event' && <div style={{ marginBottom: 18 }}>
+          <label htmlFor="custom-event-name" style={{ display: 'block', fontSize: ts(14), fontWeight: 800, marginBottom: 8 }}>Event name</label>
+          <input id="custom-event-name" value={customTitle} onChange={event => setCustomTitle(event.target.value)} placeholder="What happened here?" style={inputStyle(T)} />
+          <div aria-label="Custom entry format" style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+            <button className="dashboard-button secondary" type="button" aria-pressed={mediaMode !== 'voice'} onClick={() => setMediaMode('photo')} disabled={recording}>Note</button>
+            <button className="dashboard-button secondary" type="button" aria-pressed={mediaMode === 'voice'} onClick={() => setMediaMode('voice')} disabled={recording}>Voice recording</button>
+          </div>
+        </div>}
+
         {type === 'food' && (
           <MealChoice
             meals={trip?.meals || []}
@@ -423,19 +439,7 @@ export function EntryForm({
           />
         )}
 
-        {/* Location picker only when there is a real choice to make. */}
-        {!lockLocation && (allowUnlinked || locations.length > 1) && (
-          <div style={{ marginBottom: 16 }}>
-            <label htmlFor="entry-location" style={{ display: 'block', fontSize: ts(14), fontWeight: 700, marginBottom: 8 }}>Location{allowUnlinked ? ' (optional)' : ''}</label>
-            <select id="entry-location" value={selectedLocationId || ''}
-              onChange={(event) => setSelectedLocationId(event.target.value || null)} style={inputStyle(T)}>
-              {allowUnlinked && <option value="">No saved location — use current GPS if available</option>}
-              {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-            </select>
-          </div>
-        )}
-
-        {placeOnMap && !lockLocation && (
+        {placeOnMap && !lockLocation && !selectedLocation && (
           <div style={{ marginBottom: 16 }}>
             <Label>Place on the map</Label>
             <PlaceSearch
@@ -647,12 +651,12 @@ export function EntryForm({
 
         {/* Media — one section, one caption (the notes field below). */}
         <div style={{ marginBottom: 16 }}>
-          <Label>Photos & Audio</Label>
+          <Label>{canUseAudio ? 'Photos & Audio' : 'Photos'}</Label>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             {[
               { id: 'photo', label: `Photos (${photoFiles.length})`, icon: ICONS.camera },
               ...(VIDEO_ENABLED ? [{ id: 'video', label: `Videos (${videoFiles.length})`, icon: ICONS.video, videoOnly: true }] : []),
-              { id: 'voice', label: `Audio (${voiceFiles.length})`, icon: ICONS.mic },
+              ...(canUseAudio ? [{ id: 'voice', label: `Audio (${voiceFiles.length})`, icon: ICONS.mic }] : []),
             ].map((opt) => {
               const disabled = opt.videoOnly && !VIDEO_ENABLED;
               return (

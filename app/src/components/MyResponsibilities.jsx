@@ -1,0 +1,56 @@
+import { getCurrentUserId } from '../lib/storage';
+import { getMyResponsibilities, isGearReady, mealResponsibilityLabel } from '../lib/tripDashboard';
+import { money } from '../lib/expenses';
+import { Ic } from './Ic';
+import { ICONS, T } from '../tokens';
+
+export function MyResponsibilities({ trip, onOpenPlan }) {
+  const tasks = getMyResponsibilities(trip, getCurrentUserId());
+  const completed = trip?.status === 'completed';
+  return (
+    <section className="responsibilities" aria-labelledby="my-responsibilities-title">
+      <div className="dashboard-section-heading">
+        <div>
+          <p className="dashboard-eyebrow">Your part of the adventure</p>
+          <h2 id="my-responsibilities-title">My responsibilities</h2>
+        </div>
+        <Ic d={ICONS.leaf} size={26} color={T.accent} />
+      </div>
+      <p className="dashboard-description">{completed ? 'Review what you brought, cooked, and spent.' : 'Everything with your name on it, in one place. Open a list to make changes.'}</p>
+      <div className="responsibility-grid">
+        <ResponsibilityGroup title="Gear to bring" icon={ICONS.tent} action="Open gear list" onOpen={() => onOpenPlan('gear')}
+          empty="No gear assigned to you yet." items={tasks.gear.map(item => ({ id: item.id, title: item.name, detail: isGearReady(item) ? 'Ready' : 'To bring', done: isGearReady(item) }))} />
+        <ResponsibilityGroup title="Your meals" icon={ICONS.fork} action="Open meal plan" onOpen={() => onOpenPlan('meals')}
+          empty="No meals assigned to you yet." items={tasks.meals.map(item => ({ id: item.id, title: item.name, detail: mealResponsibilityLabel(item, trip.startDate) }))} />
+        <ResponsibilityGroup title="Shopping you added" icon={ICONS.plus} action="Open shopping list" onOpen={() => onOpenPlan('shopping')}
+          empty="You haven’t added any shopping items." items={tasks.shopping.map(item => ({ id: item.id, title: item.name, detail: item.checked ? 'Purchased' : item.qty || 'To buy', done: item.checked }))}>
+          <p className="dashboard-caption">These are items you added; the shopping list is shared by the crew.</p>
+        </ResponsibilityGroup>
+        <div className="responsibility-group">
+          <div className="responsibility-group-title"><Ic d={ICONS.expense} size={20} color={T.accent} /><h3>Your trip balance</h3></div>
+          <p className="responsibility-balance">{money(Math.abs(tasks.balance))}</p>
+          <p className="dashboard-description">{!tasks.hasExpenses ? 'No expenses recorded yet.' : tasks.balance < -0.01 ? 'Your share to pay, based on recorded expenses.' : tasks.balance > 0.01 ? 'Your crew owes you, based on recorded expenses.' : 'Your recorded costs are balanced.'}</p>
+          <button className="dashboard-text-button" type="button" onClick={() => onOpenPlan('expenses')}>Review trip expenses <span aria-hidden="true">→</span></button>
+        </div>
+      </div>
+      {!completed && (tasks.unassignedGear > 0 || tasks.unassignedMeals > 0) && (
+        <div className="dashboard-help">
+          <div><h3>Give the crew a hand</h3><p>{tasks.unassignedGear} gear item{tasks.unassignedGear === 1 ? '' : 's'} and {tasks.unassignedMeals} meal{tasks.unassignedMeals === 1 ? '' : 's'} still need someone.</p></div>
+          <button className="dashboard-button secondary" type="button" onClick={() => onOpenPlan(tasks.unassignedGear ? 'gear' : 'meals')}>Find a task</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ResponsibilityGroup({ title, icon, items, empty, action, onOpen, children }) {
+  return <div className="responsibility-group">
+    <div className="responsibility-group-title"><Ic d={icon} size={20} color={T.accent} /><h3>{title}</h3></div>
+    {items.length ? <ul className="responsibility-list">{items.map(item => <li key={item.id}>
+      <span className={`responsibility-marker${item.done ? ' done' : ''}`} aria-hidden="true">{item.done ? '✓' : '·'}</span>
+      <div><p>{item.title}</p><span>{item.detail}</span></div>
+    </li>)}</ul> : <p className="dashboard-description">{empty}</p>}
+    {children}
+    <button className="dashboard-text-button" type="button" onClick={onOpen}>{action} <span aria-hidden="true">→</span></button>
+  </div>;
+}

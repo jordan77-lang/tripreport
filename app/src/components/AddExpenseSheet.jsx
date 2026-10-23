@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ic } from './Ic';
 import { T, F, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
+import { EntryLocationPicker } from './EntryLocationPicker';
 import { addExpense, getCurrentUserId } from '../lib/storage';
 import {
   buildSplitPayload,
@@ -22,7 +23,7 @@ import { buildParticipantAliasMap, buildTripParticipants, money } from '../lib/e
  * the field is the moment you know which stop it belongs to, so it pre-fills that
  * context and gets out of the way.
  */
-export function AddExpenseSheet({ trip, location = null, event = null, onClose, onSaved }) {
+export function AddExpenseSheet({ trip, location = null, event = null, lockLocation = false, onClose, onSaved }) {
   const currentUserId = getCurrentUserId();
   const participants = useMemo(() => buildTripParticipants(trip, currentUserId), [trip, currentUserId]);
   const participantIds = useMemo(() => participants.map((p) => p.id), [participants]);
@@ -47,6 +48,8 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
   const [splitIds, setSplitIds] = useState(eventCrew.length ? eventCrew : participantIds);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [locationId, setLocationId] = useState(event?.locationId || location?.id || null);
+  const selectedLocation = (trip?.locations || []).find(place => place.id === locationId) || (location?.id === locationId ? location : null);
 
   // Derive rather than sync-in-effect: if the chosen payer is not a participant
   // (roster changed under us), fall back without triggering a second render.
@@ -102,8 +105,8 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
   const perPerson = amountValid && splitValid ? value / splitIds.length : 0;
 
   const contextLabel = event?.name
-    ? (location?.name ? `${location.name} · ${event.name}` : event.name)
-    : (location?.name || 'Trip');
+    ? (selectedLocation?.name ? `${selectedLocation.name} · ${event.name}` : event.name)
+    : (selectedLocation?.name || 'Trip');
 
   async function save() {
     if (!trip?.id || !canSave) return;
@@ -126,8 +129,8 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
           amount: value,
           paidBy: effectivePaidBy,
           paidByLabel: payer?.label || null,
-          locationId: location?.id || event?.locationId || null,
-          locationName: location?.name || event?.locationName || null,
+          locationId: selectedLocation?.id || event?.locationId || null,
+          locationName: selectedLocation?.name || event?.locationName || null,
           eventId: event?.id || null,
           eventName: event?.name || null,
           ...splitFields,
@@ -173,6 +176,8 @@ export function AddExpenseSheet({ trip, location = null, event = null, onClose, 
         </div>
 
         <div style={{ padding: '14px 16px 20px' }}>
+
+          {!event && !lockLocation && <EntryLocationPicker id="expense-location" locations={trip.locations || []} value={locationId} onChange={setLocationId} />}
 
           {/* What + how much */}
           <input

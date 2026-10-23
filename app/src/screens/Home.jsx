@@ -1,307 +1,78 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Ic } from '../components/Ic';
 import { BottomNav } from '../components/BottomNav';
-import { SyncChip } from '../components/SyncChip';
 import { MediaThumb } from '../components/MediaThumb';
-import { T, F, ICONS } from '../tokens';
-import { ts } from '../lib/textScale';
+import { TripDashboard } from '../components/TripDashboard';
+import { T, ICONS } from '../tokens';
 import { formatTripDate } from '../lib/tripEdit';
-export function Home({ trip, allTrips = [], onNav, onFab, onOpenTrip, onSelectTrip, onOpenPlan, onJoinTrip, onOpenSettings, onOpenRecap, auth }) {
-  const currentTrip = trip && trip.status !== 'completed' ? trip : null;
+
+export function Home({ trip, allTrips = [], onNav, onFab, onSelectTrip, onJoinTrip, onOpenSettings, onOpenRecap, auth }) {
   const [tripSearch, setTripSearch] = useState('');
   const [pastTripsExpanded, setPastTripsExpanded] = useState(false);
-  const entries = useMemo(() => currentTrip?.entries ?? [], [currentTrip?.entries]);
-  const tripSyncState = currentTrip?.syncState || (entries.some(e => e.syncState === 'pending') ? 'pending' : 'synced');
-  const openTrips = useMemo(() => {
-    return (allTrips || [])
-      .filter((t) => t.status !== 'completed')
-      .sort((a, b) => {
-        const aTs = a.startDate ? new Date(`${a.startDate}T00:00:00`).getTime() : (a.createdAt || 0);
-        const bTs = b.startDate ? new Date(`${b.startDate}T00:00:00`).getTime() : (b.createdAt || 0);
-        return aTs - bTs;
-      });
-  }, [allTrips]);
-  const otherTrips = useMemo(() => {
-    if (!currentTrip) return openTrips;
-    return openTrips.filter((t) => t.id !== currentTrip.id);
-  }, [openTrips, currentTrip]);
-
-  const finalizedTrips = useMemo(() => {
+  const otherTrips = useMemo(() => allTrips
+    .filter(item => item.status !== 'completed' && item.id !== trip?.id)
+    .sort((a, b) => (a.startDate || '9999').localeCompare(b.startDate || '9999')), [allTrips, trip?.id]);
+  const pastTrips = useMemo(() => {
     const query = tripSearch.trim().toLowerCase();
-    return (allTrips || [])
-      .filter((t) => t.status === 'completed')
-      .filter((t) => {
-        if (!query) return true;
-        const participants = `${t.ownerId || ''} ${(t.collaborators || []).map((c) => c.handle || c.name || '').join(' ')}`;
-        const hay = `${t.name || ''} ${t.location || ''} ${(t.types || []).join(' ')} ${participants}`.toLowerCase();
-        return hay.includes(query);
-      })
+    return allTrips.filter(item => item.status === 'completed')
+      .filter(item => !query || [item.name, item.location, ...(item.types || []), ...Object.values(item.memberProfiles || {}),
+        ...(item.collaborators || []).map(person => person.handle || person.name || '')].join(' ').toLowerCase().includes(query))
       .sort((a, b) => (b.endedAt || b.updatedAt || b.createdAt || 0) - (a.endedAt || a.updatedAt || a.createdAt || 0));
   }, [allTrips, tripSearch]);
+  const visiblePastTrips = pastTripsExpanded ? pastTrips : pastTrips.slice(0, 4);
+  const profileName = auth?.profile?.display_name || auth?.user?.email || '';
+  const open = (item, screen = 'trip', params = {}) => onSelectTrip?.(item.id, { screen, params });
 
-  const visiblePastTrips = pastTripsExpanded ? finalizedTrips : finalizedTrips.slice(0, 4);
-
-  const profileInitial = (auth?.profile?.display_name || auth?.user?.email || '?').charAt(0).toUpperCase();
-
-  return (
-    <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
-
-      {/* Header */}
-      <div style={{ background: T.card, padding: '12px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: ts(22), fontWeight: 800, color: T.text, letterSpacing: -.6 }}>TripReport</div>
-            <div style={{ fontSize: ts(13), color: T.textSub, marginTop: 2 }}>
-              {currentTrip ? currentTrip.name : 'Ready to explore'}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {onFab && (
-              <button type="button" onClick={onFab}
-                style={{ background: T.accent, border: 'none', borderRadius: 9, padding: '7px 11px', fontSize: ts(12), fontWeight: 800, color: 'white', cursor: 'pointer', fontFamily: F, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <Ic d={ICONS.plus} size={14} color="white" sw={2.4} />
-                New Trip
-              </button>
-            )}
-            {auth?.configured && onJoinTrip && (
-              <div onClick={onJoinTrip}
-                   style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 9, padding: '7px 10px', fontSize: ts(12), fontWeight: 700, color: T.accent, cursor: 'pointer' }}>
-                Join
-              </div>
-            )}
-            {onOpenSettings && (
-              <button type="button" onClick={onOpenSettings} aria-label="Settings"
-                style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                <Ic d="M4 6h16 M4 12h16 M4 18h16" size={17} color={T.textSub} sw={2} />
-              </button>
-            )}
-            <div style={{ width: 36, height: 36, borderRadius: 18, background: T.accent,
-                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                           fontSize: ts(14), fontWeight: 800, color: 'white' }} title={auth?.profile?.display_name || ''}>
-              {profileInitial}
-            </div>
-          </div>
+  return <div className="trips-home">
+    <header className="trips-header">
+      <div className="trips-header-inner">
+        <div className="trips-brand"><span className="trips-brand-icon"><Ic d={ICONS.compass} size={23} color="white" /></span><div><h1>TripReport</h1><p>Every adventure. Everyone’s story.</p></div></div>
+        <div className="trips-header-actions">
+          {auth?.configured && onJoinTrip && <button className="dashboard-button secondary" type="button" aria-label="Join a trip" onClick={onJoinTrip}><span className="trips-join-full">Join a trip</span><span className="trips-join-short">Join</span></button>}
+          {onOpenSettings && <button className="trips-settings" type="button" onClick={onOpenSettings} aria-label="Settings"><Ic d="M4 6h16 M4 12h16 M4 18h16" size={20} color={T.textSub} /></button>}
+          {profileName && <span className="trips-avatar" title={profileName} aria-label={profileName}>{profileName.charAt(0).toUpperCase()}</span>}
         </div>
       </div>
-
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-
-        {/* Current trip */}
-        {currentTrip ? (
-          <div style={{ margin: '14px 16px 0', background: '#2A5C8E', borderRadius: 16,
-                        boxShadow: '0 4px 20px rgba(42,92,142,.35)', padding: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
-              <Ic d={ICONS.compass} size={14} color="rgba(255,255,255,.85)" sw={2} />
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,.7)', letterSpacing: .8 }}>YOUR TRIP</span>
-            </div>
-            {!!currentTrip.coverPhoto && (
-              <MediaThumb media={currentTrip.coverPhoto} alt="Trip cover" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 12, marginBottom: 10, display: 'block', background: 'rgba(0,0,0,.18)' }} />
-            )}
-            <div style={{ fontSize: 19, fontWeight: 800, color: 'white', letterSpacing: -.4, marginBottom: 2 }}>{currentTrip.name}</div>
-            <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.7)', marginBottom: 10 }}>
-              {(currentTrip.types || []).join(' · ') || 'Trip'}
-              {currentTrip.startDate ? ` · Starts ${formatTripDate(currentTrip.startDate)}` : ''}
-              {entries.length > 0 ? ` · ${entries.length} entries` : ''}
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <SyncChip state={tripSyncState} compact />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => { onSelectTrip?.(currentTrip.id); onOpenPlan?.(); }}
-                style={tripListPlanBtnOnDark}
-              >
-                Plan
-              </button>
-              <button
-                type="button"
-                onClick={() => { onSelectTrip?.(currentTrip.id); onOpenTrip?.(); }}
-                style={tripListTripBtnOnDark}
-              >
-                Trip
-              </button>
-            </div>
+    </header>
+    <main className="trips-scroll">
+      <div className="trips-content">
+        <div className="dashboard-section-heading trips-heading"><div><p className="dashboard-eyebrow">Plan together. Capture the adventure.</p><h2>Your trips</h2></div>
+          {onFab && <button className="dashboard-button primary" type="button" onClick={onFab}><Ic d={ICONS.plus} size={18} color="currentColor" /> New trip</button>}
+        </div>
+        {trip ? <TripDashboard trip={trip} onOpen={(screen, params) => open(trip, screen, params)} onRecap={() => onOpenRecap?.(trip.id)} /> : <section className="trips-welcome">
+          <span className="trips-welcome-icon"><Ic d={ICONS.tent} size={36} color={T.accent} /></span>
+          <h2>{allTrips.length ? 'Pick your next adventure.' : 'Good adventures start with good company.'}</h2>
+          <p>{allTrips.length ? 'Open a trip below to see your plan, crew, and memories.' : 'Plan the details with your crew, save moments along the way, and bring the whole story home.'}</p>
+          <div className="dashboard-actions">
+            {auth?.configured && onJoinTrip && <button className="dashboard-button primary" type="button" onClick={onJoinTrip}>Join your crew</button>}
+            {onFab && <button className="dashboard-button secondary" type="button" onClick={onFab}>Plan a new trip</button>}
           </div>
-        ) : (
-          <div style={{ margin: '14px 16px 0', background: T.accentLight, borderRadius: 16, padding: '20px',
-                        textAlign: 'center', border: `1.5px dashed ${T.accent}60` }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.accent, marginBottom: 6 }}>
-              {allTrips.length ? 'No trip selected' : 'Welcome to TripReport'}
-            </div>
-            {/* Most first-time users were invited, so joining sits beside creating. */}
-            <div style={{ fontSize: 12, color: T.accentMid, marginBottom: 14 }}>
-              {auth?.configured && onJoinTrip
-                ? 'Got an invite code from your trip leader? Join their trip — or start your own.'
-                : 'Create a trip to plan gear, shopping, and crew'}
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-              {auth?.configured && onJoinTrip && (
-                <button type="button" onClick={onJoinTrip} style={{ background: T.accent, border: 'none', borderRadius: 12, padding: '10px 20px',
-                  fontSize: 13, fontWeight: 700, color: 'white', cursor: 'pointer', fontFamily: F }}>
-                  Join a trip
-                </button>
-              )}
-              <button type="button" onClick={onFab} style={{ background: auth?.configured && onJoinTrip ? T.card : T.accent,
-                border: `1px solid ${T.accent}`, borderRadius: 12, padding: '10px 20px', display: 'inline-flex', alignItems: 'center', gap: 8,
-                cursor: 'pointer', fontFamily: F }}>
-                <Ic d={ICONS.plus} size={16} color={auth?.configured && onJoinTrip ? T.accent : 'white'} sw={2.5} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: auth?.configured && onJoinTrip ? T.accent : 'white' }}>New Trip</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* More trips */}
-        {otherTrips.length > 0 && (
-          <div style={{ padding: '14px 16px 0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>More Trips</span>
-              <span style={{ fontSize: 12, color: T.textSub }}>{otherTrips.length}</span>
-            </div>
-            {otherTrips.map((t) => {
-              const isSelected = trip?.id === t.id;
-              const gearCount = (t.gearItems || []).length;
-              const mealCount = (t.meals || []).length;
-              return (
-                <div key={t.id} style={{ background: T.card, borderRadius: 12, padding: '11px 12px', marginBottom: 8, border: `1.5px solid ${isSelected ? '#2A5C8E' : T.border}` }}>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
-                    {t.coverPhoto ? (
-                      <MediaThumb media={t.coverPhoto} alt={`${t.name} cover`} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
-                    ) : (
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: '#E4EFF8', border: '1px solid #C7DDEF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Ic d={ICONS.compass} size={18} color="#2A5C8E" sw={1.8} />
-                      </div>
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>{t.name || 'Trip'}</div>
-                      <div style={{ fontSize: ts(11), color: T.textFaint }}>{(t.types || []).join(' · ') || 'No type'}</div>
-                      <div style={{ fontSize: ts(11), color: T.textSub, marginTop: 2 }}>Starts {formatTripDate(t.startDate)}</div>
-                      <div style={{ fontSize: ts(10), color: T.textFaint, marginTop: 2 }}>{gearCount} gear · {mealCount} meals</div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <button
-                      type="button"
-                      onClick={() => { onSelectTrip?.(t.id); onOpenPlan?.(); }}
-                      style={tripListPlanBtn}
-                    >
-                      Plan
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { onSelectTrip?.(t.id); onOpenTrip?.(); }}
-                      style={tripListTripBtn}
-                    >
-                      Trip
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Past trips */}
-        {finalizedTrips.length > 0 && (
-          <div style={{ padding: '16px 16px 0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Past Trips</span>
-              <span style={{ fontSize: 11, color: T.textFaint }}>{finalizedTrips.length}</span>
-            </div>
-
-            <input
-              value={tripSearch}
-              onChange={(e) => { setTripSearch(e.target.value); setPastTripsExpanded(false); }}
-              placeholder="Search past trips…"
-              style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 9, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.card }}
-            />
-
-            {visiblePastTrips.map((t) => (
-              <div key={t.id} style={{ background: T.card, borderRadius: 12, padding: '10px 11px', marginBottom: 6, border: `1px solid ${T.border}`, display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div onClick={() => onSelectTrip?.(t.id)} style={{ display: 'flex', gap: 10, flex: 1, minWidth: 0, cursor: 'pointer', alignItems: 'center' }}>
-                  {t.coverPhoto ? (
-                    <MediaThumb media={t.coverPhoto} alt={`${t.name} cover`} style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-                  ) : (
-                    <div style={{ width: 36, height: 36, borderRadius: 8, background: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Ic d={ICONS.journal} size={16} color={T.textFaint} sw={1.8} />
-                    </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name || 'Trip'}</div>
-                    <div style={{ fontSize: 10.5, color: T.textFaint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {t.location || (t.types || []).join(' · ') || 'Trip'}
-                      {' · '}
-                      {new Date(t.endedAt || t.updatedAt || t.createdAt || 0).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
-                    </div>
-                  </div>
-                </div>
-                <div onClick={() => onOpenRecap?.(t.id)} style={{ fontSize: 10.5, color: '#2E6D3A', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}>Recap</div>
-              </div>
-            ))}
-
-            {finalizedTrips.length > 4 && !pastTripsExpanded && (
-              <button
-                type="button"
-                onClick={() => setPastTripsExpanded(true)}
-                style={{ width: '100%', marginTop: 2, border: `1px solid ${T.border}`, borderRadius: 9, padding: '8px 10px', background: T.bg, color: T.textSub, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: F }}
-              >
-                Show all {finalizedTrips.length} trips
-              </button>
-            )}
-
-            {tripSearch.trim() && visiblePastTrips.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '8px 0', color: T.textFaint, fontSize: 11.5 }}>
-                No past trips match your search.
-              </div>
-            )}
-          </div>
-        )}
-
-        <div style={{ height: 16 }} />
+        </section>}
+        {otherTrips.length > 0 && <section className="trips-list-section" aria-labelledby="upcoming-trips-title">
+          <div className="dashboard-section-heading"><h2 id="upcoming-trips-title">{trip ? 'More adventures' : 'Upcoming & active'}</h2><span className="dashboard-caption">{otherTrips.length} trip{otherTrips.length === 1 ? '' : 's'}</span></div>
+          <div className="trips-card-grid">{otherTrips.map(item => <article className="trip-list-card" key={item.id}>
+            <button className="trip-list-open" type="button" onClick={() => open(item)}>
+              <TripThumbnail trip={item} /><div><span className="dashboard-eyebrow">{item.status === 'planning' ? 'Planning' : 'On the trip'}</span><h3>{item.name || 'Trip'}</h3><p>{formatTripDate(item.startDate)}{item.location ? ` · ${item.location}` : ''}</p></div>
+            </button>
+            <div className="trip-list-actions"><button className="dashboard-text-button" type="button" onClick={() => open(item, 'plan', { tab: 'mine' })}>My responsibilities</button><button className="dashboard-text-button" type="button" onClick={() => open(item)}>Open trip <span aria-hidden="true">→</span></button></div>
+          </article>)}</div>
+        </section>}
+        {allTrips.some(item => item.status === 'completed') && <section className="trips-list-section" aria-labelledby="past-trips-title">
+          <div className="dashboard-section-heading"><div><p className="dashboard-eyebrow">Stories worth keeping</p><h2 id="past-trips-title">Past adventures</h2></div><span className="dashboard-caption">{pastTrips.length} trip{pastTrips.length === 1 ? '' : 's'}</span></div>
+          <input className="trips-search" aria-label="Search past trips" placeholder="Search trips, places, or crew…" value={tripSearch} onChange={event => { setTripSearch(event.target.value); setPastTripsExpanded(false); }} />
+          <div className="trips-card-grid">{visiblePastTrips.map(item => <article className="trip-list-card" key={item.id}>
+            <button className="trip-list-open" type="button" onClick={() => open(item)}><TripThumbnail trip={item} /><div><h3>{item.name || 'Trip'}</h3><p>{item.location || (item.types || []).join(' · ') || 'Adventure'} · {formatTripDate(item.startDate)}</p></div></button>
+            <div className="trip-list-actions"><button className="dashboard-text-button" type="button" onClick={() => open(item, 'home')}>Trip dashboard</button><button className="dashboard-text-button" type="button" onClick={() => onOpenRecap?.(item.id)}>Recap & share <span aria-hidden="true">→</span></button></div>
+          </article>)}</div>
+          {pastTrips.length > 4 && !pastTripsExpanded && <button className="dashboard-button secondary trips-show-all" type="button" onClick={() => setPastTripsExpanded(true)}>Show all {pastTrips.length} trips</button>}
+          {!pastTrips.length && <p className="dashboard-description">No past trips match your search.</p>}
+        </section>}
       </div>
-
-      <BottomNav active="home" onNav={onNav} trip={currentTrip} />
-    </div>
-  );
+    </main>
+    <BottomNav active="home" onNav={onNav} trip={trip} />
+  </div>;
 }
 
-const tripListPlanBtn = {
-  minHeight: 42,
-  borderRadius: 10,
-  border: '1px solid #C7DDEF',
-  background: '#E4EFF8',
-  color: '#2A5C8E',
-  fontSize: 13,
-  fontWeight: 700,
-  fontFamily: F,
-  cursor: 'pointer',
-  padding: '10px 12px',
-};
-
-const tripListTripBtn = {
-  minHeight: 42,
-  borderRadius: 10,
-  border: 'none',
-  background: '#2A5C8E',
-  color: 'white',
-  fontSize: 13,
-  fontWeight: 800,
-  fontFamily: F,
-  cursor: 'pointer',
-  padding: '10px 12px',
-};
-
-const tripListPlanBtnOnDark = {
-  ...tripListPlanBtn,
-  background: 'rgba(255,255,255,.15)',
-  border: '1px solid rgba(255,255,255,.25)',
-  color: 'white',
-};
-
-const tripListTripBtnOnDark = {
-  ...tripListTripBtn,
-  background: 'rgba(255,255,255,.92)',
-  color: '#2A5C8E',
-};
-
+function TripThumbnail({ trip }) {
+  return <span className="trip-list-thumbnail">{trip.coverPhoto ? <MediaThumb media={trip.coverPhoto} alt="" /> : <Ic d={ICONS.compass} size={25} color={T.accent} />}</span>;
+}

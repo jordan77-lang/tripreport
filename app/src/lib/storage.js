@@ -330,7 +330,7 @@ function ensureEntryEvent(trip, entry) {
     locationId: location.id,
     locationName: location.name,
     type: entryType,
-    name: entry.type === 'food' && entry.title ? entry.title : defaultEventName(entryType),
+    name: entry.title || defaultEventName(entryType),
     mealId: entry.mealId || null,
     notes: '',
     coverPhoto: null,
@@ -392,19 +392,27 @@ export function updateEntry(tripId, entryId, patch) {
   const cleanPatch = { ...patch };
   delete cleanPatch.newVisit;
   const merged = { ...existing, ...cleanPatch, newVisit: patch.newVisit };
+  const moved = Object.prototype.hasOwnProperty.call(patch, 'locationId') && (patch.locationId || null) !== (existing.locationId || null);
+  // A visit belongs to one location. Moving this observation must not keep the
+  // old visit, whose location would otherwise silently override the selection.
+  if ((moved || patch.newVisit) && !patch.eventId) {
+    merged.eventId = undefined;
+    merged.eventName = undefined;
+    merged.eventType = undefined;
+  }
   const linkedEvent = ensureEntryEvent(trip, merged);
-  const requestedEventId = linkedEvent?.id || patch.eventId || existing.eventId;
-  const requestedLocationId = linkedEvent?.locationId || patch.locationId || existing.locationId;
+  const requestedEventId = linkedEvent?.id || merged.eventId;
+  const requestedLocationId = linkedEvent?.locationId || merged.locationId;
   const linkedLocation = resolveEntryLocation(trip, requestedLocationId);
   const updated = {
     ...existing,
     ...cleanPatch,
     eventId: linkedEvent?.id || requestedEventId,
-    eventName: linkedEvent?.name || patch.eventName || existing.eventName,
-    eventType: linkedEvent?.type || patch.eventType || existing.eventType,
+    eventName: linkedEvent?.name || merged.eventName,
+    eventType: linkedEvent?.type || merged.eventType,
     locationId: linkedLocation?.id || requestedLocationId,
-    locationName: linkedLocation?.name || patch.locationName || existing.locationName,
-    locationType: linkedLocation?.type || patch.locationType || existing.locationType,
+    locationName: linkedLocation?.name || (moved ? undefined : merged.locationName),
+    locationType: linkedLocation?.type || (moved ? undefined : merged.locationType),
     lng: linkedLocation?.lng ?? patch.lng ?? existing.lng,
     lat: linkedLocation?.lat ?? patch.lat ?? existing.lat,
     id: existing.id,

@@ -172,7 +172,7 @@ export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
           <DuplicatePlacesBanner trip={trip} onCombined={onTripUpdate} />
         </div>
       )}
-      <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
+      <BottomNav active="map" onNav={onNav} onFab={onFab} trip={trip} />
     </div>
   );
 }

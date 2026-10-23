@@ -2,7 +2,7 @@ import { ICONS } from '../tokens';
 
 export const EVENT_CAPTURE_TYPES = [
   { type: 'campsite', label: 'Campsite', icon: ICONS.tent, col: '#B8702E' },
-  { type: 'video', label: 'Photo/video', icon: ICONS.camera, col: '#C05050' },
+  { type: 'photo', label: 'Photo', icon: ICONS.camera, col: '#2C5F3E' },
   { type: 'weather', label: 'Weather', icon: ICONS.compass, col: '#517EA3' },
   { type: 'gauge', label: 'River Flow', icon: ICONS.gauge, col: '#2A5C8E' },
   { type: 'river-feature', label: 'River Feature', icon: ICONS.drop, col: '#3A72A8' },

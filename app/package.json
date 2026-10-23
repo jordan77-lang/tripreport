@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test:capture": "node --experimental-vm-modules --test tests/capture.test.mjs",
     "test:ui": "node scripts/test-ui.mjs",
+    "test:dashboard": "node --experimental-vm-modules --test tests/dashboard.test.mjs",
     "test:sync": "node --experimental-vm-modules --test tests/sync.test.mjs tests/packages.test.mjs tests/cloud-sync.test.mjs",
     "test:gps": "node --experimental-vm-modules --test tests/gps.test.mjs tests/capture.test.mjs",
     "native:sync": "npm run build && cap sync",

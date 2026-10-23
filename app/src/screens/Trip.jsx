@@ -3,6 +3,7 @@ import { BottomNav } from '../components/BottomNav';
 import { TripMap } from '../components/TripMap';
 import { SyncChip } from '../components/SyncChip';
 import { TripCrewList } from '../components/TripCrewList';
+import { UnassignedEntries } from '../components/UnassignedEntries';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { addLocation, finalizeTrip, getCurrentUserId, isTripMember, isTripOwner, reopenTrip } from '../lib/storage';
@@ -87,6 +88,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   }, [addingLocation, locationSource]);
 
   function startAddLocationAt(pos) {
+    if (!canEditTrip || !isOpen) return;
     setAddingLocation(true);
     setLocationError(null);
     setLocationSource('map');
@@ -154,6 +156,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
   }
 
   const overflowItems = [
+    ...(canEditTrip ? [{ id: 'finish', label: isOpen ? 'Finish trip' : 'Reopen trip', icon: ICONS.compass, onClick: isOpen ? handleFinalizeTrip : handleReopenTrip }] : []),
     { id: 'share', label: 'Share trip summary', icon: tripMenuIcon('share'), onClick: shareTrip },
     { id: 'gpx', label: 'Export GPX track', icon: tripMenuIcon('export'), onClick: () => exportGpx(trip) },
     { id: 'report', label: 'Export HTML report', icon: tripMenuIcon('export'), onClick: () => exportHtmlReport(trip) },
@@ -204,7 +207,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     } else {
       resolved = locationPin;
     }
-    if (!resolved?.lat || !resolved?.lng) {
+    if (resolved?.lat == null || resolved?.lng == null) {
       setLocationError(
         locationSource === 'current'
           ? 'Current GPS location is not available yet.'
@@ -249,6 +252,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       setLocCoverPhoto(null);
       setLocationError(null);
       onTripUpdate?.();
+      onOpenLocation?.(created.id);
     }
   }
 
@@ -338,6 +342,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       <div style={{ background: T.card, padding: '14px 16px 12px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: ts(12), fontWeight: 800, color: T.accent, marginBottom: 4 }}>Locations</div>
             <div style={{ fontSize: ts(22), fontWeight: 800, color: T.text, letterSpacing: -.4, lineHeight: 1.2 }}>{trip.name}</div>
             <div style={{ fontSize: ts(14), color: T.textSub, marginTop: 4 }}>{entries.length} entries · {track.length} GPS pts</div>
             {canEditTrip && (
@@ -399,26 +404,12 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-          {isOpen && (
-            <button type="button" onClick={handleFinalizeTrip}
-                 style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: '#8A5526', cursor: 'pointer', background: '#FFF1E4', border: '1px solid #E4C5A8' }}>
-              Finish Trip
+          {isOpen && canEditTrip && (
+            <button type="button" onClick={() => onNav?.('add-location')}
+                 style={{ flex: 1, minHeight: 48, border: 'none', borderRadius: 12, padding: '11px 14px', fontSize: ts(15), fontWeight: 800, color: 'white', cursor: 'pointer', background: T.accent }}>
+              + Add a location
             </button>
           )}
-          {isCompleted && (
-            <button type="button" onClick={handleReopenTrip}
-                 style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: '#2E6D3A', cursor: 'pointer', background: '#E5F4E8', border: '1px solid #A4CFAD' }}>
-              Reopen Trip
-            </button>
-          )}
-          <button type="button" onClick={() => onNav('plan')}
-               style={{ flex: 1, minWidth: 120, border: `1px solid ${T.border}`, borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 700, color: T.text, cursor: 'pointer', background: T.bg }}>
-            Plan
-          </button>
-          <button type="button" onClick={() => onNav('plan-money')}
-               style={{ flex: 1, minWidth: 120, border: `1px solid ${T.border}`, borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 700, color: T.text, cursor: 'pointer', background: T.bg }}>
-            Money
-          </button>
           {isCompleted && onOpenRecap && (
             <button type="button" onClick={() => onOpenRecap(trip.id)}
                  style={{ flex: 1, minWidth: 120, border: 'none', borderRadius: 10, padding: '11px 14px', fontSize: ts(14), fontWeight: 800, color: 'white', cursor: 'pointer', background: '#2E6D3A' }}>
@@ -505,12 +496,14 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           />
         )}
 
-        <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text, marginBottom: 8 }}>Saved locations</div>
+        <UnassignedEntries trip={trip} onTripUpdate={onTripUpdate} onAddLocation={() => onNav?.('add-location')} />
+        <div style={{ fontSize: ts(17), fontWeight: 800, color: T.text, marginBottom: 8 }}>Your locations</div>
+        <p style={{ fontSize: ts(14), color: T.textSub, lineHeight: 1.5, marginBottom: 14 }}>Open a location to add its information and trip entries.</p>
         <div style={{ marginBottom: 14 }}>
           {orderedLocations.length === 0 && !addingLocation && (
             <div style={{ background: T.card, borderRadius: 12, border: `1px dashed ${T.border}`, padding: '16px 14px', textAlign: 'center' }}>
               <div style={{ fontSize: ts(13), fontWeight: 700, color: T.textSub, marginBottom: 4 }}>No locations yet</div>
-              <div style={{ fontSize: ts(12), color: T.textFaint, lineHeight: 1.45 }}>Use the map below to drop your first pin.</div>
+              <div style={{ fontSize: ts(14), color: T.textSub, lineHeight: 1.5 }}>Add your first location above — a campsite, stop, or point of interest. Then add entries inside it.</div>
             </div>
           )}
           {orderedLocations.map((loc, idx) => {
@@ -634,7 +627,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text }}>Map</span>
-          <span onClick={() => onNav('map')} style={{ fontSize: ts(12), color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Full map →</span>
+          <button type="button" onClick={() => onNav?.('map')} style={{ minHeight: 44, padding: '8px 0 8px 12px', border: 'none', background: 'transparent', fontFamily: F, fontSize: ts(13), color: T.accent, fontWeight: 700, cursor: 'pointer' }}>Full map →</button>
         </div>
         <div style={{ fontSize: ts(12), color: T.textSub, marginBottom: 8, lineHeight: 1.45 }}>
           {addingLocation

@@ -38,12 +38,19 @@ Install from your Netlify URL in Chrome → Add to Home screen. Signed-in crew m
 
 ## Capture and usability checks
 
-The trip navigation provides Trips, Map, Log, Journal, and Plan. Log opens Photo, Note, Voice, and Expense capture; a saved location is optional. The journal groups observations by day and filters by Everyone, Mine, or Photos.
+The main flow is **Current trip → Add → Add a location / Add an event to a location**. The bottom bar provides Trips, Current trip, a prominent central Add button, and Plan. Current trip returns to the selected trip's main page, where its locations and embedded map live. Open **Full map** there for route viewing and Locate me. There is no separate Journal screen or Map tab. New trips open to their main page. Add a campsite, stop, or other place first, then collect its events. Saving a location opens it; saving an event returns to that location. Finish/Reopen trip is available in the trip's More actions menu.
+
+The event menu lists Photo alongside Meal, Wildlife, Weather, River Flow, River Feature, Expense, and Custom. Note and voice recording are choices inside Custom. New events require a saved location; a contribution opened inside an existing event keeps that event's context. Edit entries directly at their location. Existing entries without a location are preserved under **Earlier entries without a location** on the Locations screen, where they can be assigned to a saved place. Trip planning and the shared expense ledger remain available in Plan.
+
+The Trips dashboard adapts to the selected trip's saved status: planning shows a countdown and crew preparation, active trips prioritize locations and adding events, and completed trips open recap and expense review. Trips without locations offer **Add your first location**. Dates and day numbers follow the trip's time zone; a calendar date never starts or completes a trip automatically. Open a trip by tapping its name. Selecting a completed trip's **Trip dashboard** returns to its post-trip dashboard.
+
+Plan opens **My tasks**, a personal overview of assigned gear, meals, shopping items you added, and your balance from the existing expense ledger. Open the relevant list to edit or mark items ready. Shopping remains shared; adding an item does not assign it to the author. Name-only roster entries are not automatically matched to accounts with the same display name.
 
 Run from `app`:
 
 - `npm run test:capture` — local save, event context, audio persistence, and invitation parsing checks.
 - `npm run test:ui` — server-rendered navigation and capture smoke checks; no dev server or account needed.
+- `npm run test:dashboard` — personal assignment aliases, balances, countdowns, and trip-time-zone boundaries.
 - `npm run build` — production bundle.
 
 For cloud audio sharing, apply `app/supabase/migrations/008_trip_audio_storage.sql` after the earlier migrations. Recording requires a browser with MediaRecorder and microphone permission; Add Audio remains available for existing recordings. Clips are limited to 5 minutes when recorded in-app and 25 MB when attached.

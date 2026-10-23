@@ -24,7 +24,7 @@ function readGps() {
   });
 }
 
-export function ConditionsSheet({ trip, defaultLocationId = null, onCancel, onSaved }) {
+export function ConditionsSheet({ trip, defaultLocationId = null, lockLocation = false, onCancel, onSaved }) {
   const places = (trip?.locations || []).filter((loc) => loc?.lat != null && loc?.lng != null);
   const [useHere, setUseHere] = useState(!defaultLocationId);
   const [placeId, setPlaceId] = useState(defaultLocationId || places[0]?.id || '');
@@ -45,6 +45,7 @@ export function ConditionsSheet({ trip, defaultLocationId = null, onCancel, onSa
     setBusy(true);
     setError(null);
     try {
+      if (lockLocation && !selected) throw new Error('Choose a saved location for these conditions.');
       let coords = null;
       let location = null;
       if (!useHere && selected) {
@@ -137,11 +138,11 @@ export function ConditionsSheet({ trip, defaultLocationId = null, onCancel, onSa
       </p>
 
       <div style={{ fontSize: ts(14), fontWeight: 800, color: T.text, marginBottom: 8 }}>Place</div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+      {lockLocation ? <p style={{ fontSize: ts(15), marginBottom: 16, fontWeight: 700, color: T.accent }}>{selected?.name}</p> : <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <button type="button" onClick={() => setUseHere(true)} style={choice(useHere)}>Here</button>
         <button type="button" onClick={() => setUseHere(false)} style={choice(!useHere)} disabled={!places.length}>A saved place</button>
-      </div>
-      {!useHere && (
+      </div>}
+      {!lockLocation && !useHere && (
         <select aria-label="Saved place" value={placeId} onChange={(e) => setPlaceId(e.target.value)}
           style={{ width: '100%', minHeight: 44, marginBottom: 16, borderRadius: 10, border: `1px solid ${T.border}`, padding: '10px 12px', fontFamily: F, fontSize: ts(15), background: T.card }}>
           {places.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}

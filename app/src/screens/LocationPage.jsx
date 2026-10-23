@@ -4,7 +4,7 @@ import { SyncChip } from '../components/SyncChip';
 import { TripMap } from '../components/TripMap';
 import { Ic } from '../components/Ic';
 import { T, F } from '../tokens';
-import { getCurrentUserId, isTripMember, isTripOwner, removeLocation, updateLocation } from '../lib/storage';
+import { getCurrentUserId, isTripMember, isTripOpen, isTripOwner, removeLocation, updateEntry, updateLocation } from '../lib/storage';
 import { getSignedInUserId } from '../lib/authUser';
 import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
@@ -15,8 +15,9 @@ import { collectTripPhotos } from '../lib/tripPhotos';
 import { EVENT_CAPTURE_TYPES, EVENT_COLORS } from '../lib/eventTypes';
 import { locationTypeLabel } from '../lib/locationTypes';
 import { resolveUserDisplayName } from '../lib/tripParticipants';
+import { EntryForm } from './EntryForm';
 
-export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdate, onOpenEvent, initialEventId, initialEdit = false }) {
+export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdate, onOpenEvent, initialEventId, initialEdit = false, notice }) {
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
   const userId = signedInUserId || currentUserId;
@@ -25,7 +26,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
   // Members add locations and events; the owner can also delete the whole stop.
   const canDeleteLocation = isOwner;
   const canEditLocation = isMember;
-  const canAddToEvents = isMember;
+  const canAddToEvents = isMember && isTripOpen(trip);
   const [editingLocation, setEditingLocation] = useState(Boolean(initialEdit));
   const [locationSaveError, setLocationSaveError] = useState(null);
   const [locationSource, setLocationSource] = useState('map');
@@ -36,6 +37,9 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
   const [currentPosError, setCurrentPosError] = useState(null);
   const [viewingMedia, setViewingMedia] = useState(false);
   const [locationDraft, setLocationDraft] = useState(() => locationDraftFrom(location));
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [entryError, setEntryError] = useState(null);
+  const [entryNotice, setEntryNotice] = useState(null);
   // Chronological order for prev/next navigation
   const events = useMemo(() => {
     const list = (trip?.events || []).filter((e) => e.locationId === location?.id);
@@ -75,6 +79,16 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
       </div>
     );
   }
+
+  if (editingEntry) return <EntryForm type={editingEntry.type} trip={trip} locations={[location]} defaultLocationId={location.id} lockLocation
+    event={(trip.events || []).find(event => event.id === editingEntry.eventId)} initialEntry={editingEntry} saveError={entryError}
+    onCancel={() => { setEditingEntry(null); setEntryError(null); }} onSave={payload => {
+      try {
+        const saved = updateEntry(trip.id, editingEntry.id, payload);
+        if (!saved) throw new Error('This entry is no longer available.');
+        onTripUpdate?.(); setEditingEntry(null); setEntryError(null); setEntryNotice('Entry updated at this location.');
+      } catch (error) { setEntryError(error.message); }
+    }} />;
 
   function openViewEvent(eventId) {
     if (!eventId) return;
@@ -227,6 +241,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+        {(entryNotice || notice) && <p role="status" style={{ padding: 12, marginBottom: 14, borderRadius: 12, background: T.accentLight, color: T.accent, fontSize: 14 }}>{entryNotice || notice}</p>}
         {editingLocation && (
           <LocationSaveForm
             title="Edit location"
@@ -259,8 +274,8 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           {canAddToEvents && (
-            <button type="button" onClick={() => onNav?.('capture')} style={placeActionBtn(true)}>
-              Add
+            <button type="button" onClick={() => onNav?.('capture-event')} style={placeActionBtn(true)}>
+              Add entry here
             </button>
           )}
           <button type="button" onClick={() => setViewingMedia(true)} style={placeActionBtn(false)}>
@@ -286,11 +301,11 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>At this place</span>
-            <span style={{ fontSize: 11.5, color: T.textSub }}>{events.length} {events.length === 1 ? 'visit' : 'visits'}</span>
+            <span style={{ fontSize: 11.5, color: T.textSub }}>{events.length} {events.length === 1 ? 'event' : 'events'}</span>
           </div>
           {events.length === 0 && (
             <div style={{ fontSize: 12, color: T.textFaint, lineHeight: 1.45, marginBottom: 10 }}>
-              Nothing here yet. A put-in, hike, hotel, shop, or meeting all work the same way. Everyone on the trip can add to this stop.
+              This location is ready. Add meals, wildlife sightings, photos, notes, and other trip entries here.
             </div>
           )}
           {events.map((ev) => {
@@ -325,6 +340,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                       {resolveUserDisplayName(trip, entry.authorId, currentUserId) || 'Crew member'}
                     </div>
                     {entry.notes && <div style={{ fontSize: 13, color: T.textSub, marginTop: 2, lineHeight: 1.4 }}>{entry.notes}</div>}
+                    {canAddToEvents && <button className="dashboard-text-button" type="button" onClick={() => { setEditingEntry(entry); setEntryError(null); }}>Edit entry</button>}
                     {(entry.weatherSummary || entry.weatherTempC != null) && (
                       <div style={{ fontSize: 12, color: '#2A5C8E', marginTop: 2 }}>
                         {entry.weatherSummary || 'Weather'}{entry.weatherTempC != null ? ` · ${Math.round(entry.weatherTempC * 9 / 5 + 32)}°F` : ''}

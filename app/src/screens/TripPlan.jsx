@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
+import { MyResponsibilities } from '../components/MyResponsibilities';
 import { Ic } from '../components/Ic';
 import { SyncChip } from '../components/SyncChip';
 import { TripEditPanel } from '../components/TripEditPanel';
@@ -26,6 +27,7 @@ import { getSignedInUserId } from '../lib/authUser';
 import { listSavedIngredients, listSavedMeals, publishSavedMeal, refreshSharedMeals, rememberMeal } from '../lib/mealLibrary';
 
 const TABS = [
+  { id: 'mine', label: 'My tasks' },
   { id: 'participants', label: 'Crew' },
   { id: 'gear', label: 'Gear' },
   { id: 'meals', label: 'Meals' },
@@ -35,7 +37,8 @@ const TABS = [
 ];
 
 function planTab(tab) {
-  if (!tab || tab === 'pack') return 'gear';
+  if (!tab) return 'mine';
+  if (tab === 'pack') return 'gear';
   return tab;
 }
 
@@ -118,7 +121,7 @@ export function TripPlan({
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textFaint }}>
           No active trip to plan
         </div>
-        <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
+        <BottomNav active="plan" onNav={onNav} onFab={onFab} trip={trip} />
       </div>
     );
   }
@@ -127,11 +130,11 @@ export function TripPlan({
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
       <div style={{ background: T.card, padding: '12px 16px 0', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <div onClick={onBack} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, background: T.bg, border: `1px solid ${T.border}` }}>
+          <button type="button" aria-label="Back" onClick={onBack} style={{ flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, borderRadius: 10, background: T.bg, border: `1px solid ${T.border}` }}>
             <span style={{ display: 'flex', transform: 'rotate(180deg)' }}>
               <Ic d={ICONS.chevR} size={15} color={T.textSub} sw={2.2} />
             </span>
-          </div>
+          </button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -.4 }}>Plan</div>
             <div style={{ fontSize: ts(13), color: T.textSub }}>{trip.name}</div>
@@ -144,23 +147,24 @@ export function TripPlan({
                 Edit trip details
               </button>
             )}
+            <div style={{ marginTop: 8 }}><SyncChip state={tripSyncState} compact /></div>
           </div>
-          <SyncChip state={tripSyncState} compact />
         </div>
         <div style={{ display: 'flex', gap: 2, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {visibleTabs.map((tb) => (
-            <div key={tb.id} onClick={() => selectTab(tb.id)}
-                 style={{ flex: '1 0 auto', minWidth: 52, textAlign: 'center', padding: '10px 6px', cursor: 'pointer',
-                          fontSize: 11.5, fontWeight: 700,
-                          color: tab === tb.id ? T.accent : T.textFaint,
+            <button key={tb.id} type="button" onClick={() => selectTab(tb.id)} aria-pressed={tab === tb.id}
+                 style={{ flex: '1 0 auto', minHeight: 44, border: 'none', background: 'transparent', minWidth: 64, textAlign: 'center', padding: '10px 9px', cursor: 'pointer',
+                          fontSize: ts(13), fontWeight: 700, fontFamily: F,
+                          color: tab === tb.id ? T.accent : T.textSub,
                           borderBottom: `2px solid ${tab === tb.id ? T.accent : 'transparent'}` }}>
               {tb.label}
-            </div>
+            </button>
           ))}
         </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+        {tab === 'mine' && <MyResponsibilities trip={trip} onOpenPlan={selectTab} />}
         {tab === 'details' && canEditTrip && (
           <TripEditPanel
             trip={trip}
@@ -198,7 +202,7 @@ export function TripPlan({
         <div style={{ height: 16 }} />
       </div>
 
-      <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
+      <BottomNav active="plan" onNav={onNav} onFab={onFab} trip={trip} />
     </div>
   );
 }

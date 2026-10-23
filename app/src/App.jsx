@@ -4,7 +4,6 @@ import { QuickCapture } from './screens/QuickCapture';
 import { Home }         from './screens/Home';
 import { Trip }         from './screens/Trip';
 import { Navigator }    from './screens/Navigator';
-import { FieldJournal } from './screens/FieldJournal';
 import { TripPlan }     from './screens/TripPlan';
 import { NewTrip }      from './screens/NewTrip';
 import { AuthScreen }   from './screens/Auth';
@@ -197,21 +196,23 @@ export default function App() {
   // Bottom-nav tabs replace the current screen; drill-downs push. That way back
   // from a Location goes to the Trip it came from, not through every tab visited.
   const onNav = (tab) => {
+    if (tab === 'add-location') {
+      if (isTripOpen(trip)) nav.push('capture', { type: 'location' });
+      return;
+    }
     if (tab === 'capture' || tab.startsWith('capture-')) {
       if (!trip || !isTripOpen(trip)) return;
-      const atPlace = ['location', 'event', 'log'].includes(screen) ? params.locationId : null;
+      const atPlace = tab !== 'capture' && ['location', 'event', 'log'].includes(screen) ? params.locationId : null;
       nav.push('capture', {
+        captureId: crypto.randomUUID(),
         type: tab === 'capture' ? null : tab.slice(8),
         locationId: atPlace || null,
-        eventId: screen === 'event' || (screen === 'log' && params.eventId) ? params.eventId : null,
+        eventId: tab !== 'capture' && (screen === 'event' || (screen === 'log' && params.eventId)) ? params.eventId : null,
       });
       return;
     }
     if (tab === 'log') {
-      const atPlace = ['location', 'event'].includes(screen) ? params.locationId : null;
-      nav.replace('log', atPlace
-        ? { locationId: atPlace, eventId: screen === 'event' ? params.eventId : null }
-        : {});
+      nav.replace('trip');
       return;
     }
     if (tab === 'plan-participants' || tab === 'plan-money') {
@@ -224,11 +225,11 @@ export default function App() {
     nav.replace(target, target === 'plan' ? {} : undefined);
   };
 
-  const onSelectTrip = (tripId) => {
+  const onSelectTrip = (tripId, { screen: target = 'trip', params: routeParams = {} } = {}) => {
     if (!tripId) return;
     setActiveTrip(tripId);
     refreshTrip();
-    nav.push('trip', { tripId });
+    nav.push(target, { ...routeParams, tripId });
   };
 
   const onFab = () => nav.push('new-trip');
@@ -273,16 +274,20 @@ export default function App() {
 
   function renderScreen() {
   switch (screen) {
-    case 'capture': return <QuickCapture key={`${trip?.id || ''}:${params.locationId || ''}:${params.eventId || ''}:${params.type || ''}`} trip={trip} initialType={params.type}
+    case 'capture': return <QuickCapture key={`${trip?.id || ''}:${params.locationId || ''}:${params.eventId || ''}:${params.type || ''}:${params.captureId || ''}`} trip={trip} initialType={params.type}
       locationId={params.locationId} eventId={params.eventId}
       onCancel={() => nav.canGoBack ? nav.back() : nav.replace('trip')}
-      onSaved={(notice) => { refreshTrip(); nav.replace('log', { notice }); }} />;
-    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onOpenTrip={() => nav.push('trip')} onOpenPlan={() => nav.push('plan')} onJoinTrip={() => nav.push('join')} onOpenSettings={() => nav.push('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
+      onNav={onNav}
+      onSaved={(notice, saved = {}) => {
+        refreshTrip();
+        nav.replace(saved.locationId ? 'location' : 'trip', { ...saved, notice });
+      }} />;
+    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onJoinTrip={() => nav.push('join')} onOpenSettings={() => nav.push('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
     case 'settings': return <Settings onBack={nav.back} auth={auth} />;
     case 'recap':   return <TripRecap trip={trip} onBack={nav.back} onTripUpdate={refreshTrip} auth={auth} />;
     case 'trip':    return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
     case 'map':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <Navigator {...common} onTripUpdate={refreshTrip} gps={recordingTrip?.id===trip?.id?gps:null} />;
-    case 'log':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <FieldJournal {...common} onTripUpdate={refreshTrip} onOpenLocation={onOpenLocation} onOpenEvent={onOpenEvent} notice={params.notice} locationId={params.locationId || null} />;
+    case 'log':     return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
     case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={nav.back} initialTab={params.tab || null} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} />;
 
     case 'location': {
@@ -294,6 +299,7 @@ export default function App() {
         onBack={nav.back}
         initialEventId={params.eventId || null}
         initialEdit={Boolean(params.edit)}
+        notice={params.notice}
       />;
     }
 
@@ -324,7 +330,7 @@ export default function App() {
           setTrip(t);
           refreshTrip();
           setNewTripInviteCode(inviteCode || null);
-          nav.reset('plan', { tab: 'participants' });
+          nav.reset('trip', { tripId: t.id });
         }}
       />;
     case 'join':

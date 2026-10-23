@@ -36,12 +36,12 @@ const ENTRY_ICON = {
   video: ICONS.video, gauge: ICONS.gauge, expense: ICONS.expense, 'custom-event': ICONS.plus,
 };
 
-// Core contributions always available for any event.
-// Photos are NOT here — the gallery on the page adds them in one tap, so routing
-// them through an entry form would be a slower second path to the same place.
+// Use the same contribution choices inside an existing event.
 const CORE_CONTRIBUTE = [
+  { icon: ICONS.camera, label: 'Photo',      col: '#2C5F3E', type: 'photo' },
   { icon: ICONS.compass, label: 'Weather',    col: '#517EA3', type: 'weather' },
   { icon: ICONS.gauge,   label: 'River Flow', col: '#2A5C8E', type: 'gauge' },
+  { icon: ICONS.plus,   label: 'Custom',     col: '#2C5F3E', type: 'custom-event' },
 ];
 
 // Additional items specific to certain event types
@@ -49,7 +49,7 @@ const CONTEXTUAL_CONTRIBUTE = {
   food:     [{ icon: ICONS.fork,  label: 'Meal Detail', col: '#B06030', type: 'food' }],
   wildlife: [{ icon: ICONS.leaf,  label: 'Sighting',    col: '#4A7A34', type: 'wildlife' }],
   gauge:    [{ icon: ICONS.drop,  label: 'River Feature', col: '#3A72A8', type: 'river-feature' }],
-  campsite: [{ icon: ICONS.tent,  label: 'Camp Note',   col: '#B8702E', type: 'campsite' }],
+  campsite: [{ icon: ICONS.tent,  label: 'Camp details', col: '#B8702E', type: 'custom-event' }],
 };
 
 // Same choices as logging a new event. Older note or voice events keep their

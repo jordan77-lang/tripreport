@@ -145,7 +145,7 @@ function MapboxTripMap({
 
   // Init map
   useEffect(() => {
-    if (!webglSupported) return;
+    if (!webglSupported || !mapboxgl.accessToken) return;
     if (mapRef.current) return;
     const cfg = initialConfigRef.current;
     const map = new mapboxgl.Map({
@@ -308,13 +308,15 @@ function MapboxTripMap({
   }, [entries, onEntrySelect, selectedEntryId, showHoverPopup]);
 
   // Checked after the hooks so hook order stays stable across renders.
-  if (!webglSupported) {
+  if (!webglSupported || !mapboxgl.accessToken) {
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
                     justifyContent: 'center', background: '#E8E5E0', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#6B6763' }}>Map unavailable</div>
         <div style={{ fontSize: 11, color: '#A09D99', textAlign: 'center', padding: '0 20px' }}>
-          WebGL is not supported in this browser. Open in Chrome or Safari to use the map.
+          {!mapboxgl.accessToken
+            ? 'The online map is unavailable. Downloaded map packs can still be used.'
+            : 'WebGL is not supported in this browser. Open in Chrome or Safari to use the map.'}
         </div>
       </div>
     );
