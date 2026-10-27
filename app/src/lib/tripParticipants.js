@@ -69,17 +69,28 @@ export function mergeCollaboratorsFromMembers(trip, memberRows = []) {
 
   const fromCloud = (memberRows || [])
     .filter((row) => row.user_id && row.user_id !== ownerId)
-    .map((row) => ({
-      id: row.user_id,
-      userId: row.user_id,
-      handle: row.profiles?.display_name || 'Participant',
-      name: row.profiles?.display_name || 'Participant',
-      role: row.role || 'contributor',
-      joinedViaInvite: true,
-    }));
+    .map((row) => {
+      const existing = (trip?.collaborators || []).find(
+        (c) => c.userId === row.user_id || c.id === row.user_id,
+      );
+      return {
+        ...(existing?.craft ? { craft: existing.craft } : {}),
+        id: row.user_id,
+        userId: row.user_id,
+        handle: row.profiles?.display_name || existing?.handle || 'Participant',
+        name: row.profiles?.display_name || existing?.name || 'Participant',
+        role: row.role || existing?.role || 'contributor',
+        joinedViaInvite: true,
+      };
+    });
+
+  const ownerCraftEntry = ownerId
+    ? (trip?.collaborators || []).find((c) => (c.userId === ownerId || c.id === ownerId) && c.craft)
+    : null;
 
   const nextProfiles = memberProfilesFromRows(memberRows);
-  return dedupeCollaborators([...manual, ...fromCloud], { memberProfiles: nextProfiles });
+  const merged = dedupeCollaborators([...manual, ...fromCloud], { memberProfiles: nextProfiles });
+  return ownerCraftEntry ? [ownerCraftEntry, ...merged.filter((c) => c.id !== ownerCraftEntry.id && c.userId !== ownerId)] : merged;
 }
 
 export function memberProfilesFromRows(memberRows = []) {
@@ -129,8 +140,11 @@ export function buildTripParticipants(trip, currentUserId, { withOwnerMeta = fal
   if (trip.ownerId) {
     const label = formatOwnerParticipantLabel(trip, trip.ownerId, currentUserId);
     const nameKey = normalizeParticipantName(label.replace(/\s*\(owner\)\s*$/i, ''));
+    const ownerCollab = (trip.collaborators || []).find(
+      (c) => c.userId === trip.ownerId || c.id === trip.ownerId,
+    );
     out.push(withOwnerMeta
-      ? { id: trip.ownerId, label, role: 'owner', isOwner: true }
+      ? { id: trip.ownerId, label, role: 'owner', isOwner: true, craft: ownerCollab?.craft || null }
       : { id: trip.ownerId, label });
     seenUids.add(trip.ownerId);
     if (nameKey) seenNames.add(nameKey);
@@ -157,7 +171,7 @@ export function buildTripParticipants(trip, currentUserId, { withOwnerMeta = fal
     }
 
     out.push(withOwnerMeta
-      ? { id, label, role: c.role || 'contributor', isOwner: false, joinedViaInvite: isJoinedMember(c) }
+      ? { id, label, role: c.role || 'contributor', isOwner: false, joinedViaInvite: isJoinedMember(c), craft: c.craft || null }
       : { id, label });
   }
 

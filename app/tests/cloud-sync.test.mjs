@@ -71,3 +71,11 @@ test('overlapping sync requests share one upload',async()=>{
  await Promise.all([f.cloud.pushTripToCloud(f.local()),f.cloud.pushTripToCloud(f.local())]);
  assert.equal(f.calls(),1);
 });
+test('pull-only cloud sync skips RPC write when server already contains all local ops',async()=>{
+ const f=await fixture();
+ await f.cloud.pushTripToCloud(f.local());
+ assert.equal(f.calls(),1);
+ await f.cloud.pushTripToCloud(f.local());
+ assert.equal(f.calls(),1);
+ assert.equal(f.local().syncState,'synced');
+});

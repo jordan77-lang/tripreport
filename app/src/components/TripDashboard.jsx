@@ -1,5 +1,5 @@
 import { getCurrentUserId, isTripMember } from '../lib/storage';
-import { getMyResponsibilities, getTripStage } from '../lib/tripDashboard';
+import { buildCrewActivityFeed, getMyResponsibilities, getTripStage } from '../lib/tripDashboard';
 import { buildTripParticipants } from '../lib/tripParticipants';
 import { formatTripDateRange } from '../lib/tripEdit';
 import { SyncChip } from './SyncChip';
@@ -14,6 +14,7 @@ export function TripDashboard({ trip, onOpen, onRecap, now }) {
   const crewCount = buildTripParticipants(trip, userId).length;
   const canCapture = stage.id !== 'completed' && isTripMember(trip, userId);
   const hasLocations = (trip.locations || []).length > 0;
+  const activityFeed = buildCrewActivityFeed(trip, userId, 4);
   return <section className={`trip-dashboard stage-${stage.id}`} aria-labelledby="selected-trip-title">
     <div className="trip-dashboard-hero">
       {trip.coverPhoto && <MediaThumb media={trip.coverPhoto} alt="" className="trip-dashboard-cover" />}
@@ -21,7 +22,7 @@ export function TripDashboard({ trip, onOpen, onRecap, now }) {
         <div className="trip-dashboard-topline"><span className="dashboard-stage"><Ic d={stage.id === 'completed' ? ICONS.journal : ICONS.compass} size={15} color="currentColor" />{stage.label}</span><SyncChip state={trip.syncState || 'pending'} compact /></div>
         <button className="trip-dashboard-title" type="button" onClick={() => onOpen('trip')}><h2 id="selected-trip-title">{trip.name}</h2><span aria-hidden="true">↗</span></button>
         <p className="trip-dashboard-meta">{[trip.location, formatTripDateRange(trip.startDate, trip.endDate)].filter(Boolean).join(' · ')}</p>
-        <p className="trip-dashboard-crew">{crewCount} crew member{crewCount === 1 ? '' : 's'} · {(trip.locations || []).length} locations · {(trip.entries || []).length} entries</p>
+        <p className="trip-dashboard-crew">{crewCount} crew member{crewCount === 1 ? '' : 's'} · {(trip.locations || []).length} locations{tasks.plannedLocations > 0 ? ` (${tasks.plannedLocations} planned)` : ''} · {(trip.entries || []).length} entries</p>
       </div>
     </div>
     <div className="trip-dashboard-body">
@@ -47,6 +48,31 @@ export function TripDashboard({ trip, onOpen, onRecap, now }) {
           {stage.id === 'active' && <button type="button" onClick={() => onOpen('map')}><Ic d={ICONS.compass} size={19} color="currentColor" /><span>Open map &amp; recording controls</span><span aria-hidden="true">→</span></button>}
         </>}
       </div>
+      {activityFeed.length > 0 && (
+        <div className="dashboard-crew-activity" style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(42,92,142,0.12)' }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.72, marginBottom: 6 }}>
+            Crew activity pulse
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {activityFeed.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onOpen(item.screen || 'trip', item.params || {})}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+                  padding: '6px 8px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.55)',
+                  cursor: 'pointer', fontSize: 12, color: 'inherit', fontFamily: 'inherit',
+                }}
+              >
+                <span aria-hidden="true" style={{ fontSize: 13 }}>{item.icon}</span>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.text}</span>
+                <span aria-hidden="true" style={{ opacity: 0.6 }}>→</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   </section>;
 }

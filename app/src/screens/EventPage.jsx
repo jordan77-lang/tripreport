@@ -5,7 +5,7 @@ import { Ic } from '../components/Ic';
 import { EntryForm } from './EntryForm';
 import { AddExpenseSheet } from '../components/AddExpenseSheet';
 import { T, F, ICONS } from '../tokens';
-import { addEntry, getCurrentUserId, removeEvent, updateEntityPhotos, updateEntry, updateEvent } from '../lib/storage';
+import { addEntry, getCurrentUserId, removeEvent, toggleEntryHighlight, toggleEntryReaction, updateEntityPhotos, updateEntry, updateEvent } from '../lib/storage';
 import { getSignedInDisplayName } from '../lib/authUser';
 import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
@@ -16,7 +16,7 @@ import {
   galleryPhotos, removePhotoPatch, setCoverPatch,
 } from '../lib/gallery';
 import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
-import { buildTripParticipants, labelFor } from '../lib/expenses';
+import { buildTripParticipants, labelFor, resolveUserDisplayName } from '../lib/expenses';
 import { EVENT_CAPTURE_TYPES } from '../lib/eventTypes';
 import { buildCustomEventDraft, pickEventWeatherFields, resolveObservedAtIso } from '../lib/eventWeather';
 import { EventTimeEditSection, EventWeatherEditSection, EventWeatherSummary } from '../components/EventWeatherPanel';
@@ -322,7 +322,8 @@ export function EventPage({
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
 
       {/* ── Header ── */}
-      <div style={{ background: T.card, padding: '10px 16px 12px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+      <div style={{ background: T.card, padding: '10px 16px 12px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, boxShadow: '0 2px 12px rgba(26, 25, 23, 0.03)' }}>
+        <div className="screen-header-inner">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div onClick={onBack}
                style={{ width: 36, height: 36, borderRadius: 18, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
@@ -393,6 +394,7 @@ export function EventPage({
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* ── Scrollable body ── */}
@@ -400,7 +402,7 @@ export function EventPage({
 
         {/* ── Photo carousel ── */}
         {photos.length > 0 && !editingEvent && (
-          <div style={{ position: 'relative', background: '#111', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180, maxHeight: 340 }}>
+          <div style={{ position: 'relative', background: '#111', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180, maxHeight: 340, maxWidth: 960, margin: '0 auto' }}>
             <MediaThumb
               media={photos[safePhotoIdx]?.media}
               preferThumb={false}
@@ -436,7 +438,7 @@ export function EventPage({
           </div>
         )}
 
-        <div style={{ padding: '14px 16px' }}>
+        <div className="screen-content-inner" style={{ padding: '14px 16px' }}>
 
           {/* ── Edit event form ── */}
           {editingEvent && canEditEvent && (
@@ -604,6 +606,19 @@ export function EventPage({
                   ))}
                 </div>
               )}
+              <ReactionAndHighlightBar
+                item={event}
+                currentUserId={currentUserId}
+                canInteract={canAddToEvent || canEditEvent}
+                onReact={(emoji) => {
+                  toggleEntryReaction(trip.id, event.id, emoji, { kind: 'event', userId: currentUserId });
+                  onTripUpdate?.();
+                }}
+                onToggleHighlight={() => {
+                  toggleEntryHighlight(trip.id, event.id, { kind: 'event' });
+                  onTripUpdate?.();
+                }}
+              />
             </div>
           )}
 
@@ -663,7 +678,7 @@ export function EventPage({
             </div>
           )}
 
-          {/* ── Timeline ── */}
+          {/* ── Timeline / Crew Perspectives ── */}
           {entries.length === 0 ? (
             <div style={{ background: T.card, borderRadius: 14, border: `1px dashed ${T.border}`, padding: '28px 16px', textAlign: 'center', marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
@@ -680,18 +695,53 @@ export function EventPage({
             </div>
           ) : (
             <>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 10 }}>
-                {entries.length} {entries.length === 1 ? 'Entry' : 'Entries'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                  Crew Perspectives · {entries.length} {entries.length === 1 ? 'Entry' : 'Entries'}
+                </div>
               </div>
               {entries.map((e, i) => (
                 <EntryCard
                   key={e.id || i}
                   entry={e}
+                  trip={trip}
+                  currentUserId={currentUserId}
                   canEdit={canEditEvent || e.authorId === currentUserId}
+                  canInteract={canAddToEvent || canEditEvent}
                   onEdit={() => { setEditingEntry(e); setActiveFormType(e.type || event.type || 'note'); }}
+                  onReact={(emoji) => {
+                    toggleEntryReaction(trip.id, e.id, emoji, { kind: 'entry', userId: currentUserId });
+                    onTripUpdate?.();
+                  }}
+                  onToggleHighlight={() => {
+                    toggleEntryHighlight(trip.id, e.id, { kind: 'entry' });
+                    onTripUpdate?.();
+                  }}
                 />
               ))}
             </>
+          )}
+
+          {canAddToEvent && (
+            <button
+              type="button"
+              onClick={() => openNewEntry(event.type === 'food' ? 'food' : event.type === 'wildlife' ? 'wildlife' : 'custom-event')}
+              style={{
+                width: '100%',
+                minHeight: 42,
+                borderRadius: 12,
+                border: `1.5px dashed ${accentCol}80`,
+                background: T.card,
+                color: accentCol,
+                fontSize: 12.5,
+                fontWeight: 800,
+                fontFamily: F,
+                cursor: 'pointer',
+                marginBottom: 14,
+              }}
+            >
+              + Add your perspective, photo, or voice note
+            </button>
           )}
 
           <div style={{ height: 16 }} />
@@ -713,19 +763,98 @@ export function EventPage({
   );
 }
 
+const REACTION_EMOJIS = ['🔥', '❤️', '😂', '🐻', '🌊'];
+
+function ReactionAndHighlightBar({ item, currentUserId, canInteract, onReact, onToggleHighlight }) {
+  const reactions = item?.reactions && typeof item.reactions === 'object' ? item.reactions : {};
+  const highlighted = Boolean(item?.highlighted);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+      {REACTION_EMOJIS.map((emoji) => {
+        const list = Array.isArray(reactions[emoji]) ? reactions[emoji] : [];
+        const mine = list.includes(currentUserId);
+        return (
+          <button
+            key={emoji}
+            type="button"
+            disabled={!canInteract}
+            onClick={() => onReact?.(emoji)}
+            style={{
+              border: `1px solid ${mine ? '#2A5C8E' : T.border}`,
+              borderRadius: 12,
+              background: mine ? '#E4EFF8' : T.bg,
+              color: mine ? '#2A5C8E' : T.textSub,
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '2px 7px',
+              cursor: canInteract ? 'pointer' : 'default',
+              fontFamily: F,
+            }}
+          >
+            {emoji}{list.length > 0 ? ` ${list.length}` : ''}
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        disabled={!canInteract}
+        onClick={onToggleHighlight}
+        style={{
+          marginLeft: 'auto',
+          border: `1px solid ${highlighted ? '#E8C9A0' : T.border}`,
+          borderRadius: 12,
+          background: highlighted ? '#FBF0E4' : T.bg,
+          color: highlighted ? '#7A4A14' : T.textSub,
+          fontSize: 10.5,
+          fontWeight: 800,
+          padding: '2px 8px',
+          cursor: canInteract ? 'pointer' : 'default',
+          fontFamily: F,
+        }}
+      >
+        {highlighted ? '⭐ Highlighted' : '☆ Highlight'}
+      </button>
+    </div>
+  );
+}
+
 // ── EntryCard ────────────────────────────────────────────────────────────────
 
-function EntryCard({ entry: e, canEdit, onEdit }) {
+function EntryCard({ entry: e, trip, currentUserId, canEdit, canInteract, onEdit, onReact, onToggleHighlight }) {
   const col = ENTRY_COLORS[e.type] || T.accent;
   const icon = ENTRY_ICON[e.type] || ICONS.note;
+  const authorName = resolveUserDisplayName(trip, e.authorId, currentUserId) || 'Crew member';
 
   return (
-    <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, marginBottom: 10, overflow: 'hidden', display: 'flex' }}>
+    <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${e.highlighted ? '#E8C9A0' : T.border}`, marginBottom: 10, overflow: 'hidden', display: 'flex' }}>
       {/* Left accent bar */}
       <div style={{ width: 4, background: col, flexShrink: 0 }} />
 
       <div style={{ flex: 1, padding: '12px 13px 13px', minWidth: 0 }}>
-        {/* Row: icon + title + time */}
+        {/* Signed Crew Perspective header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+          <span
+            style={{
+              width: 22, height: 22, borderRadius: 99,
+              background: '#E4EFF8', color: '#2A5C8E',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10.5, fontWeight: 800, flexShrink: 0,
+            }}
+          >
+            {(authorName || '?').charAt(0).toUpperCase()}
+          </span>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#2A5C8E' }}>{authorName}</span>
+          {e.highlighted && (
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', borderRadius: 6, padding: '1px 6px' }}>
+              ⭐ Highlight
+            </span>
+          )}
+          {e.observedAt && (
+            <span style={{ fontSize: 9.5, color: T.textFaint, marginLeft: 'auto' }}>{fmtTime(e.observedAt)}</span>
+          )}
+        </div>
+
+        {/* Row: icon + title */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 8 }}>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: col + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
             <Ic d={icon} size={14} color={col} sw={1.8} />
@@ -737,11 +866,6 @@ function EntryCard({ entry: e, canEdit, onEdit }) {
             <div style={{ fontSize: 10.5, color: col, fontWeight: 600, textTransform: 'capitalize', marginTop: 1 }}>
               {entryTypeLabel(e)}
             </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
-            {e.observedAt && (
-              <span style={{ fontSize: 9.5, color: T.textFaint }}>{fmtTime(e.observedAt)}</span>
-            )}
           </div>
         </div>
 
@@ -765,6 +889,14 @@ function EntryCard({ entry: e, canEdit, onEdit }) {
         {(e.photoFiles?.length > 0 || e.videoFiles?.length > 0 || e.voiceFiles?.length > 0) && (
           <MediaRow entry={e} />
         )}
+
+        <ReactionAndHighlightBar
+          item={e}
+          currentUserId={currentUserId}
+          canInteract={canInteract}
+          onReact={onReact}
+          onToggleHighlight={onToggleHighlight}
+        />
 
         {/* Edit link */}
         {canEdit && (

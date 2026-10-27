@@ -1,7 +1,7 @@
-import { importTripPackage, restoreTripCheckpoint } from '../lib/importTripPackage';
+import { importTripPackage, restoreTripCheckpoint, getTripCheckpointRaw } from '../lib/importTripPackage';
 import { useRef, useState } from 'react';
 import { getTrip, saveTrip, getCurrentUserId } from '../lib/storage';
-import { ensureSync, materialize, resolveConflict } from '../lib/tripSync';
+import { ensureSync, materialize, resolveConflict, describeSyncRecord, describeDeletedRecords, restoreDeletedRecord } from '../lib/tripSync';
 import { prepareTripUpdateFile, sharePreparedUpdate, downloadTripFile, readTripUpdateFile, mergeTripUpdate, formatMergeSummary } from '../lib/offlineExchange';
 import { suggestImportPlacements, tripTimeZone } from '../lib/tripTimeline';
 import { pushTripToCloud } from '../lib/tripCloud';
@@ -13,13 +13,13 @@ export function TripSyncPanel({trip,onTripUpdate}) {
   const [prepared,setPrepared]=useState(null),[preview,setPreview]=useState(null);
   const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
   const [includeMedia,setIncludeMedia]=useState(true);
+  const [onlyUnsyncedMedia,setOnlyUnsyncedMedia]=useState(false);
   const fileRef=useRef(null);
   const synced=materialize(ensureSync(trip));
   const acked=new Set(synced._sync.acked||[]);
   const pending=synced._sync.ops.filter(o=>!acked.has(o.id)).length;
   const conflicts=synced._sync.conflicts||[];
-  const deleted=synced._sync.ops.filter(o=>o.field==='$deleted'&&o.value===true &&
-    !synced._sync.ops.some(n=>n.parents.includes(o.id)));
+  const deleted=describeDeletedRecords(synced);
   async function action(fn) {
     setBusy(true);setMessage('');
     try{await fn();}catch(e){setMessage(e.message||'Could not complete that action.');}
@@ -41,12 +41,15 @@ export function TripSyncPanel({trip,onTripUpdate}) {
       },
     }));
   }
-  function updateItemChoice(id, targetId) {
+  function updateItemChoice(id, patchOrTargetId) {
+    const patch = typeof patchOrTargetId === 'string'
+      ? { targetId: patchOrTargetId, action: patchOrTargetId ? 'add' : 'keep' }
+      : patchOrTargetId;
     setPreview((current) => ({
       ...current,
       placement: {
         ...current.placement,
-        items: current.placement.items.map((item) => item.id === id ? { ...item, targetId } : item),
+        items: current.placement.items.map((item) => item.id === id ? { ...item, ...patch } : item),
       },
     }));
   }
@@ -63,24 +66,34 @@ export function TripSyncPanel({trip,onTripUpdate}) {
     : (synced._sync.lastCloudSync ? 'Saved on this phone and in the cloud.' : 'Saved on this phone.');
 
   return <section aria-label="Trip sync and offline exchange" style={cardStyle}>
-    <h3 style={titleStyle}>Sync &amp; offline sharing</h3>
-    <p style={statusStyle}>{statusLine}</p>
-    {synced._sync.lastCloudSync && <p style={quietStyle}>Last sync {formatSyncTime(synced._sync.lastCloudSync)}</p>}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+      <div>
+        <h3 style={titleStyle}>Sync &amp; offline sharing</h3>
+        <p style={statusStyle}>{statusLine}</p>
+        {synced._sync.lastCloudSync && <p style={quietStyle}>Last sync {formatSyncTime(synced._sync.lastCloudSync)}</p>}
+      </div>
+      {supabaseConfigured && <button type="button" disabled={busy} style={{ ...primaryBtn, width: 'auto', padding: '0 18px' }} onClick={()=>action(async()=>{const result=await pushTripToCloud(getTrip(trip.id));refresh();setMessage(result.readOnly?'Downloaded updates. Viewer access cannot upload local changes.':'Synced changes and attachments.');})}>Sync now</button>}
+    </div>
     {conflicts.length > 0 && <p style={quietStyle}>{conflicts.length} {conflicts.length === 1 ? 'conflict' : 'conflicts'} to review.</p>}
     {synced._sync.mediaPending > 0 && <p style={quietStyle}>{synced._sync.mediaPending} attachments waiting.</p>}
     {synced._sync.mediaError && <p role="status" style={alertStyle}>{synced._sync.mediaError}</p>}
 
-    <label style={fieldLabelStyle}>Trip time zone
-      <input aria-label="Trip time zone" defaultValue={tripTimeZone(trip)} key={tripTimeZone(trip)} style={inputStyle}
-        onBlur={e=>{try{new Intl.DateTimeFormat('en',{timeZone:e.target.value});saveTrip({...getTrip(trip.id),timeZone:e.target.value});refresh();}catch{setMessage('Use a time zone such as America/Phoenix.');}}} />
-    </label>
+    <details style={{ marginTop: 10 }}>
+      <summary style={summaryStyle}>Offline file sharing &amp; time zone</summary>
+      <div style={{ marginTop: 10 }}>
+        <label style={fieldLabelStyle}>Trip time zone
+          <input aria-label="Trip time zone" defaultValue={tripTimeZone(trip)} key={tripTimeZone(trip)} style={inputStyle}
+            onBlur={e=>{try{new Intl.DateTimeFormat('en',{timeZone:e.target.value});saveTrip({...getTrip(trip.id),timeZone:e.target.value});refresh();}catch{setMessage('Use a time zone such as America/Phoenix.');}}} />
+        </label>
 
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {supabaseConfigured && <button type="button" disabled={busy} style={primaryBtn} onClick={()=>action(async()=>{const result=await pushTripToCloud(getTrip(trip.id));refresh();setMessage(result.readOnly?'Downloaded updates. Viewer access cannot upload local changes.':'Synced changes and attachments.');})}>Sync now</button>}
-      <button type="button" disabled={busy} style={secondaryBtn} onClick={()=>action(async()=>{setPrepared(await prepareTripUpdateFile(getTrip(trip.id),getCurrentUserId(),{includeMedia}));})}>Prepare a sharing file</button>
-      <label style={checkStyle}><input type="checkbox" checked={includeMedia} onChange={e=>setIncludeMedia(e.target.checked)} /> Include photos and voice recordings (up to 100 MB)</label>
-      <button type="button" disabled={busy} style={secondaryBtn} onClick={()=>fileRef.current?.click()}>Import a trip file</button>
-    </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button type="button" disabled={busy} style={secondaryBtn} onClick={()=>action(async()=>{setPrepared(await prepareTripUpdateFile(getTrip(trip.id),getCurrentUserId(),{includeMedia,onlyUnsyncedMedia}));})}>Prepare a sharing file</button>
+          <label style={checkStyle}><input type="checkbox" checked={includeMedia} onChange={e=>setIncludeMedia(e.target.checked)} /> Include photos and voice recordings (up to 100 MB)</label>
+          {includeMedia && <label style={checkStyle}><input type="checkbox" checked={onlyUnsyncedMedia} onChange={e=>setOnlyUnsyncedMedia(e.target.checked)} /> Only include attachments not yet synced to cloud</label>}
+          <button type="button" disabled={busy} style={secondaryBtn} onClick={()=>fileRef.current?.click()}>Import a trip file</button>
+        </div>
+      </div>
+    </details>
     <input ref={fileRef} hidden type="file" accept=".json,.tripreport,application/json" onChange={e=>{const f=e.target.files?.[0];e.target.value='';void action(()=>importFile(f));}}/>
 
     {prepared && <div style={insetStyle}>
@@ -95,6 +108,17 @@ export function TripSyncPanel({trip,onTripUpdate}) {
     {preview && <div style={insetStyle}>
       <h4 style={{ margin: '0 0 6px', fontSize: ts(15) }}>Review import: {preview.update.tripName}</h4>
       <p style={quietStyle}>{preview.summary.newChanges} new changes · {preview.update.mediaRecords.length} attachments · {preview.summary.conflicts} conflicts after merging</p>
+      {preview.summary.socialDigest?.length > 0 && (
+        <div style={{ margin: '8px 0', padding: '8px 10px', background: T.card, borderRadius: 9, border: `1px solid ${T.border}` }}>
+          <div style={{ fontSize: ts(11), fontWeight: 800, color: T.accent, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+            What&apos;s new since last sync
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 16, fontSize: ts(12), color: T.text, lineHeight: 1.45 }}>
+            {preview.summary.socialDigest.slice(0, 8).map((line, i) => <li key={i}>{line}</li>)}
+          </ul>
+        </div>
+      )}
+      {preview.summary.localOnlyCount>0 && <p style={quietStyle}>This phone also has {preview.summary.localOnlyCount} {preview.summary.localOnlyCount===1?'change':'changes'} not in this file — share an updated file back after merging.</p>}
       {preview.update.schemaVersion===1 && <p style={quietStyle}>Older format: photo files and deletion history may be missing.</p>}
       <ImportPlacement
         placement={preview.placement}
@@ -112,7 +136,7 @@ export function TripSyncPanel({trip,onTripUpdate}) {
       <summary style={summaryStyle}>Backup</summary>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
         <button type="button" style={secondaryBtn} onClick={()=>action(async()=>{
-          const raw=localStorage.getItem('tr_import_backup:'+trip.id);
+          const raw=getTripCheckpointRaw(trip.id);
           if(!raw)throw new Error('No import checkpoint for this trip yet.');
           downloadTripFile(new Blob([raw],{type:'application/json'}),'trip-before-import.json');
         })}>Download pre-import checkpoint</button>
@@ -123,19 +147,25 @@ export function TripSyncPanel({trip,onTripUpdate}) {
       </div>
     </details>
 
-    {conflicts.map(c=><details key={c.key} style={{ marginTop: 8 }}>
-      <summary style={summaryStyle}>Review {c.collection} · {c.field} ({c.choices.length} versions)</summary>
-      {c.choices.map(choice=><div key={choice.id} style={{ padding: '8px 0', borderBottom: `1px solid ${T.border}` }}>
-        <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: '0 0 4px' }}>{typeof choice.value==='string'?choice.value:JSON.stringify(choice.value)}</p>
-        <p style={quietStyle}>{trip.memberProfiles?.[choice.authorId]||choice.authorId||'Older record'} · {choice.at?new Date(choice.at).toLocaleString():'Original snapshot'}</p>
-        <button type="button" style={secondaryBtn} onClick={()=>action(()=>choose(c,choice.value))}>Keep this version</button>
-      </div>)}
-    </details>)}
+    {conflicts.map(c=>{
+      const desc=describeSyncRecord(synced,c.collection,c.recordId);
+      const contextLabel=`${desc.kindLabel}: ${desc.label}${desc.parentLabel ? ` (${desc.parentLabel})` : ''}`;
+      return <details key={c.key} style={{ marginTop: 8 }}>
+        <summary style={summaryStyle}>Review {contextLabel} · {c.field} ({c.choices.length} versions)</summary>
+        {c.choices.map(choice=><div key={choice.id} style={{ padding: '8px 0', borderBottom: `1px solid ${T.border}` }}>
+          <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: '0 0 4px' }}>{typeof choice.value==='string'?choice.value:JSON.stringify(choice.value)}</p>
+          <p style={quietStyle}>{trip.memberProfiles?.[choice.authorId]||choice.authorId||'Older record'} · {choice.at?new Date(choice.at).toLocaleString():'Original snapshot'}</p>
+          <button type="button" style={secondaryBtn} onClick={()=>action(()=>choose(c,choice.value))}>Keep this version</button>
+        </div>)}
+      </details>;
+    })}
     {deleted.length>0 && <details style={{ marginTop: 8 }}><summary style={summaryStyle}>Recover deleted records ({deleted.length})</summary>
-      <p style={quietStyle}>Restore a location before restoring its events or notes.</p>
-      {deleted.map(o=><p key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{o.collection}: {o.recordId}
+      <p style={quietStyle}>Restoring an event or entry also restores its location if needed.</p>
+      {deleted.map(item=><p key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span><strong>{item.kindLabel}:</strong> {item.label}{item.parentLabel ? ` (at ${item.parentLabel})` : ''}</span>
         <button type="button" style={{ ...secondaryBtn, width: 'auto', padding: '8px 12px' }} onClick={()=>action(()=>{
-          choose({key:JSON.stringify([o.collection,o.recordId,o.field])},false);
+          saveTrip(restoreDeletedRecord(getTrip(trip.id),item.collection,item.recordId,getCurrentUserId()),{capture:false,schedule:true});
+          refresh();
         })}>Restore</button></p>)}
     </details>}
     <p role="status" aria-live="polite" style={{ ...quietStyle, minHeight: 18 }}>{busy?'Working…':message}</p>
@@ -167,17 +197,22 @@ function ImportPlacement({ placement, locations, onPlace, onItem }) {
   if (!places.length && !items.length) return null;
   return (
     <div style={{ margin: '12px 0' }}>
-      <p style={{ marginBottom: 8 }}>New stops near a place you already have can be added to it or merged. Everything else stays on the nearest place unless you pick a different one.</p>
+      <p style={{ marginBottom: 8 }}>New stops and events near a saved location can be added to it so your crew does not double up on pins for the same place.</p>
       {places.map((place) => (
         <div key={place.incomingId} style={{ border: '1px solid #d5dee6', borderRadius: 10, padding: 10, marginBottom: 8 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>{place.name}</div>
-          <p style={{ margin: '0 0 8px', fontSize: 13 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{place.name}</div>
+          <p style={{ margin: '0 0 6px', fontSize: 13 }}>
             {place.nearestName
-              ? `Nearest saved place is ${place.nearestName}. Their events will go there unless you choose otherwise.`
+              ? `Nearest saved place is ${place.nearestName}${place.distanceMeters != null ? ` (${place.distanceMeters} m away)` : ''}. Their events will be added there unless you choose otherwise.`
               : 'No saved place is within 200 m, so this stays its own stop unless you add it to one.'}
           </p>
+          {place.events?.length > 0 && (
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: T.textSub }}>
+              Events at this stop: {place.events.map((e) => e.name).join(', ')}
+            </p>
+          )}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-            {[['add', 'Add to a place'], ['merge', 'Merge places'], ['keep', 'Keep separate']].map(([action, label]) => (
+            {[['add', 'Add events to place'], ['merge', 'Merge places'], ['keep', 'Keep separate']].map(([action, label]) => (
               <button key={action} type="button" onClick={() => onPlace(place.incomingId, {
                 action,
                 targetId: action === 'keep' ? null : (place.targetId || place.nearestId || locations[0]?.id || null),
@@ -196,18 +231,42 @@ function ImportPlacement({ placement, locations, onPlace, onItem }) {
           )}
         </div>
       ))}
-      {items.map((item) => (
-        <div key={item.kind + item.id} style={{ border: '1px solid #d5dee6', borderRadius: 10, padding: 10, marginBottom: 8 }}>
-          <div style={{ fontWeight: 700 }}>{item.name}</div>
-          <p style={{ margin: '4px 0 8px', fontSize: 13 }}>Defaults to {item.nearestName}. Pick another place if this belongs somewhere else.</p>
-          <label style={{ fontSize: 13 }}>
-            Location{' '}
-            <select value={item.targetId || ''} onChange={(e) => onItem(item.id, e.target.value)}>
-              {locations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-            </select>
-          </label>
-        </div>
-      ))}
+      {items.map((item) => {
+        const activeAction = item.action || (item.targetId ? 'add' : 'keep');
+        return (
+          <div key={item.kind + item.id} style={{ border: '1px solid #d5dee6', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+            <div style={{ fontWeight: 700 }}>{item.name}</div>
+            <p style={{ margin: '4px 0 8px', fontSize: 13 }}>
+              Happened {item.distanceMeters != null ? `${item.distanceMeters} m from ` : 'near '}
+              <strong>{item.nearestName}</strong>. Add this event to {item.nearestName}?
+            </p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              <button
+                type="button"
+                onClick={() => onItem(item.id, { action: 'add', targetId: item.targetId || item.nearestId || locations[0]?.id || null })}
+                style={{ ...secondaryBtn, width: 'auto', padding: '8px 12px', flex: '1 1 140px', background: activeAction === 'add' ? T.accent : T.bg, color: activeAction === 'add' ? 'white' : T.text }}
+              >
+                Add to a location
+              </button>
+              <button
+                type="button"
+                onClick={() => onItem(item.id, { action: 'keep', targetId: null })}
+                style={{ ...secondaryBtn, width: 'auto', padding: '8px 12px', flex: '1 1 140px', background: activeAction === 'keep' ? T.accent : T.bg, color: activeAction === 'keep' ? 'white' : T.text }}
+              >
+                Keep separate
+              </button>
+            </div>
+            {activeAction !== 'keep' && (
+              <label style={{ fontSize: 13 }}>
+                Location{' '}
+                <select value={item.targetId || ''} onChange={(e) => onItem(item.id, { action: 'add', targetId: e.target.value })}>
+                  {locations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

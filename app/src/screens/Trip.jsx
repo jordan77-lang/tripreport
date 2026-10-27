@@ -6,7 +6,7 @@ import { TripCrewList } from '../components/TripCrewList';
 import { UnassignedEntries } from '../components/UnassignedEntries';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
-import { addLocation, finalizeTrip, getCurrentUserId, isTripMember, isTripOwner, reopenTrip } from '../lib/storage';
+import { addLocation, finalizeTrip, getCurrentUserId, isTripMember, isTripOwner, markLocationVisited, reopenTrip, toggleLocationVote } from '../lib/storage';
 import { getSignedInUserId } from '../lib/authUser';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { MediaThumb } from '../components/MediaThumb';
@@ -23,7 +23,7 @@ import { ts } from '../lib/textScale';
 import { deleteTripCompletely, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
-import { buildTripParticipants, computeBalances, money } from '../lib/expenses';
+import { buildTripParticipants, computeBalances, money, resolveUserDisplayName } from '../lib/expenses';
 
 export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap, onOpenLocation, onOpenEvent }) {
   const currentUserId = getCurrentUserId();
@@ -39,6 +39,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     type: defaultLocationKind(trip).id,
     icon: defaultLocationKind(trip).icon,
     notes: '',
+    visitStatus: trip?.status === 'planning' ? 'planned' : 'visited',
     timeMode: 'current',
     observedAt: toDatetimeLocal(new Date()),
     observedStartAt: toDatetimeLocal(new Date()),
@@ -222,6 +223,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       type: locationDraft.type,
       icon: locationDraft.icon,
       notes: locationDraft.notes,
+      visitStatus: locationDraft.visitStatus,
       timeMode: locationDraft.timeMode,
       observedAt: locationDraft.timeMode === 'current'
         ? new Date().toISOString()
@@ -241,6 +243,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         type: defaultLocationKind(trip).id,
         icon: defaultLocationKind(trip).icon,
         notes: '',
+        visitStatus: trip?.status === 'planning' ? 'planned' : 'visited',
         timeMode: 'current',
         observedAt: toDatetimeLocal(new Date()),
         observedStartAt: toDatetimeLocal(new Date()),
@@ -278,6 +281,27 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
     return counts;
   }, [trip?.events]);
 
+  const locationContributors = useMemo(() => {
+    const byLoc = new Map();
+    const addWho = (locId, uid) => {
+      if (!locId || !uid) return;
+      if (!byLoc.has(locId)) byLoc.set(locId, []);
+      const list = byLoc.get(locId);
+      if (!list.includes(uid)) list.push(uid);
+    };
+    for (const loc of locations) {
+      if (loc.createdBy) addWho(loc.id, loc.createdBy);
+      for (const uid of loc.photoContributors || []) addWho(loc.id, uid);
+    }
+    for (const ev of trip?.events || []) {
+      if (ev.createdBy) addWho(ev.locationId, ev.createdBy);
+    }
+    for (const entry of entries) {
+      if (entry.authorId) addWho(entry.locationId, entry.authorId);
+    }
+    return byLoc;
+  }, [locations, trip?.events, entries]);
+
   const eventsByLocation = useMemo(() => {
     const map = new Map();
     const events = [...(trip?.events || [])].sort(
@@ -298,8 +322,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       lng: l.lng,
       lat: l.lat,
       type: l.type,
-      title: l.name,
-      col: selectedLocationId === l.id ? '#2A5C8E' : '#3A72A8',
+      title: l.visitStatus === 'planned' ? `${l.name} (Planned)` : l.name,
+      col: selectedLocationId === l.id ? '#2A5C8E' : (l.visitStatus === 'planned' ? '#B8702E' : '#3A72A8'),
       symbol: l.icon || locationSymbol(l.type),
     }));
 
@@ -339,7 +363,8 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
 
   return (
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
-      <div style={{ background: T.card, padding: '14px 16px 12px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+      <div style={{ background: T.card, padding: '14px 16px 12px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, boxShadow: '0 2px 12px rgba(26, 25, 23, 0.03)' }}>
+        <div className="screen-header-inner">
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: ts(12), fontWeight: 800, color: T.accent, marginBottom: 4 }}>Locations</div>
@@ -406,7 +431,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           {isOpen && canEditTrip && (
             <button type="button" onClick={() => onNav?.('add-location')}
-                 style={{ flex: 1, minHeight: 48, border: 'none', borderRadius: 12, padding: '11px 14px', fontSize: ts(15), fontWeight: 800, color: 'white', cursor: 'pointer', background: T.accent }}>
+                 style={{ flex: 1, minHeight: 48, border: 'none', borderRadius: 12, padding: '11px 14px', fontSize: ts(15), fontWeight: 800, color: 'white', cursor: 'pointer', background: T.accent, boxShadow: '0 3px 10px rgba(44, 95, 62, 0.2)' }}>
               + Add a location
             </button>
           )}
@@ -417,11 +442,11 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             </button>
           )}
         </div>
-
-
+        </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+        <div className="screen-content-inner">
         {/* Always reachable from the ⋮ menu; shown inline only when there are conflicts to review. */}
         {trip?._sync?.conflicts?.length > 0 && (
           <button type="button" onClick={() => setShowSync(v=>!v)} aria-expanded={showSync}
@@ -509,13 +534,18 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
           {orderedLocations.map((loc, idx) => {
             const placeEvents = eventsByLocation.get(loc.id) || [];
             const eventsOpen = expandedLocationIds.has(loc.id);
+            const isPlanned = loc.visitStatus === 'planned';
+            const votes = Array.isArray(loc.votes) ? loc.votes : [];
+            const votedByMe = votes.includes(currentUserId);
+            const contributors = locationContributors.get(loc.id) || [];
+            const commentsCount = Array.isArray(loc.comments) ? loc.comments.length : 0;
             return (
             <div key={loc.id}
-                 style={{ background: T.card, borderRadius: 11, border: `1px solid ${selectedLocationId === loc.id ? '#2A5C8E' : T.border}`, marginBottom: 6, overflow: 'hidden' }}>
+                 style={{ background: T.card, borderRadius: 11, border: `1px solid ${selectedLocationId === loc.id ? '#2A5C8E' : (isPlanned ? '#E8C9A0' : T.border)}`, marginBottom: 6, overflow: 'hidden' }}>
               <div style={{ padding: '10px 11px', display: 'flex', alignItems: 'center', gap: 10 }}>
               <button type="button" onClick={() => { setSelectedLocationId(loc.id); onOpenLocation?.(loc.id); }}
                    style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', padding: 0, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontFamily: F, textAlign: 'left' }}>
-              <div style={{ width: 36, height: 36, borderRadius: 9, background: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: isPlanned ? '#FBF0E4' : T.bg, border: `1px solid ${isPlanned ? '#E8C9A0' : T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
                 {loc.coverPhoto ? (
                   <MediaThumb media={loc.coverPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
@@ -523,17 +553,96 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                 )}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {idx + 1}. {loc.name}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: ts(13), fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {idx + 1}. {loc.name}
+                  </span>
+                  {isPlanned && (
+                    <span style={{ fontSize: 9.5, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', border: '1px solid #E8C9A0', borderRadius: 6, padding: '1px 6px' }}>
+                      Planned
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: ts(11), color: T.textFaint }}>
                   {locationTypeLabel(loc.type)}
                   {' · '}{locationEventCount.get(loc.id) || 0} events
                   {' · '}{locationEntryCount.get(loc.id) || 0} entries
+                  {commentsCount > 0 ? ` · 💬 ${commentsCount}` : ''}
                 </div>
               </div>
+              {contributors.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }} title={contributors.map((uid) => resolveUserDisplayName(trip, uid, currentUserId)).join(', ')}>
+                  {contributors.slice(0, 3).map((uid, cIdx) => {
+                    const name = resolveUserDisplayName(trip, uid, currentUserId);
+                    return (
+                      <span
+                        key={uid}
+                        style={{
+                          width: 22, height: 22, borderRadius: 99,
+                          background: '#E4EFF8', color: '#2A5C8E',
+                          border: `1.5px solid ${T.card}`,
+                          marginLeft: cIdx === 0 ? 0 : -6,
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 10, fontWeight: 800,
+                        }}
+                      >
+                        {(name || '?').charAt(0).toUpperCase()}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
               <Ic d="M9 18l6-6-6-6" size={16} color={T.textFaint} sw={2} />
               </button>
+              {canEditTrip && (
+                <button
+                  type="button"
+                  aria-label={`Hype ${loc.name}`}
+                  onClick={() => {
+                    toggleLocationVote(trip.id, loc.id, currentUserId);
+                    onTripUpdate?.();
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    minHeight: 32,
+                    padding: '0 8px',
+                    borderRadius: 9,
+                    border: `1px solid ${votedByMe ? '#E8C9A0' : T.border}`,
+                    background: votedByMe ? '#FBF0E4' : T.bg,
+                    color: votedByMe ? '#7A4A14' : T.textSub,
+                    fontWeight: 800,
+                    fontSize: ts(11),
+                    cursor: 'pointer',
+                    fontFamily: F,
+                  }}
+                >
+                  🔥{votes.length > 0 ? ` ${votes.length}` : ''}
+                </button>
+              )}
+              {canEditTrip && isPlanned && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    markLocationVisited(trip.id, loc.id);
+                    onTripUpdate?.();
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    minHeight: 32,
+                    padding: '0 9px',
+                    borderRadius: 9,
+                    border: '1px solid #A4CFAD',
+                    background: '#E5F4E8',
+                    color: '#2E6D3A',
+                    fontWeight: 800,
+                    fontSize: ts(11),
+                    cursor: 'pointer',
+                    fontFamily: F,
+                  }}
+                >
+                  ✓ Check in
+                </button>
+              )}
               {canEditTrip && (
                 <button
                   type="button"
@@ -698,6 +807,15 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
               }
               mapApiRef.current?.flyTo({ lng, lat, bbox, zoom: setPin ? 15 : undefined });
             }}
+            existingLocations={locations}
+            onUseExistingLocation={(existing) => {
+              setSelectedLocationId(existing.id);
+              setAddingLocation(false);
+              setLocationPin(null);
+              setLocCoverPhoto(null);
+              setLocationError(null);
+              onOpenLocation?.(existing.id);
+            }}
             onCancel={() => { setAddingLocation(false); setLocationError(null); setLocCoverPhoto(null); }}
             onSave={saveLocation}
           />
@@ -719,7 +837,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             <TripSyncPanel trip={trip} onTripUpdate={onTripUpdate} />
           </div>
         )}
-
+        </div>
       </div>
 
       <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />

@@ -2,7 +2,7 @@
 export const COLLECTIONS = ['locations','events','entries','track','trackSessions','collaborators','gearItems','meals','expenses','expenseGroups','shoppingItems'];
 const TRIP_FIELDS = ['name','types','location','startDate','endDate','privacy','status','startedAt','endedAt','coverPhoto','mapArea','offlineRegions','recap','timeZone'];
 const MEDIA = ['photos','photoFiles','voiceFiles'];
-const OMIT = new Set(['syncState','updatedAt']);
+const OMIT = new Set(['syncState','updatedAt','orphanedLocationId','orphanedEventId']);
 const unsafe = k => ['__proto__','constructor','prototype'].includes(k);
 export function canonical(value) {
   if (value === undefined) return 'null';
@@ -22,6 +22,12 @@ function seedId(key,value) {
   return 'seed:'+h.map(n=>n.toString(16).padStart(8,'0')).join('');
 }
 const keyOf = op => canonical([op.collection,op.recordId,op.field]);
+const cmpOp = (a,b) => ((Number(a.at)||0) - (Number(b.at)||0)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+const KIND_LABELS = {
+  trip:'Trip', locations:'Location', events:'Event', entries:'Entry', track:'Track point',
+  trackSessions:'Route leg', collaborators:'Crew member', gearItems:'Gear item',
+  meals:'Meal', expenses:'Expense', expenseGroups:'Expense group', shoppingItems:'Shopping item',
+};
 function records(trip) {
   const out = new Map();
   const add = (collection,id,field,value) => out.set(canonical([collection,id,field]), {collection,recordId:id,field,value:clean(value)});
@@ -70,9 +76,17 @@ export function validateOps(ops, tripId) {
   }
   if(visited!==ids.size)throw new Error('Cyclic change history.');
 }
+const validatedOps = new WeakMap();
 export function ensureSync(trip) {
-  if (trip._sync?.version === 2) { validateOps(trip._sync.ops,trip.id); return trip; }
+  if (trip._sync?.version === 2) {
+    if (validatedOps.get(trip._sync.ops) !== trip.id) {
+      validateOps(trip._sync.ops,trip.id);
+      validatedOps.set(trip._sync.ops,trip.id);
+    }
+    return trip;
+  }
   const ops = [...records(trip)].map(([key,r])=>({...r,id:seedId(key,r.value),parents:[],authorId:trip.ownerId || null,at:0}));
+  validatedOps.set(ops,trip.id);
   return {...trip,_sync:{version:2,ops,acked:[],conflicts:[]}};
 }
 function heads(ops) {
@@ -82,7 +96,7 @@ function heads(ops) {
     const k=keyOf(o); if (!map.has(k)) map.set(k,[]);
     map.get(k).push(o);
   }
-  for (const list of map.values()) list.sort((a,b)=>a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  for (const list of map.values()) list.sort(cmpOp);
   return map;
 }
 export function unionOps(a,b) {
@@ -95,7 +109,6 @@ export function unionOps(a,b) {
 }
 export function materialize(trip) {
   const synced=ensureSync(trip), ops=synced._sync.ops;
-  validateOps(ops,trip.id);
   const result={...synced}, rows=new Map(), conflicts=[];
   for (const c of COLLECTIONS) result[c]=[];
   for (const [key,list] of heads(ops)) {
@@ -121,7 +134,15 @@ export function materialize(trip) {
   const locs=new Map(result.locations.map(l=>[l.id,l]));
   result.events=result.events.filter(e=>!e.locationId || locs.has(e.locationId));
   const events=new Map(result.events.map(e=>[e.id,e]));
-  result.entries=result.entries.filter(e=>(!e.locationId || locs.has(e.locationId)) && (!e.eventId || events.has(e.eventId)));
+  result.entries=result.entries.map(e=>{
+    const hasLoc=!e.locationId || locs.has(e.locationId);
+    const hasEvt=!e.eventId || events.has(e.eventId);
+    if (hasLoc && hasEvt) return e;
+    const next={...e};
+    if (!hasLoc) { next.orphanedLocationId=next.locationId; next.locationId=null; delete next.locationName; delete next.locationType; }
+    if (!hasEvt) { next.orphanedEventId=next.eventId; delete next.eventId; delete next.eventName; }
+    return next;
+  });
   for (const row of [...result.events,...result.entries]) {
     const loc=locs.get(row.locationId), event=events.get(row.eventId);
     if (loc) {row.locationName=loc.name;row.locationType=loc.type;}
@@ -139,7 +160,10 @@ export function materialize(trip) {
   return result;
 }
 export function captureChanges(edited, latest, {authorId=null, newId=()=>crypto.randomUUID(), at=Date.now()}={}) {
-  const basis=ensureSync(edited._sync ? materialize(edited) : (latest || edited));
+  const canReuseLatest=Boolean(latest?._sync?.version===2 && edited._sync?.version===2 &&
+    latest._sync.ops.length===edited._sync.ops.length &&
+    latest._sync.ops.at(-1)?.id===edited._sync.ops.at(-1)?.id);
+  const basis=canReuseLatest ? ensureSync(latest) : ensureSync(edited._sync ? materialize(edited) : (latest || edited));
   const current=ensureSync(latest || basis);
   const old=records(basis), next=records(edited), frontier=heads(basis._sync.ops), added=[];
   const nextRows=new Set([...next.values()].map(n=>canonical([n.collection,n.recordId])));
@@ -166,4 +190,91 @@ export function resolveConflict(trip,key,value,authorId) {
   if (!list?.length) return t;
   const op={...list[0],id:crypto.randomUUID(),parents:list.map(o=>o.id),value,authorId,at:Date.now()};
   return materialize({...t,_sync:{...t._sync,ops:unionOps(t._sync.ops,[op])}});
+}
+function snapshotRowsFromHeads(headMap) {
+  const rows=new Map();
+  for (const list of headMap.values()) {
+    const winner=list[list.length-1], {collection,recordId,field}=winner;
+    if (collection==='trip') continue;
+    const rowKey=canonical([collection,recordId]);
+    if (!rows.has(rowKey)) rows.set(rowKey,{collection,recordId,row:{id:recordId}});
+    const target=rows.get(rowKey).row;
+    if (field==='$record') Object.assign(target,clean(winner.value),{id:recordId});
+    else if (!field.includes('/')) target[field]=winner.value;
+  }
+  return rows;
+}
+function rowDisplayLabel(row, recordId) {
+  for (const candidate of [row?.name,row?.title,row?.description,row?.handle,row?.label]) {
+    if (typeof candidate==='string' && candidate.trim()) return candidate.trim();
+  }
+  if (typeof row?.notes==='string' && row.notes.trim()) {
+    const snippet=row.notes.trim().replace(/\s+/g,' ');
+    return snippet.length>42 ? snippet.slice(0,42)+'…' : snippet;
+  }
+  if (typeof row?.type==='string' && row.type.trim()) return row.type.trim();
+  return recordId;
+}
+export function describeSyncRecord(trip, collection, recordId) {
+  const synced=ensureSync(trip), headMap=heads(synced._sync.ops);
+  const kindLabel=KIND_LABELS[collection] || collection;
+  if (collection==='trip') {
+    return {collection,recordId,kindLabel,label:synced.name || 'Trip',locationId:null,eventId:null,parentLabel:null};
+  }
+  const rows=snapshotRowsFromHeads(headMap);
+  const entry=rows.get(canonical([collection,recordId]));
+  const row=entry?.row || {id:recordId};
+  const label=rowDisplayLabel(row,recordId);
+  const locRow=row.locationId ? rows.get(canonical(['locations',row.locationId]))?.row : null;
+  const evtRow=row.eventId ? rows.get(canonical(['events',row.eventId]))?.row : null;
+  const parentLabel=evtRow ? rowDisplayLabel(evtRow,row.eventId) : (locRow ? rowDisplayLabel(locRow,row.locationId) : null);
+  return {
+    collection,
+    recordId,
+    kindLabel,
+    label,
+    locationId:row.locationId || evtRow?.locationId || null,
+    eventId:row.eventId || null,
+    parentLabel,
+    deleted:Boolean(row.$deleted),
+  };
+}
+export function describeDeletedRecords(trip) {
+  const synced=ensureSync(trip), headMap=heads(synced._sync.ops);
+  const rows=snapshotRowsFromHeads(headMap);
+  const order={locations:0,events:1,entries:2};
+  const out=[];
+  for (const {collection,recordId,row} of rows.values()) {
+    if (!row.$deleted) continue;
+    const desc=describeSyncRecord(synced,collection,recordId);
+    const parentDeleted=Boolean(
+      (desc.locationId && rows.get(canonical(['locations',desc.locationId]))?.row?.$deleted) ||
+      (desc.eventId && rows.get(canonical(['events',desc.eventId]))?.row?.$deleted),
+    );
+    out.push({...desc,key:canonical([collection,recordId,'$deleted']),parentDeleted});
+  }
+  return out.sort((a,b)=>((order[a.collection]??3)-(order[b.collection]??3)) || a.label.localeCompare(b.label));
+}
+export function restoreDeletedRecord(trip, collection, recordId, authorId=null) {
+  const t=ensureSync(trip), headMap=heads(t._sync.ops), rows=snapshotRowsFromHeads(headMap);
+  const targets=[[collection,recordId]];
+  const targetRow=rows.get(canonical([collection,recordId]))?.row;
+  if (targetRow?.eventId) {
+    const evtRow=rows.get(canonical(['events',targetRow.eventId]))?.row;
+    if (evtRow?.locationId) targets.unshift(['locations',evtRow.locationId]);
+    targets.unshift(['events',targetRow.eventId]);
+  } else if (targetRow?.locationId) {
+    targets.unshift(['locations',targetRow.locationId]);
+  }
+  const now=Date.now(), added=[], seen=new Set();
+  for (const [col,id] of targets) {
+    const k=canonical([col,id,'$deleted']);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const list=headMap.get(k);
+    if (!list?.length || list[list.length-1].value!==true) continue;
+    added.push({...list[0],id:crypto.randomUUID(),parents:list.map(o=>o.id),value:false,authorId,at:now});
+  }
+  if (!added.length) return materialize(t);
+  return materialize({...t,_sync:{...t._sync,ops:unionOps(t._sync.ops,added)}});
 }

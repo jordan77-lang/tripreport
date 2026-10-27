@@ -101,15 +101,25 @@ async function syncChanges(tripId) {
       }
     }
     merged=saveTrip(merged,{capture:false});
-    const sent=merged._sync.ops;
-    const {data,error}=await supabase.rpc('sync_trip_changes',{
-      p_id:tripId,p_ops:sent,p_metadata:{name:merged.name},
-      p_legacy_updated_at:row?.payload?._sync?.version===2 ? null : (row?.updated_at || null),
-    });
-    if (error?.code==='40001') continue;
-    if (error) throw new Error(error.code==='PGRST202'
-      ? 'Cloud sync needs database migration 009. Your changes are saved on this device.'
-      : error.message || 'Cloud sync failed; local changes are still saved.');
+    const remoteOps=row?.payload?._sync?.version===2 && Array.isArray(row.payload._sync.ops) ? row.payload._sync.ops : null;
+    const remoteOpIds=remoteOps ? new Set(remoteOps.map(o=>o.id)) : null;
+    const hasLocalDelta=!remoteOpIds || merged._sync.ops.some(o=>!remoteOpIds.has(o.id));
+    let data;
+    if (!hasLocalDelta) {
+      data={ops:remoteOps,ownerId:row.owner_id,updatedAt:row.updated_at};
+    } else {
+      const sent=merged._sync.ops;
+      const rpcResult=await supabase.rpc('sync_trip_changes',{
+        p_id:tripId,p_ops:sent,p_metadata:{name:merged.name},
+        p_legacy_updated_at:row?.payload?._sync?.version===2 ? null : (row?.updated_at || null),
+      });
+      const {error}=rpcResult;
+      data=rpcResult.data;
+      if (error?.code==='40001') continue;
+      if (error) throw new Error(error.code==='PGRST202'
+        ? 'Cloud sync needs database migration 009. Your changes are saved on this device.'
+        : error.message || 'Cloud sync failed; local changes are still saved.');
+    }
     // Re-read AFTER the request. Only changes actually returned by the server are acknowledged.
     const current=getTrip(tripId) || merged;
     const received=mergeSync(current,{...merged,_sync:{version:2,ops:data.ops,acked:[]}});

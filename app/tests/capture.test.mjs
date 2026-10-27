@@ -203,3 +203,86 @@ test('a second trip cannot steal the current recorder and completion closes it',
  storage.finalizeTrip(a.id);assert.equal(storage.getTrip(a.id).gpsSessionId,null);
  assert.ok(storage.startGpsSession(b.id));
 });
+
+test('social planning: planned locations, hype votes, check-ins, comments, gear/meal claiming, craft badges, and shared trip counts', async () => {
+  const { storage } = await fixture();
+  const trip = storage.createTrip({ name: 'Middle Fork', types: ['Rafting'], status: 'planning' });
+  const loc = storage.addLocation(trip.id, { name: 'Sunflower Hot Springs', lat: 44.5, lng: -115.2 });
+  assert.equal(loc.visitStatus, 'planned');
+
+  storage.toggleLocationVote(trip.id, loc.id, 'user-1');
+  storage.toggleLocationVote(trip.id, loc.id, 'user-2');
+  assert.deepEqual([...storage.getTrip(trip.id).locations[0].votes], ['user-1', 'user-2']);
+  storage.toggleLocationVote(trip.id, loc.id, 'user-1');
+  assert.deepEqual([...storage.getTrip(trip.id).locations[0].votes], ['user-2']);
+
+  storage.addLocationComment(trip.id, loc.id, 'Soak here before lunch!', { authorId: 'user-2', authorName: 'Sam' });
+  assert.equal(storage.getTrip(trip.id).locations[0].comments[0].text, 'Soak here before lunch!');
+  assert.equal(storage.getTrip(trip.id).locations[0].comments[0].authorName, 'Sam');
+
+  storage.markLocationVisited(trip.id, loc.id);
+  assert.equal(storage.getTrip(trip.id).locations[0].visitStatus, 'visited');
+
+  const gear = storage.addGearItem(trip.id, { name: 'Groover', category: 'group' });
+  storage.claimGearItem(trip.id, gear.id, { userId: 'user-2', label: 'Sam' });
+  assert.equal(storage.getTrip(trip.id).gearItems[0].assignedTo, 'user-2');
+  assert.equal(storage.getTrip(trip.id).gearItems[0].assignedToLabel, 'Sam');
+
+  const meal = storage.addMeal(trip.id, { name: 'Fajitas', dayIndex: 1, slot: 'dinner' });
+  storage.claimMeal(trip.id, meal.id, { userId: 'user-1', label: 'Jordan' });
+  storage.claimMeal(trip.id, meal.id, { asCoCook: true, userId: 'user-2' });
+  const updatedMeal = storage.getTrip(trip.id).meals[0];
+  assert.equal(updatedMeal.assignedTo, 'user-1');
+  assert.deepEqual([...updatedMeal.coCooks], ['user-2']);
+
+  const collab = storage.addTripCollaborator(trip.id, { name: 'Sam', craft: 'Oar Rig' });
+  assert.equal(collab.craft, 'Oar Rig');
+  storage.updateCollaboratorCraft(trip.id, collab.id, 'Kayak');
+  assert.equal(storage.getTrip(trip.id).collaborators[0].craft, 'Kayak');
+
+  const trip2 = storage.createTrip({ name: 'Rogue River', types: ['Rafting'], status: 'planning' });
+  storage.addTripCollaborator(trip2.id, { name: 'Sam' });
+  const sharedCounts = storage.getSharedTripCountsByPerson();
+  assert.equal(sharedCounts.byName.sam, 2);
+});
+
+test('on-trip and post-trip: reactions, highlights, crew memories, and fork trip as template', async () => {
+  const { storage } = await fixture();
+  const trip = storage.createTrip({ name: 'Desolation Canyon', types: ['Rafting'], location: 'Green River' });
+  const camp = storage.addLocation(trip.id, { name: 'Rock Creek Ranch', lat: 39.5, lng: -110.0 });
+  const entry = storage.addEntry(trip.id, { type: 'wildlife', title: 'Bighorn herd', notes: 'Seven rams on the talus', locationId: camp.id });
+
+  storage.toggleEntryReaction(trip.id, entry.id, '🔥', { kind: 'entry', userId: 'user-1' });
+  storage.toggleEntryReaction(trip.id, entry.id, '🐻', { kind: 'entry', userId: 'user-2' });
+  storage.toggleEntryHighlight(trip.id, entry.id, { kind: 'entry' });
+
+  const afterReact = storage.getTrip(trip.id).entries[0];
+  assert.equal(afterReact.highlighted, true);
+  assert.deepEqual([...afterReact.reactions['🔥']], ['user-1']);
+  assert.deepEqual([...afterReact.reactions['🐻']], ['user-2']);
+
+  storage.addMeal(trip.id, { name: 'River Tacos', dayIndex: 2, slot: 'dinner', assignedTo: 'user-1', assignedToLabel: 'Jordan' });
+  storage.addGearItem(trip.id, { name: 'First Aid Kit', category: 'safety', shared: true, assignedTo: 'user-1' });
+  storage.addGearItem(trip.id, { name: 'My Drysuit', category: 'personal', shared: false, assignedTo: 'user-1' });
+  storage.addExpense(trip.id, { description: 'Shuttle', amount: 250 });
+
+  storage.finalizeTrip(trip.id);
+  storage.addTripMemory(trip.id, 'Watching the canyon walls glow at sunset.', { authorId: 'user-2', authorName: 'Sam' });
+  assert.equal(storage.getTrip(trip.id).recap.memories.length, 1);
+  assert.equal(storage.getTrip(trip.id).recap.memories[0].authorName, 'Sam');
+
+  const forked = storage.forkTripAsTemplate(trip.id, { name: 'Desolation 2027' });
+  assert.equal(forked.status, 'planning');
+  assert.equal(forked.name, 'Desolation 2027');
+  assert.equal(forked.locations.length, 1);
+  assert.equal(forked.locations[0].name, 'Rock Creek Ranch');
+  assert.equal(forked.locations[0].visitStatus, 'planned');
+  assert.equal(forked.meals.length, 1);
+  assert.equal(forked.meals[0].name, 'River Tacos');
+  assert.equal(forked.meals[0].assignedTo, null);
+  assert.equal(forked.gearItems.length, 1);
+  assert.equal(forked.gearItems[0].name, 'First Aid Kit');
+  assert.equal(forked.entries.length, 0);
+  assert.equal(forked.events.length, 0);
+  assert.equal(forked.expenses.length, 0);
+});

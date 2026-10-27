@@ -161,7 +161,7 @@ function dedupePastCrew(people) {
 }
 
 /** Add a name-only roster entry (gear/meals lists — not the same as a cloud invite). */
-export function addTripCollaborator(tripId, { name }) {
+export function addTripCollaborator(tripId, { name, craft = null }) {
   const label = (name || '').trim();
   if (!label) return null;
   return mutateTrip(tripId, (trip) => {
@@ -178,10 +178,79 @@ export function addTripCollaborator(tripId, { name }) {
       handle: label,
       name: label,
       role: 'contributor',
+      ...(craft ? { craft: String(craft).trim() } : {}),
     };
     trip.collaborators = [...(trip.collaborators || []), collab];
     return collab;
   });
+}
+
+export function updateCollaboratorCraft(tripId, participantId, craft) {
+  if (!tripId || !participantId) return null;
+  const nextCraft = (craft || '').trim() || null;
+  return mutateTrip(tripId, (trip, now) => {
+    const list = trip.collaborators || [];
+    const idx = list.findIndex((c) => c.id === participantId || c.userId === participantId);
+    if (idx >= 0) {
+      const updated = {
+        ...list[idx],
+        craft: nextCraft,
+        updatedAt: now,
+        syncState: 'pending',
+      };
+      trip.collaborators = list.map((c, i) => (i === idx ? updated : c));
+      return updated;
+    }
+    if (trip.ownerId === participantId || trip.memberProfiles?.[participantId]) {
+      const displayName = trip.memberProfiles?.[participantId] || getSignedInDisplayName() || 'Owner';
+      const created = {
+        id: participantId,
+        userId: participantId,
+        handle: displayName,
+        name: displayName,
+        role: trip.ownerId === participantId ? 'owner' : 'contributor',
+        joinedViaInvite: trip.ownerId !== participantId,
+        craft: nextCraft,
+        updatedAt: now,
+        syncState: 'pending',
+      };
+      trip.collaborators = [...list, created];
+      return created;
+    }
+    return null;
+  });
+}
+
+export function getSharedTripCountsByPerson() {
+  const byId = {};
+  const byName = {};
+  for (const trip of getTrips()) {
+    const seenIdsInTrip = new Set();
+    const seenNamesInTrip = new Set();
+    if (trip.ownerId) {
+      seenIdsInTrip.add(trip.ownerId);
+      const ownerName = (trip.memberProfiles?.[trip.ownerId] || '').trim().toLowerCase();
+      if (ownerName) seenNamesInTrip.add(ownerName);
+    }
+    for (const [uid, name] of Object.entries(trip.memberProfiles || {})) {
+      seenIdsInTrip.add(uid);
+      const key = (name || '').trim().toLowerCase();
+      if (key) seenNamesInTrip.add(key);
+    }
+    for (const c of trip.collaborators || []) {
+      const id = c?.userId || c?.id;
+      if (id) seenIdsInTrip.add(id);
+      const key = (c?.handle || c?.name || '').trim().toLowerCase();
+      if (key) seenNamesInTrip.add(key);
+    }
+    for (const id of seenIdsInTrip) {
+      byId[id] = (byId[id] || 0) + 1;
+    }
+    for (const key of seenNamesInTrip) {
+      byName[key] = (byName[key] || 0) + 1;
+    }
+  }
+  return { byId, byName };
 }
 
 export function removeTripCollaborator(tripId, collaboratorId) {
@@ -329,6 +398,8 @@ function ensureEntryEvent(trip, entry) {
     id: crypto.randomUUID(),
     locationId: location.id,
     locationName: location.name,
+    lat: entry.lat ?? location.lat,
+    lng: entry.lng ?? location.lng,
     type: entryType,
     name: entry.title || defaultEventName(entryType),
     mealId: entry.mealId || null,
@@ -526,6 +597,9 @@ export function addLocation(tripId, location) {
     observedEndAt: location.observedEndAt,
     lng: location.lng,
     lat: location.lat,
+    visitStatus: location.visitStatus || (trip.status === 'planning' ? 'planned' : 'visited'),
+    votes: Array.isArray(location.votes) ? location.votes : [],
+    comments: Array.isArray(location.comments) ? location.comments : [],
     createdBy: location.createdBy || getCurrentUserId(),
     createdAt: now,
     updatedAt: now,
@@ -540,6 +614,55 @@ export function addLocation(tripId, location) {
   trip.syncState = 'pending';
   saveTrip(trip);
   return full;
+}
+
+export function toggleLocationVote(tripId, locationId, userId = getCurrentUserId()) {
+  if (!tripId || !locationId || !userId) return null;
+  const trip = getTrip(tripId);
+  if (!trip) return null;
+  const loc = (trip.locations || []).find((l) => l.id === locationId);
+  if (!loc) return null;
+  const votes = Array.isArray(loc.votes) ? loc.votes : [];
+  const nextVotes = votes.includes(userId)
+    ? votes.filter((id) => id !== userId)
+    : [...votes, userId];
+  return updateLocation(tripId, locationId, { votes: nextVotes });
+}
+
+export function markLocationVisited(tripId, locationId) {
+  if (!tripId || !locationId) return null;
+  const trip = getTrip(tripId);
+  if (!trip) return null;
+  const loc = (trip.locations || []).find((l) => l.id === locationId);
+  if (!loc) return null;
+  return updateLocation(tripId, locationId, {
+    visitStatus: 'visited',
+    observedAt: loc.observedAt || new Date().toISOString(),
+  });
+}
+
+export function addLocationComment(tripId, locationId, text, { authorId = null, authorName = null } = {}) {
+  const trimmed = (text || '').trim();
+  if (!tripId || !locationId || !trimmed) return null;
+  const trip = getTrip(tripId);
+  if (!trip) return null;
+  const loc = (trip.locations || []).find((l) => l.id === locationId);
+  if (!loc) return null;
+  const uid = authorId || getCurrentUserId();
+  const displayName = authorName
+    || trip.memberProfiles?.[uid]
+    || (trip.collaborators || []).find((c) => c.userId === uid || c.id === uid)?.name
+    || getSignedInDisplayName()
+    || 'Crew';
+  const comment = {
+    id: crypto.randomUUID(),
+    authorId: uid,
+    authorName: displayName,
+    text: trimmed,
+    createdAt: Date.now(),
+  };
+  const comments = Array.isArray(loc.comments) ? loc.comments : [];
+  return updateLocation(tripId, locationId, { comments: [...comments, comment] });
 }
 
 export function updateLocation(tripId, locationId, patch) {
@@ -610,6 +733,8 @@ export function addEvent(tripId, event) {
     id: crypto.randomUUID(),
     locationId: location.id,
     locationName: location.name,
+    lat: event.lat ?? location.lat,
+    lng: event.lng ?? location.lng,
     type: event.type || 'note',
     name: event.name || defaultEventName(event.type),
     notes: event.notes || '',
@@ -827,6 +952,21 @@ export function removeGearItem(tripId, id) {
   return removePlanningItem(tripId, 'gearItems', id);
 }
 
+export function claimGearItem(tripId, gearId, { userId = null, label = null } = {}) {
+  const trip = getTrip(tripId);
+  if (!trip || !gearId) return null;
+  const uid = userId || getCurrentUserId();
+  const displayName = label
+    || trip.memberProfiles?.[uid]
+    || (trip.collaborators || []).find((c) => c.userId === uid || c.id === uid)?.name
+    || getSignedInDisplayName()
+    || 'Me';
+  return updateGearItem(tripId, gearId, {
+    assignedTo: uid,
+    assignedToLabel: displayName,
+  });
+}
+
 export function addMeal(tripId, meal) {
   return mutateTrip(tripId, (trip, now) => {
     const full = {
@@ -836,6 +976,7 @@ export function addMeal(tripId, meal) {
       name: (meal.name || '').trim() || 'Untitled meal',
       assignedTo: meal.assignedTo || null,
       assignedToLabel: meal.assignedToLabel || null,
+      coCooks: Array.isArray(meal.coCooks) ? meal.coCooks : [],
       servings: Number.isFinite(meal.servings) && meal.servings > 0 ? meal.servings : null,
       ingredients: Array.isArray(meal.ingredients) ? meal.ingredients : [],
       notes: meal.notes || '',
@@ -853,8 +994,152 @@ export function updateMeal(tripId, id, patch) {
   return updatePlanningItem(tripId, 'meals', id, patch);
 }
 
+export function claimMeal(tripId, mealId, { asCoCook = false, userId = null, label = null } = {}) {
+  const trip = getTrip(tripId);
+  if (!trip || !mealId) return null;
+  const meal = (trip.meals || []).find((m) => m.id === mealId);
+  if (!meal) return null;
+  const uid = userId || getCurrentUserId();
+  const displayName = label
+    || trip.memberProfiles?.[uid]
+    || (trip.collaborators || []).find((c) => c.userId === uid || c.id === uid)?.name
+    || getSignedInDisplayName()
+    || 'Me';
+  if (!asCoCook) {
+    return updateMeal(tripId, mealId, {
+      assignedTo: uid,
+      assignedToLabel: displayName,
+    });
+  }
+  const existing = Array.isArray(meal.coCooks) ? meal.coCooks : [];
+  const nextCoCooks = existing.includes(uid)
+    ? existing.filter((id) => id !== uid)
+    : [...existing, uid];
+  return updateMeal(tripId, mealId, { coCooks: nextCoCooks });
+}
+
 export function removeMeal(tripId, id) {
   return removePlanningItem(tripId, 'meals', id);
+}
+
+export function toggleEntryReaction(tripId, targetId, emoji, { kind = 'entry', userId = null } = {}) {
+  if (!tripId || !targetId || !emoji) return null;
+  const uid = userId || getCurrentUserId();
+  const trip = getTrip(tripId);
+  if (!trip) return null;
+  const collection = kind === 'event' ? 'events' : 'entries';
+  const item = (trip[collection] || []).find((x) => x.id === targetId);
+  if (!item) return null;
+  const reactions = item.reactions && typeof item.reactions === 'object' ? { ...item.reactions } : {};
+  const current = Array.isArray(reactions[emoji]) ? reactions[emoji] : [];
+  const nextList = current.includes(uid)
+    ? current.filter((id) => id !== uid)
+    : [...current, uid];
+  if (nextList.length > 0) {
+    reactions[emoji] = nextList;
+  } else {
+    delete reactions[emoji];
+  }
+  return kind === 'event'
+    ? updateEvent(tripId, targetId, { reactions })
+    : updateEntry(tripId, targetId, { reactions });
+}
+
+export function toggleEntryHighlight(tripId, targetId, { kind = 'entry' } = {}) {
+  if (!tripId || !targetId) return null;
+  const trip = getTrip(tripId);
+  if (!trip) return null;
+  const collection = kind === 'event' ? 'events' : 'entries';
+  const item = (trip[collection] || []).find((x) => x.id === targetId);
+  if (!item) return null;
+  const nextVal = !item.highlighted;
+  return kind === 'event'
+    ? updateEvent(tripId, targetId, { highlighted: nextVal })
+    : updateEntry(tripId, targetId, { highlighted: nextVal });
+}
+
+export function addTripMemory(tripId, text, { authorId = null, authorName = null } = {}) {
+  const trimmed = (text || '').trim();
+  if (!tripId || !trimmed) return null;
+  return mutateTrip(tripId, (trip, now) => {
+    const uid = authorId || getCurrentUserId();
+    const displayName = authorName
+      || trip.memberProfiles?.[uid]
+      || (trip.collaborators || []).find((c) => c.userId === uid || c.id === uid)?.name
+      || getSignedInDisplayName()
+      || 'Crew';
+    const memory = {
+      id: crypto.randomUUID(),
+      authorId: uid,
+      authorName: displayName,
+      text: trimmed,
+      createdAt: now,
+    };
+    const existingRecap = trip.recap && typeof trip.recap === 'object' ? trip.recap : {};
+    const memories = Array.isArray(existingRecap.memories) ? existingRecap.memories : [];
+    trip.recap = {
+      ...existingRecap,
+      memories: [...memories, memory],
+      updatedAt: now,
+    };
+    return memory;
+  });
+}
+
+export function forkTripAsTemplate(sourceTripId, { name = null, startDate = '', endDate = '' } = {}) {
+  const source = getTrip(sourceTripId);
+  if (!source) return null;
+  const baseName = (name || '').trim() || `${source.name || 'Trip'} (New Run)`;
+  const forked = createTrip({
+    name: baseName,
+    types: Array.isArray(source.types) ? [...source.types] : [],
+    location: source.location || '',
+    startDate,
+    endDate,
+    privacy: 'private',
+    status: 'planning',
+    mapArea: source.mapArea || null,
+  });
+  for (const loc of [...(source.locations || [])].reverse()) {
+    addLocation(forked.id, {
+      name: loc.name,
+      type: loc.type,
+      icon: loc.icon,
+      notes: loc.notes || '',
+      lat: loc.lat,
+      lng: loc.lng,
+      visitStatus: 'planned',
+      votes: [],
+      comments: [],
+    });
+  }
+  for (const meal of source.meals || []) {
+    addMeal(forked.id, {
+      dayIndex: meal.dayIndex || 1,
+      slot: meal.slot || 'dinner',
+      name: meal.name,
+      servings: meal.servings || null,
+      ingredients: Array.isArray(meal.ingredients) ? meal.ingredients.map((i) => ({ ...i })) : [],
+      notes: meal.notes || '',
+      assignedTo: null,
+      assignedToLabel: null,
+      coCooks: [],
+    });
+  }
+  for (const gear of source.gearItems || []) {
+    if (gear.shared === false || gear.category === 'personal') continue;
+    addGearItem(forked.id, {
+      name: gear.name,
+      category: gear.category || 'group',
+      quantity: gear.quantity || 1,
+      shared: true,
+      assignedTo: null,
+      assignedToLabel: null,
+      status: 'needed',
+      notes: gear.notes || '',
+    });
+  }
+  return getTrip(forked.id);
 }
 
 export function addExpense(tripId, expense) {

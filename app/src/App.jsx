@@ -25,11 +25,16 @@ import { fetchGauge, fetchNearbyGaugesByGps, findNearbyKnownGauges } from './lib
 import { fetchWeatherAtTime } from './lib/weather';
 import { weatherFieldsFromSnapshot } from './lib/eventWeather';
 
-/** Deep links: ?join=CODE opens the join screen on a cold load. */
+/** Deep links: ?join=CODE opens the join screen; ?story=TRIP_ID opens the trip story recap. */
 function parseInitialUrl(url) {
   const join = url.searchParams.get('join') || url.searchParams.get('code');
   if (join?.trim()) {
     return { screen: 'join', params: { inviteCode: join.trim().toUpperCase() } };
+  }
+  const story = url.searchParams.get('story');
+  if (story?.trim()) {
+    setActiveTrip(story.trim());
+    return { screen: 'recap', params: { tripId: story.trim(), tab: 'story' } };
   }
   return null;
 }
@@ -234,10 +239,10 @@ export default function App() {
 
   const onFab = () => nav.push('new-trip');
 
-  const onOpenRecap = (tripId) => {
+  const onOpenRecap = (tripId, { tab = null } = {}) => {
     if (tripId) setActiveTrip(tripId);
     refreshTrip();
-    nav.push('recap', { tripId });
+    nav.push('recap', { tripId, ...(tab ? { tab } : {}) });
   };
 
   const onOpenLocation = (locationId, eventId = null, { edit = false } = {}) => {
@@ -284,7 +289,7 @@ export default function App() {
       }} />;
     case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onJoinTrip={() => nav.push('join')} onOpenSettings={() => nav.push('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
     case 'settings': return <Settings onBack={nav.back} auth={auth} />;
-    case 'recap':   return <TripRecap trip={trip} onBack={nav.back} onTripUpdate={refreshTrip} auth={auth} />;
+    case 'recap':   return <TripRecap trip={trip} onBack={nav.back} onTripUpdate={refreshTrip} onForkedTrip={(forkedId) => onSelectTrip(forkedId)} initialTab={params.tab || 'report'} auth={auth} />;
     case 'trip':    return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
     case 'map':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <Navigator {...common} onTripUpdate={refreshTrip} gps={recordingTrip?.id===trip?.id?gps:null} />;
     case 'log':     return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;

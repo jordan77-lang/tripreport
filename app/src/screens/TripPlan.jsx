@@ -12,8 +12,8 @@ import {
   getCurrentUserId,
   isTripOwner,
   isTripMember,
-  addGearItem, updateGearItem, removeGearItem,
-  addMeal, updateMeal, removeMeal, getTrips,
+  addGearItem, updateGearItem, removeGearItem, claimGearItem,
+  addMeal, updateMeal, removeMeal, claimMeal, getTrips,
   addShoppingItem, updateShoppingItem, removeShoppingItem,
   generateShoppingList,
 } from '../lib/storage';
@@ -21,7 +21,7 @@ import { ParticipantsTab } from '../components/ParticipantsTab';
 import { TripExpenses } from '../components/TripExpenses';
 import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
-import { buildTripParticipants } from '../lib/expenses';
+import { buildTripParticipants, resolveUserDisplayName } from '../lib/expenses';
 import { supabaseConfigured } from '../lib/supabase';
 import { getSignedInUserId } from '../lib/authUser';
 import { listSavedIngredients, listSavedMeals, publishSavedMeal, refreshSharedMeals, rememberMeal } from '../lib/mealLibrary';
@@ -128,7 +128,8 @@ export function TripPlan({
 
   return (
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
-      <div style={{ background: T.card, padding: '12px 16px 0', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+      <div style={{ background: T.card, padding: '12px 16px 0', borderBottom: `1px solid ${T.border}`, flexShrink: 0, boxShadow: '0 2px 12px rgba(26, 25, 23, 0.03)' }}>
+        <div className="screen-header-inner">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <button type="button" aria-label="Back" onClick={onBack} style={{ flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, borderRadius: 10, background: T.bg, border: `1px solid ${T.border}` }}>
             <span style={{ display: 'flex', transform: 'rotate(180deg)' }}>
@@ -161,9 +162,11 @@ export function TripPlan({
             </button>
           ))}
         </div>
+        </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+        <div className="screen-content-inner">
         {tab === 'mine' && <MyResponsibilities trip={trip} onOpenPlan={selectTab} />}
         {tab === 'details' && canEditTrip && (
           <TripEditPanel
@@ -200,6 +203,7 @@ export function TripPlan({
         )}
         {tab === 'maps' && <OfflineMapsPanel trip={trip} onTripUpdate={onTripUpdate} />}
         <div style={{ height: 16 }} />
+        </div>
       </div>
 
       <BottomNav active="plan" onNav={onNav} onFab={onFab} trip={trip} />
@@ -324,24 +328,49 @@ function GearTab({ trip, participants, onTripUpdate }) {
             {item.name}
           </div>
           {!done ? (
-            <select
-              value={item.assignedTo || ''}
-              onChange={(e) => reassign(item, e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                marginTop: 4,
-                fontSize: 10.5,
-                color: T.textSub,
-                border: `1px solid ${T.border}`,
-                borderRadius: 7,
-                padding: '2px 5px',
-                background: T.bg,
-                fontFamily: F,
-              }}
-            >
-              <option value="">Who brings it?</option>
-              {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+              <select
+                value={item.assignedTo || ''}
+                onChange={(e) => reassign(item, e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  fontSize: 10.5,
+                  color: T.textSub,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 7,
+                  padding: '2px 5px',
+                  background: T.bg,
+                  fontFamily: F,
+                }}
+              >
+                <option value="">Who brings it?</option>
+                {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+              {!item.assignedTo && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void savePlanningToCloud(trip.id, () => {
+                      claimGearItem(trip.id, item.id);
+                    }).then(() => onTripUpdate?.());
+                  }}
+                  style={{
+                    border: `1px solid ${T.accent}50`,
+                    borderRadius: 7,
+                    padding: '2px 7px',
+                    background: T.accentLight,
+                    color: T.accent,
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                    fontFamily: F,
+                    cursor: 'pointer',
+                  }}
+                >
+                  I'll bring this
+                </button>
+              )}
+            </div>
           ) : (
             item.assignedToLabel && (
               <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
@@ -605,18 +634,76 @@ function MealsTab({ trip, participants, onTripUpdate }) {
       {byDay.map(([day, dayMeals]) => (
         <div key={day} style={{ marginBottom: 14 }}>
           <SectionLabel>Day {day}</SectionLabel>
-          {dayMeals.sort((a, b) => MEAL_SLOTS.indexOf(a.slot) - MEAL_SLOTS.indexOf(b.slot)).map((m) => (
+          {dayMeals.sort((a, b) => MEAL_SLOTS.indexOf(a.slot) - MEAL_SLOTS.indexOf(b.slot)).map((m) => {
+            const currentUserId = getCurrentUserId();
+            const coCooks = Array.isArray(m.coCooks) ? m.coCooks : [];
+            const amCoCook = coCooks.includes(currentUserId);
+            const amLeadCook = m.assignedTo === currentUserId;
+            return (
             <div key={m.id} style={{ ...cardStyle, alignItems: 'flex-start', borderColor: editingId === m.id ? T.accent : T.border }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
                   <span style={{ color: T.accent, fontSize: 10.5, fontWeight: 800 }}>{SLOT_LABEL[m.slot]} · </span>{m.name}
                 </div>
                 {m.assignedToLabel && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2 }}>Cook: {m.assignedToLabel}</div>}
+                {coCooks.length > 0 && (
+                  <div style={{ fontSize: 10.5, color: '#2A5C8E', marginTop: 2 }}>
+                    Co-cook{coCooks.length === 1 ? '' : 's'}: {coCooks.map((uid) => resolveUserDisplayName(trip, uid, currentUserId)).join(', ')}
+                  </div>
+                )}
                 {(m.ingredients || []).length > 0 && (
                   <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
                     {m.ingredients.map((i) => i.name).join(', ')}
                   </div>
                 )}
+                <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                  {!m.assignedTo && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void savePlanningToCloud(trip.id, () => {
+                          claimMeal(trip.id, m.id, { asCoCook: false });
+                        }).then(() => onTripUpdate?.());
+                      }}
+                      style={{
+                        border: `1px solid ${T.accent}50`,
+                        borderRadius: 7,
+                        padding: '2px 8px',
+                        background: T.accentLight,
+                        color: T.accent,
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        fontFamily: F,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      I'll cook this
+                    </button>
+                  )}
+                  {m.assignedTo && !amLeadCook && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void savePlanningToCloud(trip.id, () => {
+                          claimMeal(trip.id, m.id, { asCoCook: true });
+                        }).then(() => onTripUpdate?.());
+                      }}
+                      style={{
+                        border: `1px solid ${amCoCook ? '#2A5C8E' : T.border}`,
+                        borderRadius: 7,
+                        padding: '2px 8px',
+                        background: amCoCook ? '#E4EFF8' : T.bg,
+                        color: amCoCook ? '#2A5C8E' : T.textSub,
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        fontFamily: F,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {amCoCook ? '✓ Co-cook' : '+ Co-cook'}
+                    </button>
+                  )}
+                </div>
               </div>
               <RowActions
                 itemName={m.name}
@@ -624,7 +711,8 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                 onDelete={() => void removeItem(m)}
               />
             </div>
-          ))}
+            );
+          })}
         </div>
       ))}
     </div>

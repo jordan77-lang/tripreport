@@ -1,4 +1,4 @@
-import { buildParticipantAliasMap, buildTripParticipants, computeBalances, roundMoney } from './expenses';
+import { buildParticipantAliasMap, buildTripParticipants, computeBalances, resolveUserDisplayName, roundMoney } from './expenses';
 import { tripDayKey, tripTimeZone } from './tripTimeline';
 
 export function isGearReady(item) {
@@ -13,7 +13,7 @@ export function getMyResponsibilities(trip, userId) {
     || (trip?.collaborators || []).find(p => p.id === userId && p.userId)?.userId;
   const mine = id => Boolean(userId && id && (id === userId || (participantId && aliases.get(id) === participantId)));
   const gear = (trip?.gearItems || []).filter(item => mine(item.assignedTo));
-  const meals = (trip?.meals || []).filter(item => mine(item.assignedTo))
+  const meals = (trip?.meals || []).filter(item => mine(item.assignedTo) || (Array.isArray(item.coCooks) && item.coCooks.some(mine)))
     .slice().sort((a, b) => (a.dayIndex || 1) - (b.dayIndex || 1)
       || ['breakfast', 'lunch', 'dinner', 'snack'].indexOf(a.slot) - ['breakfast', 'lunch', 'dinner', 'snack'].indexOf(b.slot));
   // Shopping has no assignee field. Keep authorship explicit in the UI.
@@ -27,7 +27,98 @@ export function getMyResponsibilities(trip, userId) {
     hasExpenses: (trip?.expenses || []).length > 0,
     unassignedGear: (trip?.gearItems || []).filter(item => !item.assignedTo && !isGearReady(item)).length,
     unassignedMeals: (trip?.meals || []).filter(item => !item.assignedTo).length,
+    plannedLocations: (trip?.locations || []).filter(loc => loc.visitStatus === 'planned').length,
   };
+}
+
+export function buildCrewActivityFeed(trip, currentUserId = null, limit = 5) {
+  if (!trip) return [];
+  const items = [];
+  const who = (uid, fallback = 'Crew') => {
+    if (!uid) return fallback;
+    const name = resolveUserDisplayName(trip, uid, currentUserId);
+    return name === 'Unknown' ? fallback : name;
+  };
+
+  for (const loc of trip.locations || []) {
+    const at = Number(loc.updatedAt || loc.createdAt) || 0;
+    const actor = who(loc.createdBy);
+    const voteCount = Array.isArray(loc.votes) ? loc.votes.length : 0;
+    const label = loc.visitStatus === 'planned'
+      ? `pinned planned stop "${loc.name || 'Location'}"${voteCount > 0 ? ` (🔥 ${voteCount})` : ''}`
+      : `anchored "${loc.name || 'Location'}"`;
+    items.push({
+      id: `loc-${loc.id}`,
+      at,
+      actor,
+      text: `${actor} ${label}`,
+      icon: loc.icon || '📍',
+      screen: 'location',
+      params: { locationId: loc.id },
+    });
+    for (const c of loc.comments || []) {
+      items.push({
+        id: `comment-${c.id || c.createdAt}`,
+        at: Number(c.createdAt) || at,
+        actor: c.authorName || who(c.authorId),
+        text: `${c.authorName || who(c.authorId)} commented on "${loc.name}": "${c.text}"`,
+        icon: '💬',
+        screen: 'location',
+        params: { locationId: loc.id },
+      });
+    }
+  }
+
+  for (const meal of trip.meals || []) {
+    if (!meal.assignedTo) continue;
+    const at = Number(meal.updatedAt || meal.createdAt) || 0;
+    const cook = meal.assignedToLabel || who(meal.assignedTo);
+    const coCount = Array.isArray(meal.coCooks) ? meal.coCooks.length : 0;
+    items.push({
+      id: `meal-${meal.id}`,
+      at,
+      actor: cook,
+      text: `${cook} signed up to cook ${meal.name} (Day ${meal.dayIndex || 1})${coCount ? ` + ${coCount} co-cook${coCount === 1 ? '' : 's'}` : ''}`,
+      icon: '🍳',
+      screen: 'plan',
+      params: { tab: 'meals' },
+    });
+  }
+
+  for (const gear of trip.gearItems || []) {
+    if (!gear.assignedTo) continue;
+    const at = Number(gear.updatedAt || gear.createdAt) || 0;
+    const holder = gear.assignedToLabel || who(gear.assignedTo);
+    items.push({
+      id: `gear-${gear.id}`,
+      at,
+      actor: holder,
+      text: `${holder} is bringing ${gear.name}${isGearReady(gear) ? ' (Ready)' : ''}`,
+      icon: '🎒',
+      screen: 'plan',
+      params: { tab: 'gear' },
+    });
+  }
+
+  for (const entry of trip.entries || []) {
+    const at = Number(entry.updatedAt || entry.createdAt) || 0;
+    const actor = who(entry.authorId);
+    const place = entry.locationName ? ` at ${entry.locationName}` : '';
+    const summary = entry.title || entry.caption || (entry.text ? entry.text.slice(0, 36) : entry.type || 'moment');
+    items.push({
+      id: `entry-${entry.id}`,
+      at,
+      actor,
+      text: `${actor} shared "${summary}"${place}${entry.highlighted ? ' ⭐' : ''}`,
+      icon: entry.highlighted ? '⭐' : '✨',
+      screen: entry.eventId ? 'event' : 'trip',
+      params: entry.eventId ? { locationId: entry.locationId, eventId: entry.eventId } : {},
+    });
+  }
+
+  return items
+    .sort((a, b) => b.at - a.at)
+    .slice(0, Math.max(1, limit));
 }
 
 function dateNumber(key) {

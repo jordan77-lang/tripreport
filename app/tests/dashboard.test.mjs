@@ -16,7 +16,7 @@ async function load(name) {
   await module.evaluate();
   return module;
 }
-const { getMyResponsibilities, getTripStage, mealResponsibilityLabel } = (await load('./tripDashboard')).namespace;
+const { buildCrewActivityFeed, getMyResponsibilities, getTripStage, mealResponsibilityLabel } = (await load('./tripDashboard')).namespace;
 const ids = list => Array.from(list, item => item.id);
 
 test('responsibilities use IDs and aliases without confusing people who share a name', () => {
@@ -82,4 +82,31 @@ test('empty trips and missing identity do not invent personal assignments or bal
   assert.equal(result.gear.length, 0); assert.equal(result.meals.length, 0);
   assert.equal(result.shopping.length, 0); assert.equal(result.balance, 0);
   assert.equal(result.hasExpenses, false);
+});
+
+test('co-cooks, planned locations, and crew activity feed work across social planning and trip moments', () => {
+  const trip = {
+    ownerId: 'leader',
+    memberProfiles: { leader: 'Jordan', member: 'Sam' },
+    collaborators: [{ id: 'member', userId: 'member', name: 'Sam' }],
+    locations: [
+      { id: 'loc-1', name: 'Granite Rapid', visitStatus: 'planned', votes: ['leader', 'member'], createdBy: 'leader', updatedAt: 100, comments: [{ id: 'c1', authorName: 'Sam', text: 'Scout river left', createdAt: 300 }] },
+      { id: 'loc-2', name: 'Pine Camp', visitStatus: 'visited', createdBy: 'member', updatedAt: 200 },
+    ],
+    meals: [
+      { id: 'm1', name: 'Dutch Oven Lasagna', dayIndex: 1, slot: 'dinner', assignedTo: 'leader', assignedToLabel: 'Jordan', coCooks: ['member'], updatedAt: 250 },
+    ],
+    entries: [
+      { id: 'e1', title: 'Osprey dive', locationId: 'loc-2', locationName: 'Pine Camp', authorId: 'member', highlighted: true, updatedAt: 400 },
+    ],
+  };
+  const samTasks = getMyResponsibilities(trip, 'member');
+  assert.deepEqual(ids(samTasks.meals), ['m1']);
+  assert.equal(samTasks.plannedLocations, 1);
+
+  const feed = buildCrewActivityFeed(trip, 'leader', 5);
+  assert.equal(feed.length, 5);
+  assert.match(feed[0].text, /Sam shared "Osprey dive" at Pine Camp ⭐/);
+  assert.match(feed[1].text, /Sam commented on "Granite Rapid"/);
+  assert.match(feed[2].text, /Jordan signed up to cook Dutch Oven Lasagna/);
 });

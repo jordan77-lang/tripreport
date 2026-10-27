@@ -56,6 +56,7 @@ export function QuickCapture({ trip, initialType = null, locationId = null, even
   }
 
   return <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, fontFamily: F }}><div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 20 }}>
+    <div className="screen-content-inner">
     <button type="button" onClick={onCancel} style={{ minHeight: 44, padding: '8px 12px', border: '1px solid ' + T.border,
       borderRadius: 10, background: T.card, color: T.text, fontSize: ts(14), cursor: 'pointer' }}>← Back</button>
     <h1 style={{ fontSize: ts(24), marginTop: 20, color: T.text }}>{!addingEvent ? 'Add' : location ? `Add event to ${location.name}` : 'Choose a location first'}</h1>
@@ -88,10 +89,11 @@ export function QuickCapture({ trip, initialType = null, locationId = null, even
           onClose={() => setType(null)} onSaved={() => onSaved(`Expense saved at ${location.name} on this phone.`, { locationId: location.id })} />}
       </>}
     </> : <p style={{ color: T.textSub }}>Choose an open trip you belong to before adding a moment.</p>}
+    </div>
   </div><BottomNav active="capture" trip={trip} onNav={onNav} /></div>;
 }
 
-function blankLocationDraft() {
+function blankLocationDraft(tripStatus = 'active') {
   const kind = defaultLocationKind();
   const now = toDatetimeLocal(new Date());
   return {
@@ -99,6 +101,7 @@ function blankLocationDraft() {
     type: kind.id,
     icon: kind.icon,
     notes: '',
+    visitStatus: tripStatus === 'planning' ? 'planned' : 'visited',
     timeMode: 'current',
     observedAt: now,
     observedStartAt: now,
@@ -109,7 +112,7 @@ function blankLocationDraft() {
 }
 
 function LogLocation({ trip, onCancel, onSaved }) {
-  const [draft, setDraft] = useState(blankLocationDraft);
+  const [draft, setDraft] = useState(() => blankLocationDraft(trip?.status));
   const [source, setSource] = useState('map');
   const [pin, setPin] = useState(null);
   const [pos, setPos] = useState(null);
@@ -185,6 +188,7 @@ function LogLocation({ trip, onCancel, onSaved }) {
       type: draft.type,
       icon: draft.icon,
       notes: draft.notes,
+      visitStatus: draft.visitStatus,
       timeMode: draft.timeMode,
       observedAt: draft.timeMode === 'current'
         ? new Date().toISOString()
@@ -260,6 +264,10 @@ function LogLocation({ trip, onCancel, onSaved }) {
           mapApiRef.current?.flyTo({ lng, lat, bbox, zoom: dropPin ? 15 : undefined });
         }}
         error={error}
+        existingLocations={trip?.locations || []}
+        onUseExistingLocation={(existing) => {
+          onSaved(`Using saved location ${existing.name}.`, { locationId: existing.id });
+        }}
         onCancel={onCancel}
         onSave={save}
         saveLabel="Save location"

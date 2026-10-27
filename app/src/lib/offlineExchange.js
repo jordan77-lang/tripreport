@@ -29,12 +29,16 @@ async function decode(part) {
   if(blob.size!==part.size || await sha256(blob)!==part.sha256) throw new Error('Attachment checksum failed. Ask for a fresh file.');
   return blob;
 }
-export async function prepareTripUpdateFile(trip,sourceUserId,{includeMedia=true}={}) {
+export async function prepareTripUpdateFile(trip,sourceUserId,{includeMedia=true,onlyUnsyncedMedia=false}={}) {
   const update=createTripUpdate(trip,sourceUserId);
   let bytes=JSON.stringify(update).length;
   for(const ref of collectMediaRefsFromTrip(trip)) {
     const record=includeMedia ? await getMediaRecord(ref.id) : null;
     if(!record?.fullBlob) {update.missingMedia.push(ref.id);continue;}
+    if(onlyUnsyncedMedia && record.syncState==='synced') {
+      update.missingMedia.push(ref.id);
+      continue;
+    }
     bytes+=(record.fullBlob.size+(record.thumbBlob?.size||0))*1.4;
     if(bytes>LIMIT) throw new Error('This package exceeds 100 MB. Export changes only, or sync attachments online.');
     update.media.push({id:record.id,full:await encode(record.fullBlob),thumb:record.thumbBlob?await encode(record.thumbBlob):null});
@@ -90,15 +94,35 @@ export async function readTripUpdateFile(file) {
 export function mergeRemotePayloadIntoTrip(local,payload) {
   const remote={id:local.id,...payload.trip,...Object.fromEntries(COLLECTIONS.map(c=>[c,payload[c]||[]])),
     ...(payload._sync?{_sync:payload._sync}:{})};
-  const merged=mergeSync(local,remote), summary={added:0,updated:0,ignored:0,localOnlyCount:0,byCollection:{}};
+  const localSynced=ensureSync(local), remoteSynced=ensureSync(remote);
+  const remoteIds=new Set(remoteSynced._sync.ops.map(o=>o.id));
+  const localOnlyCount=localSynced._sync.ops.filter(o=>!remoteIds.has(o.id)).length;
+  const merged=mergeSync(localSynced,remoteSynced), summary={added:0,updated:0,ignored:0,localOnlyCount,byCollection:{},socialDigest:[]};
+  const who=(uid)=>{
+    if(!uid)return 'A crew member';
+    if(merged.memberProfiles?.[uid])return merged.memberProfiles[uid];
+    const collab=(merged.collaborators||[]).find(c=>c.userId===uid||c.id===uid);
+    return collab?.handle||collab?.name||'A crew member';
+  };
   for(const c of COLLECTIONS) {
     const old=new Map((local[c]||[]).map(r=>[r.id,r]));
-    const added=merged[c].filter(r=>!old.has(r.id)).length;
-    const updated=merged[c].filter(r=>old.has(r.id)&&JSON.stringify(old.get(r.id))!==JSON.stringify(r)).length;
-    summary.byCollection[c]={added,updated};summary.added+=added;summary.updated+=updated;
+    const addedItems=merged[c].filter(r=>!old.has(r.id));
+    const updatedItems=merged[c].filter(r=>old.has(r.id)&&JSON.stringify(old.get(r.id))!==JSON.stringify(r));
+    summary.byCollection[c]={added:addedItems.length,updated:updatedItems.length};
+    summary.added+=addedItems.length;summary.updated+=updatedItems.length;
+    if(c==='locations') {
+      for(const loc of addedItems) summary.socialDigest.push(`${who(loc.createdBy)} added location "${loc.name||'Location'}"`);
+    } else if(c==='events') {
+      for(const ev of addedItems) summary.socialDigest.push(`${who(ev.createdBy)} started event "${ev.name||ev.type||'Event'}"${ev.locationName?` at ${ev.locationName}`:''}`);
+    } else if(c==='entries') {
+      for(const en of addedItems) summary.socialDigest.push(`${who(en.authorId)} shared "${en.title||en.type||'entry'}"${en.locationName?` at ${en.locationName}`:''}`);
+      for(const en of updatedItems) {
+        if(en.highlighted && !old.get(en.id)?.highlighted) summary.socialDigest.push(`⭐ "${en.title||en.type||'Entry'}" was marked as a trip highlight`);
+      }
+    }
   }
   summary.conflicts=merged._sync.conflicts.length;
-  summary.newChanges=merged._sync.ops.length-ensureSync(local)._sync.ops.length;
+  summary.newChanges=merged._sync.ops.length-localSynced._sync.ops.length;
   return {trip:merged,summary};
 }
 export function mergeTripUpdate(local,update) {

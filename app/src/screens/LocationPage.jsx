@@ -4,7 +4,7 @@ import { SyncChip } from '../components/SyncChip';
 import { TripMap } from '../components/TripMap';
 import { Ic } from '../components/Ic';
 import { T, F } from '../tokens';
-import { getCurrentUserId, isTripMember, isTripOpen, isTripOwner, removeLocation, updateEntry, updateLocation } from '../lib/storage';
+import { addLocationComment, getCurrentUserId, isTripMember, isTripOpen, isTripOwner, markLocationVisited, removeLocation, toggleLocationVote, updateEntry, updateLocation } from '../lib/storage';
 import { getSignedInUserId } from '../lib/authUser';
 import { savePlanningToCloud } from '../lib/planningSave';
 import { createPhotoMediaFromFile } from '../lib/media';
@@ -40,6 +40,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
   const [editingEntry, setEditingEntry] = useState(null);
   const [entryError, setEntryError] = useState(null);
   const [entryNotice, setEntryNotice] = useState(null);
+  const [commentText, setCommentText] = useState('');
   // Chronological order for prev/next navigation
   const events = useMemo(() => {
     const list = (trip?.events || []).filter((e) => e.locationId === location?.id);
@@ -142,6 +143,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
           type: locationDraft.type,
           icon: locationDraft.icon,
           notes: locationDraft.notes,
+          visitStatus: locationDraft.visitStatus || location.visitStatus || 'visited',
           timeMode: locationDraft.timeMode,
           observedAt: locationDraft.timeMode === 'current'
             ? (keepSavedTime ? location.observedAt : new Date().toISOString())
@@ -198,7 +200,8 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
 
   return (
     <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: F, overflow: 'hidden' }}>
-      <div style={{ background: T.card, padding: '10px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+      <div style={{ background: T.card, padding: '10px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, boxShadow: '0 2px 12px rgba(26, 25, 23, 0.03)' }}>
+        <div className="screen-header-inner">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div onClick={onBack} style={{ width: 36, height: 36, borderRadius: 18, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color={T.text} sw={2} />
@@ -208,8 +211,48 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
               <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -0.4, display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                 <span>{location.icon || '📍'}</span>
                 <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{location.name}</span>
+                {location.visitStatus === 'planned' && (
+                  <span style={{ fontSize: 10, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', border: '1px solid #E8C9A0', borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>
+                    Planned
+                  </span>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                {canEditLocation && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleLocationVote(trip.id, location.id, currentUserId);
+                      onTripUpdate?.();
+                    }}
+                    style={headerBtn((location.votes || []).includes(currentUserId))}
+                  >
+                    🔥{(location.votes || []).length > 0 ? ` ${location.votes.length}` : ''}
+                  </button>
+                )}
+                {canEditLocation && location.visitStatus === 'planned' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      markLocationVisited(trip.id, location.id);
+                      onTripUpdate?.();
+                    }}
+                    style={{
+                      minHeight: 36,
+                      padding: '0 10px',
+                      borderRadius: 9,
+                      border: '1px solid #A4CFAD',
+                      background: '#E5F4E8',
+                      color: '#2E6D3A',
+                      fontWeight: 800,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      fontFamily: F,
+                    }}
+                  >
+                    ✓ Check in
+                  </button>
+                )}
                 <button type="button" onClick={shareLocation} style={headerBtn(false)}>Share</button>
                 {canEditLocation && (
                   <button
@@ -238,9 +281,11 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
           </div>
           <SyncChip state={location.syncState || 'pending'} compact />
         </div>
+        </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+        <div className="screen-content-inner">
         {(entryNotice || notice) && <p role="status" style={{ padding: 12, marginBottom: 14, borderRadius: 12, background: T.accentLight, color: T.accent, fontSize: 14 }}>{entryNotice || notice}</p>}
         {editingLocation && (
           <LocationSaveForm
@@ -314,15 +359,41 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
               .filter((entry) => entry.eventId === ev.id)
               .sort((a, b) => new Date(a.observedAt || a.createdAt || 0) - new Date(b.observedAt || b.createdAt || 0));
             const who = resolveUserDisplayName(trip, ev.createdBy, currentUserId) || 'Crew member';
+            const contributors = [...new Set([ev.createdBy, ...moments.map((m) => m.authorId)].filter(Boolean))];
             return (
               <div key={ev.id} style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 13px', marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                   <button type="button" onClick={() => openViewEvent(ev.id)}
                     style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: F }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{ev.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{ev.name}</span>
+                      {ev.highlighted && <span title="Trip highlight" style={{ fontSize: 13 }}>⭐</span>}
+                    </div>
                     <div style={{ fontSize: 12, color: EVENT_COLORS[ev.type] || T.accent, fontWeight: 700, marginTop: 2 }}>{typeLabel} · {who}</div>
                     <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>{formatEventWhen(ev)}</div>
                   </button>
+                  {contributors.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }} title={contributors.map((uid) => resolveUserDisplayName(trip, uid, currentUserId)).join(', ')}>
+                      {contributors.slice(0, 4).map((uid, cIdx) => {
+                        const name = resolveUserDisplayName(trip, uid, currentUserId);
+                        return (
+                          <span
+                            key={uid}
+                            style={{
+                              width: 22, height: 22, borderRadius: 99,
+                              background: '#E4EFF8', color: '#2A5C8E',
+                              border: `1.5px solid ${T.card}`,
+                              marginLeft: cIdx === 0 ? 0 : -6,
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 10, fontWeight: 800,
+                            }}
+                          >
+                            {(name || '?').charAt(0).toUpperCase()}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                   {canEditLocation && (
                     <button
                       type="button"
@@ -335,7 +406,10 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                 </div>
                 {moments.map((entry) => (
                   <div key={entry.id} style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{entry.title || entry.type}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{entry.title || entry.type}</span>
+                      {entry.highlighted && <span title="Trip highlight" style={{ fontSize: 12 }}>⭐</span>}
+                    </div>
                     <div style={{ fontSize: 12, color: '#2A5C8E', marginTop: 2 }}>
                       {resolveUserDisplayName(trip, entry.authorId, currentUserId) || 'Crew member'}
                     </div>
@@ -362,6 +436,63 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
           )}
         </div>
 
+        <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 13px', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+              Crew chatter &amp; scouting notes ({(location.comments || []).length})
+            </span>
+          </div>
+          {(location.comments || []).length === 0 ? (
+            <div style={{ fontSize: 12, color: T.textFaint, marginBottom: canEditLocation ? 8 : 0 }}>
+              Drop a scouting note, campsite tip, or question for the crew.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: canEditLocation ? 10 : 0 }}>
+              {(location.comments || []).map((c) => (
+                <div key={c.id || c.createdAt} style={{ background: T.bg, borderRadius: 9, padding: '7px 10px', border: `1px solid ${T.border}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#2A5C8E' }}>
+                    {c.authorName || resolveUserDisplayName(trip, c.authorId, currentUserId) || 'Crew'}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: T.text, marginTop: 2, lineHeight: 1.4 }}>{c.text}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {canEditLocation && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && commentText.trim()) {
+                    addLocationComment(trip.id, location.id, commentText);
+                    setCommentText('');
+                    onTripUpdate?.();
+                  }
+                }}
+                placeholder="Add a note or question for the crew…"
+                style={{
+                  flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 9,
+                  padding: '8px 10px', fontSize: 12.5, fontFamily: F, background: T.bg, outline: 'none',
+                }}
+              />
+              <button
+                type="button"
+                disabled={!commentText.trim()}
+                onClick={() => {
+                  if (!commentText.trim()) return;
+                  addLocationComment(trip.id, location.id, commentText);
+                  setCommentText('');
+                  onTripUpdate?.();
+                }}
+                style={headerBtn(Boolean(commentText.trim()))}
+              >
+                Post
+              </button>
+            </div>
+          )}
+        </div>
+
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 12 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>Map</div>
           <div style={{ borderRadius: 12, overflow: 'hidden', height: 180 }}>
@@ -382,6 +513,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
           </div>
         </div>
 
+        </div>
       </div>
 
       <BottomNav active="trip" onNav={onNav} onFab={onFab} trip={trip} />
@@ -395,6 +527,7 @@ function locationDraftFrom(location) {
     type: location?.type || 'interest',
     icon: location?.icon || '📍',
     notes: location?.notes || '',
+    visitStatus: location?.visitStatus || 'visited',
     timeMode: location?.timeMode || 'current',
     observedAt: location?.observedAt ? toDatetimeLocal(new Date(location.observedAt)) : toDatetimeLocal(new Date()),
     observedStartAt: location?.observedStartAt ? toDatetimeLocal(new Date(location.observedStartAt)) : toDatetimeLocal(new Date()),

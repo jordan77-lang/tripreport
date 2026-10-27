@@ -6,6 +6,7 @@ import { EmojiPicker } from './EmojiPicker';
 import { MediaThumb } from './MediaThumb';
 import { PlaceSearch } from './PlaceSearch';
 import { parseCoordinates } from '../lib/coords';
+import { findMatchingLocation } from '../lib/tripTimeline';
 
 const PIN_SOURCES = [
   { id: 'map', label: 'Map pin' },
@@ -38,9 +39,28 @@ export function LocationSaveForm({
   onSearchPick = null,
   nowHint = null,
   pinSourceIds = null,
+  existingLocations = null,
+  onUseExistingLocation = null,
 }) {
   const [showMore, setShowMore] = useState(false);
   const set = (patch) => onDraftChange((d) => ({ ...d, ...patch }));
+
+  const resolvedCoords = locationSource === 'current'
+    ? currentPos
+    : locationSource === 'custom'
+      ? (() => {
+        const lat = parseFloat(draft?.customLat);
+        const lng = parseFloat(draft?.customLng);
+        return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+      })()
+      : locationPin;
+  const nearbyMatch = existingLocations?.length
+    ? findMatchingLocation(existingLocations, {
+      lat: resolvedCoords?.lat,
+      lng: resolvedCoords?.lng,
+      name: draft?.name,
+    })
+    : null;
 
   /**
    * Pasting "45.56750, -115.19301" into the latitude field fills both, rather
@@ -145,6 +165,24 @@ export function LocationSaveForm({
 
       {/* When: always visible. A location logged after the trip needs a real date,
           and hiding that behind a disclosure made "Now" a silent wrong default. */}
+      <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Status</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => set({ visitStatus: 'visited' })}
+          style={chipStyle((draft.visitStatus || 'visited') === 'visited')}
+        >
+          ✓ Visited
+        </button>
+        <button
+          type="button"
+          onClick={() => set({ visitStatus: 'planned' })}
+          style={chipStyle(draft.visitStatus === 'planned')}
+        >
+          🧭 Planned / Wish-list
+        </button>
+      </div>
+
       <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>When</div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
         {TIME_MODES.map((opt) => (
@@ -229,6 +267,25 @@ export function LocationSaveForm({
             </div>
           )}
         </>
+      )}
+
+      {nearbyMatch?.location && onUseExistingLocation && (
+        <div style={{ background: '#FBF0E4', border: '1px solid #E8C9A0', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+          <div style={{ fontSize: ts(12.5), fontWeight: 800, color: '#7A4A14', marginBottom: 4 }}>
+            Saved location nearby: {nearbyMatch.location.name}
+            {nearbyMatch.distanceMeters != null ? ` (${nearbyMatch.distanceMeters} m away)` : ''}
+          </div>
+          <div style={{ fontSize: ts(12), color: '#7A4A14', marginBottom: 8, lineHeight: 1.4 }}>
+            Add your events directly to {nearbyMatch.location.name} instead of creating a duplicate location pin.
+          </div>
+          <button
+            type="button"
+            onClick={() => onUseExistingLocation(nearbyMatch.location)}
+            style={{ border: 'none', borderRadius: 8, background: '#7A4A14', color: 'white', fontSize: ts(12), fontWeight: 800, padding: '7px 12px', cursor: 'pointer', fontFamily: F }}
+          >
+            Use {nearbyMatch.location.name}
+          </button>
+        </div>
       )}
 
       {error && <div style={{ fontSize: ts(12), color: T.amber, marginBottom: 8 }}>{error}</div>}

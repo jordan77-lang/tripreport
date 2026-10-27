@@ -133,12 +133,31 @@ export function distanceMeters(lat1, lng1, lat2, lng2) {
   return Math.hypot(dx, dy);
 }
 
+function hasCoords(item) {
+  return item != null
+    && item.lat !== null && item.lat !== '' && item.lng !== null && item.lng !== ''
+    && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng));
+}
+
+function normName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function sameName(a, b) {
+  const na = normName(a);
+  const nb = normName(b);
+  return Boolean(na && nb && na === nb);
+}
+
 /** Closest saved place within maxMeters, or null. */
 export function nearestLocation(locations, lat, lng, maxMeters = 200) {
+  if (lat === null || lat === '' || lng === null || lng === '' || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+    return null;
+  }
   let best = null;
   let bestDistance = maxMeters;
   for (const loc of locations || []) {
-    if (!Number.isFinite(Number(loc?.lat)) || !Number.isFinite(Number(loc?.lng))) continue;
+    if (!hasCoords(loc)) continue;
     const distance = distanceMeters(lat, lng, loc.lat, loc.lng);
     if (distance <= bestDistance) {
       best = loc;
@@ -148,17 +167,77 @@ export function nearestLocation(locations, lat, lng, maxMeters = 200) {
   return best;
 }
 
-export function duplicateLocations(trip) {
-  const pairs=[],locs=trip.locations||[];
-  for(let i=0;i<locs.length;i++)for(let j=i+1;j<locs.length;j++) {
-    const a=locs[i],b=locs[j];
-    if(a.name?.trim().toLowerCase()===b.name?.trim().toLowerCase() &&
-       Number.isFinite(a.lat)&&Number.isFinite(b.lat)&&Number.isFinite(a.lng)&&Number.isFinite(b.lng)&&
-       Math.hypot(a.lat-b.lat,(a.lng-b.lng)*Math.cos(a.lat*Math.PI/180))<0.001)
-      pairs.push([a,b]);
+/** Find an existing location within maxMeters of (lat, lng) or with the exact same name. */
+export function findMatchingLocation(locations, { lat, lng, name } = {}, maxMeters = 200) {
+  const byCoords = nearestLocation(locations, lat, lng, maxMeters);
+  if (byCoords) {
+    return {
+      location: byCoords,
+      distanceMeters: Math.round(distanceMeters(lat, lng, byCoords.lat, byCoords.lng)),
+      reason: 'distance',
+    };
   }
-  return pairs.slice(0,20);
+  if (normName(name)) {
+    const byName = (locations || []).find((loc) => sameName(loc?.name, name));
+    if (byName) {
+      const dist = hasCoords(byName) && hasCoords({ lat, lng })
+        ? Math.round(distanceMeters(lat, lng, byName.lat, byName.lng))
+        : null;
+      return { location: byName, distanceMeters: dist, reason: 'name' };
+    }
+  }
+  return null;
 }
+
+const dismissedPairsMemory = new Set();
+
+function pairKey(tripId, aId, bId) {
+  const [x, y] = [String(aId || ''), String(bId || '')].sort();
+  return `${tripId || 'trip'}:${x}:${y}`;
+}
+
+export function dismissDuplicateLocationPair(tripId, aId, bId) {
+  const key = pairKey(tripId, aId, bId);
+  dismissedPairsMemory.add(key);
+  try {
+    const raw = JSON.parse(localStorage.getItem('tr_dismissed_location_pairs') || '[]');
+    const next = Array.isArray(raw) ? [...new Set([...raw, key])] : [key];
+    localStorage.setItem('tr_dismissed_location_pairs', JSON.stringify(next));
+  } catch {
+    // Session memory fallback is already updated.
+  }
+}
+
+function isDismissedPair(tripId, aId, bId) {
+  const key = pairKey(tripId, aId, bId);
+  if (dismissedPairsMemory.has(key)) return true;
+  try {
+    const raw = JSON.parse(localStorage.getItem('tr_dismissed_location_pairs') || '[]');
+    return Array.isArray(raw) && raw.includes(key);
+  } catch {
+    return false;
+  }
+}
+
+export function duplicateLocations(trip, maxMeters = 200) {
+  const pairs = [];
+  const locs = trip?.locations || [];
+  for (let i = 0; i < locs.length; i++) {
+    for (let j = i + 1; j < locs.length; j++) {
+      const a = locs[i];
+      const b = locs[j];
+      if (!a || !b || isDismissedPair(trip?.id, a.id, b.id)) continue;
+      const bothCoords = hasCoords(a) && hasCoords(b);
+      const dist = bothCoords ? distanceMeters(a.lat, a.lng, b.lat, b.lng) : null;
+      const namesMatch = sameName(a.name, b.name);
+      if ((dist != null && dist <= maxMeters) || (namesMatch && (dist == null || dist <= 1000))) {
+        pairs.push([a, b]);
+      }
+    }
+  }
+  return pairs.slice(0, 20);
+}
+
 export function combineLocations(trip,keepId,removeId) {
   const keep=trip.locations.find(l=>l.id===keepId),other=trip.locations.find(l=>l.id===removeId);
   if(!keep||!other)return trip;
@@ -174,6 +253,86 @@ export function combineLocations(trip,keepId,removeId) {
 /** Incoming places within this distance offer add-or-merge. Farther stops stay separate. */
 export const IMPORT_NEAR_METERS = 200;
 
+function resolveItemCoords(kind, item, trip) {
+  if (hasCoords(item)) return { lat: Number(item.lat), lng: Number(item.lng) };
+  if (kind === 'events') {
+    const child = (trip?.entries || []).find((entry) => entry.eventId === item.id && hasCoords(entry));
+    if (child) return { lat: Number(child.lat), lng: Number(child.lng) };
+  }
+  if (item?.locationId) {
+    const loc = (trip?.locations || []).find((l) => l.id === item.locationId);
+    if (hasCoords(loc)) return { lat: Number(loc.lat), lng: Number(loc.lng) };
+  }
+  return null;
+}
+
+/**
+ * Find events or unlinked entries in a trip whose coordinates are within maxMeters
+ * of a saved location (e.g. after online cloud sync or when an event along a hike
+ * happened near a saved stop).
+ */
+export function nearbyEventsForLocations(trip, maxMeters = IMPORT_NEAR_METERS) {
+  const locations = (trip?.locations || []).filter(hasCoords);
+  if (!locations.length) return [];
+  const locById = new Map((trip?.locations || []).map((l) => [l.id, l]));
+  const suggestions = [];
+  const coveredEventIds = new Set();
+
+  for (const event of trip?.events || []) {
+    if (isDismissedPair(trip?.id, 'evt:' + event.id, event.locationId || 'none')) continue;
+    const coords = hasCoords(event)
+      ? { lat: Number(event.lat), lng: Number(event.lng) }
+      : (() => {
+        const child = (trip?.entries || []).find((e) => e.eventId === event.id && hasCoords(e));
+        return child ? { lat: Number(child.lat), lng: Number(child.lng) } : null;
+      })();
+    if (!coords) continue;
+    const nearest = nearestLocation(locations, coords.lat, coords.lng, maxMeters);
+    if (!nearest || nearest.id === event.locationId) continue;
+    if ( isDismissedPair(trip?.id, 'evt:' + event.id, nearest.id) ) continue;
+    const currentLoc = event.locationId ? locById.get(event.locationId) : null;
+    if (currentLoc && hasCoords(currentLoc) && distanceMeters(currentLoc.lat, currentLoc.lng, nearest.lat, nearest.lng) <= maxMeters) {
+      // Handled by duplicate/nearby location banner.
+      continue;
+    }
+    coveredEventIds.add(event.id);
+    suggestions.push({
+      kind: 'events',
+      id: event.id,
+      name: event.name || event.title || event.type || 'Event',
+      currentLocationId: event.locationId || null,
+      currentLocationName: currentLoc?.name || event.locationName || null,
+      targetId: nearest.id,
+      targetName: nearest.name,
+      distanceMeters: Math.round(distanceMeters(coords.lat, coords.lng, nearest.lat, nearest.lng)),
+    });
+  }
+
+  for (const entry of trip?.entries || []) {
+    if (entry.eventId && coveredEventIds.has(entry.eventId)) continue;
+    if (!hasCoords(entry)) continue;
+    const nearest = nearestLocation(locations, entry.lat, entry.lng, maxMeters);
+    if (!nearest || nearest.id === entry.locationId) continue;
+    if (isDismissedPair(trip?.id, 'ent:' + entry.id, nearest.id)) continue;
+    const currentLoc = entry.locationId ? locById.get(entry.locationId) : null;
+    if (currentLoc && hasCoords(currentLoc) && distanceMeters(currentLoc.lat, currentLoc.lng, nearest.lat, nearest.lng) <= maxMeters) {
+      continue;
+    }
+    suggestions.push({
+      kind: 'entries',
+      id: entry.id,
+      name: entry.title || entry.name || entry.type || 'Entry',
+      currentLocationId: entry.locationId || null,
+      currentLocationName: currentLoc?.name || entry.locationName || null,
+      targetId: nearest.id,
+      targetName: nearest.name,
+      distanceMeters: Math.round(distanceMeters(entry.lat, entry.lng, nearest.lat, nearest.lng)),
+    });
+  }
+
+  return suggestions.slice(0, 20);
+}
+
 /**
  * Offline sync defaults a new place, event, or entry to the nearest saved place.
  * The person importing can add onto that place, merge the two places, or keep the new one.
@@ -181,36 +340,55 @@ export const IMPORT_NEAR_METERS = 200;
 export function suggestImportPlacements(local, merged, maxMeters = IMPORT_NEAR_METERS) {
   const localPlaces = local?.locations || [];
   const localIds = new Set(localPlaces.map((loc) => loc.id));
-  const places = (merged?.locations || []).filter((loc) => !localIds.has(loc.id)).map((loc) => {
-    const nearest = nearestLocation(localPlaces, loc.lat, loc.lng, maxMeters);
-    return {
-      incomingId: loc.id,
-      name: loc.name || 'Untitled place',
-      nearestId: nearest?.id || null,
-      nearestName: nearest?.name || null,
-      action: nearest ? 'add' : 'keep',
-      targetId: nearest?.id || null,
-    };
-  });
-  const incomingIds = new Set(places.map((place) => place.incomingId));
   const seen = {
     events: new Set((local?.events || []).map((item) => item.id)),
     entries: new Set((local?.entries || []).map((item) => item.id)),
     expenses: new Set((local?.expenses || []).map((item) => item.id)),
   };
+  const places = (merged?.locations || []).filter((loc) => !localIds.has(loc.id)).map((loc) => {
+    const match = findMatchingLocation(localPlaces, loc, maxMeters);
+    const nearest = match?.location || null;
+    const placeEvents = (merged?.events || [])
+      .filter((e) => !seen.events.has(e.id) && e.locationId === loc.id)
+      .map((e) => ({ id: e.id, name: e.name || e.title || e.type || 'Event' }));
+    return {
+      incomingId: loc.id,
+      name: loc.name || 'Untitled place',
+      nearestId: nearest?.id || null,
+      nearestName: nearest?.name || null,
+      distanceMeters: match?.distanceMeters ?? null,
+      events: placeEvents,
+      action: nearest ? 'add' : 'keep',
+      targetId: nearest?.id || null,
+    };
+  });
+  const matchedIncomingPlaceTarget = new Map(
+    places.filter((place) => place.nearestId).map((place) => [place.incomingId, place.nearestId]),
+  );
   const items = [];
+  const matchedEventIds = new Set();
   for (const kind of ['events', 'entries', 'expenses']) {
     for (const item of merged?.[kind] || []) {
       if (seen[kind].has(item.id)) continue;
-      if (item.locationId && incomingIds.has(item.locationId)) continue;
-      const nearest = nearestLocation(localPlaces, item.lat, item.lng, maxMeters);
+      if (kind === 'entries' && item.eventId && matchedEventIds.has(item.eventId)) continue;
+      const coords = resolveItemCoords(kind, item, merged);
+      if (!coords) continue;
+      const nearest = nearestLocation(localPlaces, coords.lat, coords.lng, maxMeters);
       if (!nearest || nearest.id === item.locationId) continue;
+      // Skip only if the item's incoming place is already being added/merged into this same saved place.
+      if (item.locationId && matchedIncomingPlaceTarget.get(item.locationId) === nearest.id) continue;
+      if (kind === 'events') matchedEventIds.add(item.id);
       items.push({
         kind,
         id: item.id,
-        name: item.name || item.title || item.type || 'Item',
-        targetId: nearest.id,
+        name: item.name || item.title || item.description || item.type || 'Item',
+        currentLocationId: item.locationId || null,
+        currentLocationName: item.locationName || null,
+        nearestId: nearest.id,
         nearestName: nearest.name,
+        distanceMeters: Math.round(distanceMeters(coords.lat, coords.lng, nearest.lat, nearest.lng)),
+        action: 'add',
+        targetId: nearest.id,
       });
     }
   }
@@ -240,7 +418,7 @@ export function applyImportPlacement(trip, placement) {
     };
   }
   for (const item of placement.items || []) {
-    if (!item.targetId || !Array.isArray(next[item.kind])) continue;
+    if (item.action === 'keep' || !item.targetId || !Array.isArray(next[item.kind])) continue;
     const targetName = placeName(item.targetId);
     next = {
       ...next,

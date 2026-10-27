@@ -4,14 +4,28 @@ import { ts } from '../lib/textScale';
 import {
   addTripCollaborator,
   getCurrentUserId,
+  getSharedTripCountsByPerson,
   getTrip,
   removeTripCollaborator,
   saveTrip,
+  updateCollaboratorCraft,
 } from '../lib/storage';
 import { dedupeCollaborators, isJoinedMember } from '../lib/tripParticipants';
 import { buildTripParticipants } from '../lib/expenses';
 import { savePlanningToCloud } from '../lib/planningSave';
 import { TripInvitePanel } from './TripInvitePanel';
+
+const CRAFT_OPTIONS = [
+  '',
+  'Oar Rig',
+  'Kayak',
+  'Packraft',
+  'Canoe',
+  'Hiker',
+  'Camp Chef',
+  'Photographer',
+  'Navigator',
+];
 
 export function ParticipantsTab({
   trip,
@@ -30,6 +44,7 @@ export function ParticipantsTab({
     () => buildTripParticipants(trip, currentUserId, { withOwnerMeta: true }),
     [trip, currentUserId],
   );
+  const sharedCounts = useMemo(() => getSharedTripCountsByPerson(), [trip]);
 
   useEffect(() => {
     if (newTripInviteCode) {
@@ -118,15 +133,52 @@ export function ParticipantsTab({
           const isOwner = p.isOwner;
           const joined = !isOwner && p.joinedViaInvite;
           const displayName = p.label.replace(/\s*\(owner\)\s*$/i, '');
+          const nameKey = displayName.trim().toLowerCase();
+          const tripCount = Math.max(sharedCounts.byId[p.id] || 0, sharedCounts.byName[nameKey] || 0);
           return (
             <div key={p.id} style={rowStyle}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>{p.label}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>{p.label}</span>
+                  {p.craft && (
+                    <span style={{ fontSize: ts(10.5), fontWeight: 800, color: '#2A5C8E', background: '#E4EFF8', borderRadius: 8, padding: '1px 7px' }}>
+                      {p.craft}
+                    </span>
+                  )}
+                  {tripCount > 1 && (
+                    <span style={{ fontSize: ts(10.5), fontWeight: 700, color: '#2E6D3A', background: '#E5F4E8', borderRadius: 8, padding: '1px 7px' }}>
+                      {tripCount} trips together
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 2 }}>
                   {isOwner ? 'Owner' : joined ? 'Joined via invite' : 'Roster only — not in app yet'}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                <select
+                  aria-label={`Craft or role for ${displayName}`}
+                  value={p.craft || ''}
+                  onChange={(e) => {
+                    const nextCraft = e.target.value;
+                    void savePlanningToCloud(trip.id, () => {
+                      updateCollaboratorCraft(trip.id, p.id, nextCraft);
+                    }).then(() => onTripUpdate?.());
+                  }}
+                  style={{
+                    fontSize: ts(11),
+                    color: T.textSub,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 8,
+                    padding: '4px 6px',
+                    background: T.bg,
+                    fontFamily: F,
+                  }}
+                >
+                  {CRAFT_OPTIONS.map((opt) => (
+                    <option key={opt || 'none'} value={opt}>{opt || 'Role / craft…'}</option>
+                  ))}
+                </select>
                 {canInvite && !isOwner && !joined && (
                   <button
                     type="button"

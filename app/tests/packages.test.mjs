@@ -104,3 +104,20 @@ test('restoring a checkpoint records compensating edits and keeps imported histo
  const repeated=f.exchange.mergeTripUpdate(f.getTrip(),update);
  assert.equal(repeated.trip.entries.length,1);assert.equal(repeated.trip.entries[0].notes,'before');
 });
+test('selective unsynced media export omits already-synced attachments and reports localOnlyCount',async()=>{
+ const f=await fixture();
+ const baseTrip=materialize(ensureSync({id:'t',name:'River',locations:[],events:[],entries:[{id:'entry',notes:'before',photoFiles:[{id:'synced-photo',syncState:'synced'},{id:'pending-photo',syncState:'pending'}]}]}));
+ f.setTrip(baseTrip);
+ f.media.set('synced-photo',{id:'synced-photo',tripId:'t',syncState:'synced',fullBlob:new Blob(['synced-bytes'],{type:'image/jpeg'})});
+ f.media.set('pending-photo',{id:'pending-photo',tripId:'t',syncState:'pending',fullBlob:new Blob(['pending-bytes'],{type:'image/jpeg'})});
+ const prepared=await f.exchange.prepareTripUpdateFile(baseTrip,'author',{includeMedia:true,onlyUnsyncedMedia:true});
+ assert.equal(prepared.update.media.length,1);
+ assert.equal(prepared.update.media[0].id,'pending-photo');
+ assert.deepEqual([...prepared.update.missingMedia],['synced-photo']);
+ const localEdited=captureChanges({...structuredClone(baseTrip),name:'River Local'},baseTrip,{authorId:'local'});
+ const remoteEdited=captureChanges({...structuredClone(baseTrip),collaborators:[{id:'peer',userId:'peer',name:'Sam'}],entries:[...baseTrip.entries,{id:'remote-entry',title:'Otter sighting',authorId:'peer',locationName:'Pine Camp'}]},baseTrip,{authorId:'peer'});
+ const preview=f.exchange.mergeTripUpdate(localEdited,f.exchange.createTripUpdate(remoteEdited));
+ assert.ok(preview.summary.localOnlyCount>0);
+ assert.ok(preview.summary.newChanges>0);
+ assert.ok(preview.summary.socialDigest.some(line=>line.includes('Sam shared "Otter sighting" at Pine Camp')));
+});

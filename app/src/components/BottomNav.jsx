@@ -16,8 +16,9 @@ export function BottomNav({ active = 'home', onNav, trip }) {
   const canAdd = isTripOpen(trip) && isTripMember(trip, getCurrentUserId());
   return (
     <nav aria-label="Trip navigation" style={{ background: T.card, borderTop: '1px solid ' + T.border,
+      boxShadow: '0 -4px 20px rgba(26, 25, 23, 0.04)',
       flexShrink: 0, fontFamily: F, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-      <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 68 }}>
+      <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 68, maxWidth: 680, margin: '0 auto', padding: '0 8px' }}>
         {tabs.map(tab => {
           const selected = active === tab.id || (active === 'map' && tab.id === 'trip');
           const add = tab.id === 'capture';
@@ -26,13 +27,13 @@ export function BottomNav({ active = 'home', onNav, trip }) {
               aria-label={tab.label}
               disabled={add && !canAdd}
               aria-current={selected ? 'page' : undefined}
-              style={{ flex: hasOpenTrip && tab.id === 'plan' ? 2 : 1, minWidth: 0, minHeight: 60, border: 'none', borderRadius: 10,
+              style={{ flex: 1, minWidth: 0, minHeight: 60, border: 'none', borderRadius: 12,
                 opacity: add && !canAdd ? 0.45 : 1,
                 background: 'transparent', color: selected ? T.accent : T.textSub, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
                 fontFamily: F, fontSize: ts(12), fontWeight: selected ? 800 : 600 }}>
-              <span style={add ? { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 46, height: 38, borderRadius: 14, background: T.accent, boxShadow: '0 3px 10px #2C5F3E30' } : { display: 'flex', height: 38, alignItems: 'center' }}>
-                <Ic d={tab.d} d2={tab.d2} size={add ? 26 : 22} color={add ? 'white' : selected ? T.accent : T.textSub} sw={add || selected ? 2.2 : 1.6} />
+              <span style={add ? { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 38, borderRadius: 14, background: `linear-gradient(135deg, ${T.accent}, #1F472D)`, boxShadow: '0 4px 12px #2C5F3E38' } : { display: 'flex', height: 38, alignItems: 'center', justifyContent: 'center', padding: '0 12px', borderRadius: 12, background: selected ? T.accentLight : 'transparent' }}>
+                <Ic d={tab.d} d2={tab.d2} size={add ? 24 : 21} color={add ? 'white' : selected ? T.accent : T.textSub} sw={add || selected ? 2.2 : 1.7} />
               </span>
               <span style={{ lineHeight: 1.2 }}>{tab.label}</span>
             </button>
