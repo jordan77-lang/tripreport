@@ -8,7 +8,18 @@ globalThis.localStorage = {
   removeItem: (key) => store.delete(key),
 };
 
-const { rememberMeal, listSavedMeals, listSavedIngredients, savedMealByName, applySharedMeal } = await import('../src/lib/mealLibrary.js');
+const {
+  rememberMeal,
+  listSavedMeals,
+  listSavedIngredients,
+  savedMealByName,
+  applySharedMeal,
+  classifyIngredientCategory,
+  sortIngredients,
+  groupIngredientsByCategory,
+  updateSavedMeal,
+  removeSavedMeal,
+} = await import('../src/lib/mealLibrary.js');
 
 test('a saved meal keeps its ingredients for the next trip', () => {
   store.clear();
@@ -52,4 +63,39 @@ test('logging a meal by name does not wipe ingredients saved earlier', () => {
   const meal = savedMealByName('Chili', []);
   assert.equal(meal.slot, 'lunch');
   assert.deepEqual(meal.ingredients.map((item) => item.name), ['Beans']);
+});
+
+test('ingredients classify and sort by grocery aisle / cooler zone and alphabetically', () => {
+  assert.equal(classifyIngredientCategory('Yellow Onion'), 'produce');
+  assert.equal(classifyIngredientCategory('Sharp Cheddar Cheese'), 'cooler');
+  assert.equal(classifyIngredientCategory('Black Beans'), 'pantry');
+  assert.equal(classifyIngredientCategory('Cumin'), 'spices');
+
+  const raw = ['Cumin', 'Black Beans', 'Sharp Cheddar Cheese', 'Avocado'];
+  const byCat = sortIngredients(raw, 'category');
+  assert.deepEqual(byCat, ['Avocado', 'Sharp Cheddar Cheese', 'Black Beans', 'Cumin']);
+
+  const grouped = groupIngredientsByCategory(raw);
+  assert.deepEqual(grouped.map((g) => g.id), ['produce', 'cooler', 'pantry', 'spices']);
+});
+
+test('saved meals can be edited (renamed, slot changed, ingredients updated) and removed', () => {
+  store.clear();
+  rememberMeal({
+    name: 'Camp Tacos',
+    slot: 'dinner',
+    ingredients: [{ name: 'Tortillas' }, { name: 'Ground Beef' }],
+  });
+  updateSavedMeal('camp tacos', {
+    name: 'River Fajitas',
+    slot: 'dinner',
+    ingredients: [{ name: 'Tortillas' }, { name: 'Bell Pepper' }, { name: 'Steak' }],
+  });
+  assert.equal(savedMealByName('Camp Tacos', []), null);
+  const updated = savedMealByName('River Fajitas', []);
+  assert.equal(updated.name, 'River Fajitas');
+  assert.deepEqual(updated.ingredients.map((i) => i.name), ['Tortillas', 'Bell Pepper', 'Steak']);
+
+  removeSavedMeal('River Fajitas');
+  assert.equal(savedMealByName('River Fajitas', []), null);
 });

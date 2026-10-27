@@ -848,24 +848,38 @@ function SavedMealChoices({ name, onPick }) {
   const saved = useMemo(() => listSavedMeals(getTrips()), [sharedTick]);
   const match = savedMealByName(name, getTrips());
   if (!saved.length && !match?.ingredients?.length) return null;
+  const selectedKey = saved.find((m) => m.nameKey === name.trim().toLowerCase())?.nameKey || '';
   return (
     <div style={{ marginTop: 8 }}>
       {saved.length > 0 && (
         <>
-          <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>Saved meals</div>
-          <p style={{ fontSize: ts(12), color: T.textSub, lineHeight: 1.4, margin: '0 0 6px' }}>Anyone signed in can use these.</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {saved.map((meal) => {
-              const selected = meal.nameKey === name.trim().toLowerCase();
+          <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 4 }}>
+            Saved meals
+          </div>
+          <select
+            aria-label="Saved meals"
+            value={selectedKey}
+            onChange={(e) => {
+              const picked = saved.find((m) => m.nameKey === e.target.value);
+              if (picked) onPick(picked);
+            }}
+            style={{ ...inputStyle(T), marginTop: 0 }}
+          >
+            <option value="">Choose a saved meal template…</option>
+            {MEAL_SLOTS.map((slotObj) => {
+              const items = saved.filter((m) => (m.slot || 'dinner') === slotObj.id);
+              if (!items.length) return null;
               return (
-                <button key={meal.nameKey} type="button" onClick={() => onPick(meal)}
-                  style={{ minHeight: 32, padding: '4px 10px', borderRadius: 14, cursor: 'pointer', fontFamily: F, fontSize: ts(12), fontWeight: 700,
-                    border: selected ? 'none' : `1px solid ${T.border}`, background: selected ? '#B06030' : T.bg, color: selected ? 'white' : T.text }}>
-                  {meal.name}
-                </button>
+                <optgroup key={slotObj.id} label={slotObj.label}>
+                  {items.map((meal) => (
+                    <option key={meal.nameKey} value={meal.nameKey}>
+                      {meal.name}{meal.ingredients?.length ? ` (${meal.ingredients.length} ingredients)` : ''}
+                    </option>
+                  ))}
+                </optgroup>
               );
             })}
-          </div>
+          </select>
         </>
       )}
       {match?.ingredients?.length > 0 && (

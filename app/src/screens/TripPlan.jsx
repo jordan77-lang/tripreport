@@ -24,7 +24,20 @@ import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants, resolveUserDisplayName } from '../lib/expenses';
 import { supabaseConfigured } from '../lib/supabase';
 import { getSignedInUserId } from '../lib/authUser';
-import { listSavedIngredients, listSavedMeals, publishSavedMeal, refreshSharedMeals, rememberMeal } from '../lib/mealLibrary';
+import {
+  INGREDIENT_CATEGORIES,
+  classifyIngredientCategory,
+  getIngredientCategoryMeta,
+  groupIngredientsByCategory,
+  listSavedIngredients,
+  listSavedMeals,
+  publishSavedMeal,
+  refreshSharedMeals,
+  rememberMeal,
+  removeSavedMeal,
+  sortIngredients,
+  updateSavedMeal,
+} from '../lib/mealLibrary';
 
 const TABS = [
   { id: 'mine', label: 'My tasks' },
@@ -589,24 +602,87 @@ function ChoiceChip({ selected, onClick, children }) {
   );
 }
 
+function parseIngredientString(raw) {
+  const seen = new Set();
+  const out = [];
+  for (const part of String(raw || '').split(',')) {
+    const trimmed = part.trim();
+    const key = trimmed.toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 function MealsTab({ trip, participants, onTripUpdate }) {
   const [name, setName] = useState('');
   const [dayIndex, setDayIndex] = useState(1);
   const [slot, setSlot] = useState('dinner');
   const [assignedTo, setAssignedTo] = useState('');
+  const [coCookIds, setCoCookIds] = useState([]);
+  const [servings, setServings] = useState('');
+  const [notes, setNotes] = useState('');
   const [ingredients, setIngredients] = useState('');
+  const [ingredientDraft, setIngredientDraft] = useState('');
+  const [ingredientSortMode, setIngredientSortMode] = useState('category'); // 'category' | 'alpha'
+  const [ingredientCatFilter, setIngredientCatFilter] = useState('all');
+  const [ingredientSearch, setIngredientSearch] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [managingSaved, setManagingSaved] = useState(false);
+  const [editingSavedKey, setEditingSavedKey] = useState(null);
+  const [savedEditName, setSavedEditName] = useState('');
+  const [savedEditSlot, setSavedEditSlot] = useState('dinner');
+  const [savedEditIngredients, setSavedEditIngredients] = useState('');
   const [saving, setSaving] = useState(false);
   const [sharedTick, setSharedTick] = useState(0);
+
   const meals = trip.meals || [];
   const savedMeals = useMemo(() => {
     const others = getTrips().filter((item) => item.id !== trip.id);
     return listSavedMeals([...others, { meals }]);
   }, [meals, trip.id, sharedTick]);
+
+  const savedMealsBySlot = useMemo(() => {
+    const grouped = new Map(MEAL_SLOTS.map((s) => [s, []]));
+    for (const m of savedMeals) {
+      const s = MEAL_SLOTS.includes(m.slot) ? m.slot : 'dinner';
+      grouped.get(s).push(m);
+    }
+    return MEAL_SLOTS
+      .map((s) => ({ slot: s, label: SLOT_LABEL[s], items: grouped.get(s) || [] }))
+      .filter((g) => g.items.length > 0);
+  }, [savedMeals]);
+
   const savedIngredients = useMemo(() => {
     const others = getTrips().filter((item) => item.id !== trip.id);
     return listSavedIngredients([...others, { meals }]);
   }, [meals, trip.id, sharedTick]);
+
+  const currentIngredientNames = useMemo(
+    () => parseIngredientString(ingredients),
+    [ingredients],
+  );
+
+  const sortedCurrentIngredients = useMemo(
+    () => sortIngredients(currentIngredientNames, ingredientSortMode),
+    [currentIngredientNames, ingredientSortMode],
+  );
+
+  const filteredSavedIngredients = useMemo(() => {
+    const q = ingredientSearch.trim().toLowerCase();
+    const filtered = savedIngredients.filter((ing) => {
+      if (q && !ing.toLowerCase().includes(q)) return false;
+      if (ingredientCatFilter !== 'all' && classifyIngredientCategory(ing) !== ingredientCatFilter) return false;
+      return true;
+    });
+    return sortIngredients(filtered, ingredientSortMode);
+  }, [savedIngredients, ingredientSearch, ingredientCatFilter, ingredientSortMode]);
+
+  const groupedSavedIngredients = useMemo(
+    () => groupIngredientsByCategory(filteredSavedIngredients),
+    [filteredSavedIngredients],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -622,7 +698,11 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     setDayIndex(1);
     setSlot('dinner');
     setAssignedTo('');
+    setCoCookIds([]);
+    setServings('');
+    setNotes('');
     setIngredients('');
+    setIngredientDraft('');
   }
 
   function startEdit(meal) {
@@ -631,21 +711,87 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     setDayIndex(meal.dayIndex || 1);
     setSlot(meal.slot || 'dinner');
     setAssignedTo(meal.assignedTo || '');
+    setCoCookIds(Array.isArray(meal.coCooks) ? meal.coCooks : []);
+    setServings(meal.servings ? String(meal.servings) : '');
+    setNotes(meal.notes || '');
     setIngredients((meal.ingredients || []).map((i) => i.name).join(', '));
+    setIngredientDraft('');
+  }
+
+  function handleSelectSavedMeal(mealKey) {
+    if (!mealKey) return;
+    const picked = savedMeals.find((m) => m.nameKey === mealKey);
+    if (!picked) return;
+    setName(picked.name);
+    if (picked.slot) setSlot(picked.slot);
+    setIngredients((picked.ingredients || []).map((item) => item.name).join(', '));
+  }
+
+  function addDraftIngredients() {
+    const toAdd = parseIngredientString(ingredientDraft);
+    if (toAdd.length === 0) return;
+    let next = ingredients;
+    for (const item of toAdd) {
+      const exists = parseIngredientString(next).some((p) => p.toLowerCase() === item.toLowerCase());
+      if (!exists) {
+        next = next.trim() ? `${next}, ${item}` : item;
+      }
+    }
+    setIngredients(next);
+    setIngredientDraft('');
+  }
+
+  function startEditSavedRecipe(savedMeal) {
+    setEditingSavedKey(savedMeal.nameKey);
+    setSavedEditName(savedMeal.name || '');
+    setSavedEditSlot(savedMeal.slot || 'dinner');
+    setSavedEditIngredients((savedMeal.ingredients || []).map((i) => i.name).join(', '));
+  }
+
+  function saveEditedRecipe() {
+    if (!editingSavedKey || !savedEditName.trim()) return;
+    const ingList = parseIngredientString(savedEditIngredients).map((n) => ({ name: n, qty: '' }));
+    const updated = updateSavedMeal(editingSavedKey, {
+      name: savedEditName.trim(),
+      slot: savedEditSlot,
+      ingredients: ingList,
+    });
+    if (updated) {
+      void publishSavedMeal(updated).then(() => setSharedTick((t) => t + 1));
+    }
+    setEditingSavedKey(null);
+    setSharedTick((t) => t + 1);
+  }
+
+  function handleDeleteSavedRecipe(savedMeal) {
+    if (!confirmRemoveItem(savedMeal.name, 'saved meals library')) return;
+    removeSavedMeal(savedMeal.nameKey);
+    if (editingSavedKey === savedMeal.nameKey) setEditingSavedKey(null);
+    setSharedTick((t) => t + 1);
   }
 
   async function save() {
+    const pendingDraft = ingredientDraft.trim();
+    const combinedIngredients = pendingDraft
+      ? (ingredients.trim() ? `${ingredients}, ${pendingDraft}` : pendingDraft)
+      : ingredients;
     if (!name.trim() || saving) return;
     setSaving(true);
     try {
       const who = participants.find((p) => p.id === assignedTo);
-      const ingList = ingredients.split(',').map((s) => s.trim()).filter(Boolean).map((n) => ({ name: n, qty: '' }));
+      const cleanCoCooks = coCookIds.filter((id) => id && id !== assignedTo);
+      const ingList = sortIngredients(parseIngredientString(combinedIngredients), 'category')
+        .map((n) => ({ name: n, qty: '' }));
+      const parsedServings = Number(servings);
       const payload = {
         name: name.trim(),
         dayIndex: Number(dayIndex) || 1,
         slot,
         assignedTo: assignedTo || null,
         assignedToLabel: who?.label || null,
+        coCooks: cleanCoCooks,
+        servings: Number.isFinite(parsedServings) && parsedServings > 0 ? parsedServings : null,
+        notes: notes.trim(),
         ingredients: ingList,
       };
       await savePlanningToCloud(trip.id, () => {
@@ -674,68 +820,468 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   }
 
   const byDay = useMemo(() => {
-    const visible = editingId ? meals.filter((m) => m.id !== editingId) : meals;
-    const map = groupBy(visible, (m) => String(m.dayIndex || 1));
+    const map = groupBy(meals, (m) => String(m.dayIndex || 1));
     return Object.entries(map).sort((a, b) => Number(a[0]) - Number(b[0]));
-  }, [meals, editingId]);
+  }, [meals]);
+
+  const selectedSavedKey = savedMeals.find((m) => m.nameKey === name.trim().toLowerCase())?.nameKey || '';
 
   return (
     <div>
-      <Composer title={editingId ? 'Edit meal' : 'Add meal'} onCancel={editingId ? resetForm : null}>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Meal name (chili, oatmeal…)" style={inputStyle} />
-        {(savedMeals.length > 0 || savedIngredients.length > 0) && (
-          <p style={{ fontSize: 11, color: T.textSub, lineHeight: 1.4, margin: '8px 0 0' }}>
-            Saved for everyone who is signed in.
-          </p>
-        )}
+      <Composer title={editingId ? `Edit meal · ${name || 'Meal'}` : 'Add meal'} onCancel={editingId ? resetForm : null}>
         {savedMeals.length > 0 && (
-          <ChoiceRow label="Saved meals">
-            {savedMeals.map((meal) => (
-              <ChoiceChip
-                key={meal.nameKey}
-                selected={meal.nameKey === name.trim().toLowerCase()}
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                Saved meals ({savedMeals.length})
+              </span>
+              <button
+                type="button"
                 onClick={() => {
-                  setName(meal.name);
-                  if (meal.slot) setSlot(meal.slot);
-                  setIngredients((meal.ingredients || []).map((item) => item.name).join(', '));
+                  setManagingSaved((v) => !v);
+                  setEditingSavedKey(null);
+                }}
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  color: T.accent,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontFamily: F,
                 }}
               >
-                {meal.name}
-              </ChoiceChip>
-            ))}
-          </ChoiceRow>
+                {managingSaved ? 'Done managing' : 'Edit saved meals'}
+              </button>
+            </div>
+            <select
+              aria-label="Saved meals"
+              value={selectedSavedKey}
+              onChange={(e) => handleSelectSavedMeal(e.target.value)}
+              style={{ ...selectStyle, width: '100%' }}
+            >
+              <option value="">Choose a saved meal template…</option>
+              {savedMealsBySlot.map((group) => (
+                <optgroup key={group.slot} label={group.label}>
+                  {group.items.map((meal) => (
+                    <option key={meal.nameKey} value={meal.nameKey}>
+                      {meal.name}{meal.ingredients?.length ? ` (${meal.ingredients.length} ingredients)` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+
+            {managingSaved && (
+              <div style={{
+                marginTop: 8,
+                padding: 10,
+                borderRadius: 10,
+                background: T.bg,
+                border: `1px solid ${T.border}`,
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: T.text, marginBottom: 6 }}>
+                  Saved Meal Library (shared across trips)
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                  {savedMeals.map((sm) => {
+                    const isEditingThis = editingSavedKey === sm.nameKey;
+                    if (isEditingThis) {
+                      return (
+                        <div key={sm.nameKey} style={{ padding: 8, borderRadius: 8, background: T.card, border: `1px solid ${T.accent}` }}>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <input
+                              value={savedEditName}
+                              onChange={(e) => setSavedEditName(e.target.value)}
+                              placeholder="Recipe name"
+                              style={{ ...inputStyle, height: 32, fontSize: 12 }}
+                            />
+                            <select
+                              value={savedEditSlot}
+                              onChange={(e) => setSavedEditSlot(e.target.value)}
+                              style={{ ...selectStyle, height: 32, fontSize: 11.5, flex: '0 0 105px' }}
+                            >
+                              {MEAL_SLOTS.map((s) => <option key={s} value={s}>{SLOT_LABEL[s]}</option>)}
+                            </select>
+                          </div>
+                          <input
+                            value={savedEditIngredients}
+                            onChange={(e) => setSavedEditIngredients(e.target.value)}
+                            placeholder="Ingredients, comma separated"
+                            style={{ ...inputStyle, height: 32, fontSize: 11.5, marginTop: 6 }}
+                          />
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => setEditingSavedKey(null)}
+                              style={{
+                                border: `1px solid ${T.border}`,
+                                background: T.bg,
+                                color: T.textSub,
+                                borderRadius: 7,
+                                padding: '3px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={saveEditedRecipe}
+                              style={{
+                                border: 'none',
+                                background: T.accent,
+                                color: 'white',
+                                borderRadius: 7,
+                                padding: '3px 10px',
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Save recipe
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={sm.nameKey}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          padding: '6px 8px',
+                          borderRadius: 8,
+                          background: T.card,
+                          border: `1px solid ${T.border}`,
+                        }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
+                            {sm.name} <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textFaint }}>· {SLOT_LABEL[sm.slot] || 'Dinner'}</span>
+                          </div>
+                          {(sm.ingredients || []).length > 0 && (
+                            <div style={{ fontSize: 10.5, color: T.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {sm.ingredients.map((i) => i.name).join(', ')}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            onClick={() => startEditSavedRecipe(sm)}
+                            style={{
+                              border: `1px solid ${T.border}`,
+                              background: T.bg,
+                              color: T.text,
+                              borderRadius: 6,
+                              padding: '2px 7px',
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSavedRecipe(sm)}
+                            style={{
+                              border: `1px solid ${T.red}35`,
+                              background: T.redLight,
+                              color: T.red,
+                              borderRadius: 6,
+                              padding: '2px 7px',
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         )}
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Meal name (chili, fajitas, oatmeal…)"
+          style={inputStyle}
+        />
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           <select value={dayIndex} onChange={(e) => setDayIndex(e.target.value)} style={selectStyle}>
-            {[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>Day {d}</option>)}
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((d) => <option key={d} value={d}>Day {d}</option>)}
           </select>
           <select value={slot} onChange={(e) => setSlot(e.target.value)} style={selectStyle}>
             {MEAL_SLOTS.map((s) => <option key={s} value={s}>{SLOT_LABEL[s]}</option>)}
           </select>
           <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={selectStyle}>
-            <option value="">Cook?</option>
+            <option value="">Lead cook?</option>
             {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
+          <input
+            type="number"
+            min="1"
+            value={servings}
+            onChange={(e) => setServings(e.target.value)}
+            placeholder="Servings"
+            style={{ ...inputStyle, flex: '0 0 84px' }}
+          />
         </div>
-        <input value={ingredients} onChange={(e) => setIngredients(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
-               placeholder="Ingredients, comma separated" style={{ ...inputStyle, marginTop: 8 }} />
-        {savedIngredients.length > 0 && (
-          <ChoiceRow label="Saved ingredients">
-            {savedIngredients.map((ingredient) => {
-              const selected = ingredients.split(',').some((part) => part.trim().toLowerCase() === ingredient.toLowerCase());
-              return (
-                <ChoiceChip
-                  key={ingredient.toLowerCase()}
-                  selected={selected}
-                  onClick={() => setIngredients(toggleIngredient(ingredients, ingredient))}
-                >
-                  {ingredient}
-                </ChoiceChip>
-              );
-            })}
+
+        {participants.length > 1 && (
+          <ChoiceRow label="Co-cooks (optional)">
+            {participants
+              .filter((p) => p.id !== assignedTo)
+              .map((p) => {
+                const selected = coCookIds.includes(p.id);
+                return (
+                  <ChoiceChip
+                    key={p.id}
+                    selected={selected}
+                    onClick={() => setCoCookIds((prev) => (
+                      prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                    ))}
+                  >
+                    {p.label}
+                  </ChoiceChip>
+                );
+              })}
           </ChoiceRow>
         )}
-        <div style={{ marginTop: 8 }}><SaveButton onClick={() => void save()} busy={saving} wide label={editingId ? 'Update meal' : 'Save'} /></div>
+
+        {/* Active Meal Ingredients Section */}
+        <div style={{
+          marginTop: 10,
+          padding: 10,
+          borderRadius: 10,
+          background: T.bg,
+          border: `1px solid ${T.border}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+              Meal Ingredients ({sortedCurrentIngredients.length})
+            </span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[
+                { id: 'category', label: 'Sort: By Aisle' },
+                { id: 'alpha', label: 'A–Z' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setIngredientSortMode(opt.id)}
+                  style={{
+                    border: `1px solid ${ingredientSortMode === opt.id ? T.accent : T.border}`,
+                    background: ingredientSortMode === opt.id ? T.accentLight : T.card,
+                    color: ingredientSortMode === opt.id ? T.accent : T.textSub,
+                    borderRadius: 6,
+                    padding: '2px 6px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: F,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {sortedCurrentIngredients.length > 0 ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+              {sortedCurrentIngredients.map((ing) => {
+                const catMeta = getIngredientCategoryMeta(classifyIngredientCategory(ing));
+                return (
+                  <span
+                    key={ing.toLowerCase()}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '3px 8px',
+                      borderRadius: 999,
+                      background: T.card,
+                      border: `1px solid ${T.accent}45`,
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      color: T.text,
+                    }}
+                  >
+                    <span aria-hidden="true">{catMeta.icon}</span>
+                    {ing}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${ing}`}
+                      onClick={() => setIngredients(toggleIngredient(ingredients, ing))}
+                      style={{
+                        border: 'none',
+                        background: 'none',
+                        color: T.textSub,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        padding: 0,
+                        lineHeight: 1,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
+              No ingredients added yet. Type below or tap from your sorted ingredient library.
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              value={ingredientDraft}
+              onChange={(e) => setIngredientDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addDraftIngredients();
+                }
+              }}
+              placeholder="Add ingredient(s), comma separated…"
+              style={{ ...inputStyle, height: 34, fontSize: 12 }}
+            />
+            <button
+              type="button"
+              onClick={addDraftIngredients}
+              style={{
+                border: `1px solid ${T.accent}`,
+                background: T.accentLight,
+                color: T.accent,
+                borderRadius: 9,
+                padding: '0 11px',
+                fontSize: 11.5,
+                fontWeight: 800,
+                cursor: 'pointer',
+                fontFamily: F,
+                flexShrink: 0,
+              }}
+            >
+              + Add
+            </button>
+          </div>
+
+          {savedIngredients.length > 0 && (
+            <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 800, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                  Saved Ingredients ({filteredSavedIngredients.length})
+                </span>
+                {savedIngredients.length > 6 && (
+                  <input
+                    value={ingredientSearch}
+                    onChange={(e) => setIngredientSearch(e.target.value)}
+                    placeholder="Filter ingredients…"
+                    style={{ ...inputStyle, height: 26, fontSize: 11, maxWidth: 150, padding: '0 8px' }}
+                  />
+                )}
+              </div>
+
+              {/* Category Filter Bar */}
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                {[
+                  { id: 'all', label: 'All' },
+                  ...INGREDIENT_CATEGORIES.map((c) => ({ id: c.id, label: `${c.icon} ${c.shortLabel}` })),
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setIngredientCatFilter(cat.id)}
+                    style={{
+                      border: `1px solid ${ingredientCatFilter === cat.id ? T.accent : T.border}`,
+                      background: ingredientCatFilter === cat.id ? T.accent : T.card,
+                      color: ingredientCatFilter === cat.id ? 'white' : T.textSub,
+                      borderRadius: 999,
+                      padding: '2px 8px',
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontFamily: F,
+                    }}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {ingredientSortMode === 'category' && ingredientCatFilter === 'all' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {groupedSavedIngredients.map((group) => (
+                    <div key={group.id}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.textFaint, marginBottom: 4 }}>
+                        {group.icon} {group.label}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {group.items.map((ingredient) => {
+                          const selected = currentIngredientNames.some((part) => part.toLowerCase() === ingredient.toLowerCase());
+                          return (
+                            <ChoiceChip
+                              key={ingredient.toLowerCase()}
+                              selected={selected}
+                              onClick={() => setIngredients(toggleIngredient(ingredients, ingredient))}
+                            >
+                              {ingredient}
+                            </ChoiceChip>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {filteredSavedIngredients.map((ingredient) => {
+                    const selected = currentIngredientNames.some((part) => part.toLowerCase() === ingredient.toLowerCase());
+                    return (
+                      <ChoiceChip
+                        key={ingredient.toLowerCase()}
+                        selected={selected}
+                        onClick={() => setIngredients(toggleIngredient(ingredients, ingredient))}
+                      >
+                        {ingredient}
+                      </ChoiceChip>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Prep notes or dietary info (optional)"
+          style={{ ...inputStyle, marginTop: 8 }}
+        />
+
+        <div style={{ marginTop: 8 }}>
+          <SaveButton onClick={() => void save()} busy={saving} wide label={editingId ? 'Update meal' : 'Save'} />
+        </div>
       </Composer>
 
       {meals.length === 0 && <Empty text="Plan meals by day. Ingredients flow into the shopping list." />}
@@ -748,78 +1294,132 @@ function MealsTab({ trip, participants, onTripUpdate }) {
             const coCooks = Array.isArray(m.coCooks) ? m.coCooks : [];
             const amCoCook = coCooks.includes(currentUserId);
             const amLeadCook = m.assignedTo === currentUserId;
+            const isEditing = editingId === m.id;
+            const sortedMealIngs = sortIngredients(m.ingredients || [], 'category');
             return (
-            <div key={m.id} style={{ ...cardStyle, alignItems: 'flex-start', borderColor: editingId === m.id ? T.accent : T.border }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
-                  <span style={{ color: T.accent, fontSize: 10.5, fontWeight: 800 }}>{SLOT_LABEL[m.slot]} · </span>{m.name}
-                </div>
-                {m.assignedToLabel && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2 }}>Cook: {m.assignedToLabel}</div>}
-                {coCooks.length > 0 && (
-                  <div style={{ fontSize: 10.5, color: '#2A5C8E', marginTop: 2 }}>
-                    Co-cook{coCooks.length === 1 ? '' : 's'}: {coCooks.map((uid) => resolveUserDisplayName(trip, uid, currentUserId)).join(', ')}
+              <div
+                key={m.id}
+                style={{
+                  ...cardStyle,
+                  alignItems: 'flex-start',
+                  borderColor: isEditing ? T.accent : T.border,
+                  background: isEditing ? T.accentLight : T.card,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
+                    <span style={{ color: T.accent, fontSize: 10.5, fontWeight: 800 }}>{SLOT_LABEL[m.slot]} · </span>
+                    {m.name}
+                    {m.servings ? (
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textFaint }}> · {m.servings} servings</span>
+                    ) : null}
                   </div>
-                )}
-                {(m.ingredients || []).length > 0 && (
-                  <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
-                    {m.ingredients.map((i) => i.name).join(', ')}
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                  {!m.assignedTo && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void savePlanningToCloud(trip.id, () => {
-                          claimMeal(trip.id, m.id, { asCoCook: false });
-                        }).then(() => onTripUpdate?.());
-                      }}
-                      style={{
-                        border: `1px solid ${T.accent}50`,
-                        borderRadius: 7,
-                        padding: '2px 8px',
-                        background: T.accentLight,
-                        color: T.accent,
-                        fontSize: 10.5,
-                        fontWeight: 800,
-                        fontFamily: F,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      I'll cook this
-                    </button>
+                  {m.assignedToLabel && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2 }}>Cook: {m.assignedToLabel}</div>}
+                  {coCooks.length > 0 && (
+                    <div style={{ fontSize: 10.5, color: '#2A5C8E', marginTop: 2 }}>
+                      Co-cook{coCooks.length === 1 ? '' : 's'}: {coCooks.map((uid) => resolveUserDisplayName(trip, uid, currentUserId)).join(', ')}
+                    </div>
                   )}
-                  {m.assignedTo && !amLeadCook && (
+                  {sortedMealIngs.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+                      {sortedMealIngs.map((i) => {
+                        const catMeta = getIngredientCategoryMeta(classifyIngredientCategory(i.name));
+                        return (
+                          <span
+                            key={i.name}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              color: T.textSub,
+                              background: T.bg,
+                              border: `1px solid ${T.border}`,
+                              borderRadius: 999,
+                              padding: '1px 6px',
+                            }}
+                          >
+                            {catMeta.icon} {i.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {m.notes && (
+                    <div style={{ fontSize: 10.5, color: T.textSub, fontStyle: 'italic', marginTop: 4 }}>
+                      {m.notes}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                    {!m.assignedTo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void savePlanningToCloud(trip.id, () => {
+                            claimMeal(trip.id, m.id, { asCoCook: false });
+                          }).then(() => onTripUpdate?.());
+                        }}
+                        style={{
+                          border: `1px solid ${T.accent}50`,
+                          borderRadius: 7,
+                          padding: '2px 8px',
+                          background: T.accentLight,
+                          color: T.accent,
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          fontFamily: F,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        I'll cook this
+                      </button>
+                    )}
+                    {m.assignedTo && !amLeadCook && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void savePlanningToCloud(trip.id, () => {
+                            claimMeal(trip.id, m.id, { asCoCook: true });
+                          }).then(() => onTripUpdate?.());
+                        }}
+                        style={{
+                          border: `1px solid ${amCoCook ? '#2A5C8E' : T.border}`,
+                          borderRadius: 7,
+                          padding: '2px 8px',
+                          background: amCoCook ? '#E4EFF8' : T.bg,
+                          color: amCoCook ? '#2A5C8E' : T.textSub,
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          fontFamily: F,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {amCoCook ? '✓ Co-cook' : '+ Co-cook'}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => {
-                        void savePlanningToCloud(trip.id, () => {
-                          claimMeal(trip.id, m.id, { asCoCook: true });
-                        }).then(() => onTripUpdate?.());
-                      }}
+                      onClick={() => startEdit(m)}
                       style={{
-                        border: `1px solid ${amCoCook ? '#2A5C8E' : T.border}`,
+                        border: `1px solid ${T.border}`,
                         borderRadius: 7,
                         padding: '2px 8px',
-                        background: amCoCook ? '#E4EFF8' : T.bg,
-                        color: amCoCook ? '#2A5C8E' : T.textSub,
+                        background: T.bg,
+                        color: T.textSub,
                         fontSize: 10.5,
                         fontWeight: 700,
                         fontFamily: F,
                         cursor: 'pointer',
                       }}
                     >
-                      {amCoCook ? '✓ Co-cook' : '+ Co-cook'}
+                      {isEditing ? 'Editing…' : 'Edit meal'}
                     </button>
-                  )}
+                  </div>
                 </div>
+                <RowActions
+                  itemName={m.name}
+                  onEdit={() => startEdit(m)}
+                  onDelete={() => void removeItem(m)}
+                />
               </div>
-              <RowActions
-                itemName={m.name}
-                onEdit={() => startEdit(m)}
-                onDelete={() => void removeItem(m)}
-              />
-            </div>
             );
           })}
         </div>
@@ -832,9 +1432,25 @@ function ShoppingTab({ trip, onTripUpdate }) {
   const [name, setName] = useState('');
   const [qty, setQty] = useState('');
   const [note, setNote] = useState(null);
+  const [sortMode, setSortMode] = useState('category'); // 'category' | 'meal' | 'alpha'
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const items = trip.shoppingItems || [];
+  const meals = trip.meals || [];
+
+  const mealNamesByIngredient = useMemo(() => {
+    const map = new Map();
+    for (const m of meals) {
+      for (const ing of m.ingredients || []) {
+        const key = String(ing?.name || '').trim().toLowerCase();
+        if (!key) continue;
+        if (!map.has(key)) map.set(key, []);
+        const label = `Day ${m.dayIndex || 1} ${SLOT_LABEL[m.slot] || ''} (${m.name})`.trim();
+        if (!map.get(key).includes(label)) map.get(key).push(label);
+      }
+    }
+    return map;
+  }, [meals]);
 
   function resetForm() {
     setEditingId(null);
@@ -905,13 +1521,40 @@ function ShoppingTab({ trip, onTripUpdate }) {
       if (item.id === editingId) continue;
       (item.checked ? got : buy).push(item);
     }
-    return { toBuy: buy, purchased: got };
-  }, [items, editingId]);
+    return {
+      toBuy: sortIngredients(buy, sortMode === 'alpha' ? 'alpha' : 'category'),
+      purchased: sortIngredients(got, 'alpha'),
+    };
+  }, [items, editingId, sortMode]);
+
+  const groupedToBuy = useMemo(() => {
+    if (sortMode === 'category') {
+      return groupIngredientsByCategory(toBuy);
+    }
+    if (sortMode === 'meal') {
+      const byMeal = new Map();
+      for (const item of toBuy) {
+        const usedIn = mealNamesByIngredient.get(String(item.name || '').trim().toLowerCase());
+        const groupLabel = usedIn && usedIn.length > 0 ? usedIn[0] : 'General / Manual Items';
+        if (!byMeal.has(groupLabel)) byMeal.set(groupLabel, []);
+        byMeal.get(groupLabel).push(item);
+      }
+      return [...byMeal.entries()].map(([label, groupItems]) => ({
+        id: label,
+        label,
+        icon: label === 'General / Manual Items' ? '🛒' : '🍳',
+        items: groupItems,
+      }));
+    }
+    return [{ id: 'all', label: 'All to buy', icon: '🛒', items: toBuy }];
+  }, [toBuy, sortMode, mealNamesByIngredient]);
 
   const purchasedCount = purchased.length;
 
   function renderShoppingItem(item) {
     const done = Boolean(item.checked);
+    const usedInMeals = mealNamesByIngredient.get(String(item.name || '').trim().toLowerCase());
+    const catMeta = getIngredientCategoryMeta(classifyIngredientCategory(item.name));
     return (
       <div
         key={item.id}
@@ -936,9 +1579,16 @@ function ShoppingTab({ trip, onTripUpdate }) {
             color: done ? T.textFaint : T.text,
             textDecoration: done ? 'line-through' : 'none',
           }}>
+            <span aria-hidden="true" style={{ marginRight: 5 }}>{catMeta.icon}</span>
             {item.name}{item.qty ? ` · ${item.qty}` : ''}
           </div>
-          {item.source === 'meal' && <div style={{ fontSize: 9.5, color: T.textFaint }}>from meals</div>}
+          {usedInMeals && usedInMeals.length > 0 ? (
+            <div style={{ fontSize: 10, color: T.textSub, marginTop: 1 }}>
+              For: {usedInMeals.join(' · ')}
+            </div>
+          ) : (
+            item.source === 'meal' && <div style={{ fontSize: 9.5, color: T.textFaint }}>from meals</div>
+          )}
         </div>
         <RowActions
           itemName={item.name}
@@ -977,8 +1627,46 @@ function ShoppingTab({ trip, onTripUpdate }) {
 
       {toBuy.length > 0 && (
         <>
-          <SectionLabel>To buy</SectionLabel>
-          {toBuy.map(renderShoppingItem)}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <SectionLabel>To buy</SectionLabel>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[
+                { id: 'category', label: 'By Aisle / Cooler' },
+                { id: 'meal', label: 'By Meal' },
+                { id: 'alpha', label: 'A–Z' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setSortMode(opt.id)}
+                  style={{
+                    border: `1px solid ${sortMode === opt.id ? T.accent : T.border}`,
+                    background: sortMode === opt.id ? T.accentLight : T.card,
+                    color: sortMode === opt.id ? T.accent : T.textSub,
+                    borderRadius: 7,
+                    padding: '2px 7px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: F,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {groupedToBuy.map((group) => (
+            <div key={group.id} style={{ marginBottom: 12 }}>
+              {groupedToBuy.length > 1 && (
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.textSub, marginBottom: 5 }}>
+                  {group.icon} {group.label} ({group.items.length})
+                </div>
+              )}
+              {group.items.map(renderShoppingItem)}
+            </div>
+          ))}
         </>
       )}
 
