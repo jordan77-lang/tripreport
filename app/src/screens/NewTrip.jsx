@@ -7,7 +7,7 @@ import { createCoverPhotoPreview, finalizeCoverPhotoPreview } from '../lib/media
 import { createTripInvite, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { listMapRegions, regionMatchesTripTypes } from '../lib/mapRegions';
-import { preloadMapRegions } from '../lib/offlineMaps';
+import { preloadAllTripMaps } from '../lib/offlineMaps';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -144,14 +144,24 @@ export function NewTrip({ onDone, onBack }) {
   }
 
   function toggleOfflineRegion(id) {
-    setSelectedOfflineRegions((prev) => (
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    ));
+    setSelectedOfflineRegions((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      if (!prev.includes(id)) {
+        const reg = listMapRegions().find((r) => r.id === id);
+        if (reg && mapRef.current) {
+          mapRef.current.flyTo({ center: [reg.center.lng, reg.center.lat], zoom: reg.defaultZoom || 9, duration: 600 });
+        }
+      }
+      return next;
+    });
   }
 
   async function handleLaunch() {
     const offlineRegions = selectedOfflineRegions;
     const catalogRegion = offlineRegions.length === 1 ? listMapRegions().find((r) => r.id === offlineRegions[0]) : null;
+    const areaLabel = mapSearch.trim()
+      || catalogRegion?.name
+      || (name.trim() ? `${name.trim()} map area` : 'Trip map area');
 
     let trip = createTrip({
       name: name || 'My Trip',
@@ -167,17 +177,19 @@ export function NewTrip({ onDone, onBack }) {
       gpsIntervalMs: 15000,
       coverPhoto: null,
       mapArea: mapBounds ? {
+        label: areaLabel,
         sw: { lng: mapBounds.getWest(), lat: mapBounds.getSouth() },
         ne: { lng: mapBounds.getEast(), lat: mapBounds.getNorth() },
         center: mapCenter,
         maxZoom,
       } : (catalogRegion ? {
+        label: catalogRegion.name,
         sw: catalogRegion.bounds.sw,
         ne: catalogRegion.bounds.ne,
         center: catalogRegion.center,
         maxZoom: catalogRegion.defaultZoom || 12,
       } : null),
-      location: catalogRegion ? catalogRegion.area : undefined,
+      location: mapSearch.trim() || (catalogRegion ? catalogRegion.area : undefined),
     });
 
     if (coverPhoto?.file) {
@@ -189,9 +201,8 @@ export function NewTrip({ onDone, onBack }) {
       }
     }
 
-    if (offlineRegions.length) {
-      void preloadMapRegions(offlineRegions);
-    }
+    // Download the selected map(s) to this device right away in the background.
+    void preloadAllTripMaps(trip);
 
     if (supabaseConfigured) {
       try {
@@ -429,9 +440,9 @@ export function NewTrip({ onDone, onBack }) {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Search bar */}
             <div style={{ padding: '12px 16px 8px', background: T.card, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 6 }}>Trip Map Area</div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 6 }}>Select Trip Map for Your Crew</div>
               <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
-                Search for your destination, then pan and zoom the map to frame your trip area. The map will cache tiles as you explore.
+                Search and frame your trip area below (or select an offline pack). This map is saved to the trip and crew members will be prompted to download it to their device when they join.
               </div>
               <div style={{ position: 'relative' }}>
                 <div style={{ display: 'flex', gap: 6 }}>

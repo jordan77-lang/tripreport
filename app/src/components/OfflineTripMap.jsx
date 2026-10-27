@@ -4,19 +4,53 @@ import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { buildOfflineMapStyle } from '../lib/offlineMapStyle';
+import { getCachedTileBuffer } from '../lib/offlineMaps';
 import { syncPinMarker } from './mapPin';
 
 let protocolInstalled = false;
 
-function ensurePmtilesProtocol() {
+function ensureOfflineProtocols() {
   if (protocolInstalled || typeof maplibregl.addProtocol !== 'function') return;
   const protocol = new Protocol();
   maplibregl.addProtocol('pmtiles', protocol.tile);
+  maplibregl.addProtocol('cachedtile', async (params) => {
+    const match = String(params?.url || '').match(/cachedtile:\/\/(\d+)\/(\d+)\/(\d+)/);
+    if (!match) return { data: new ArrayBuffer(0) };
+    const [, z, x, y] = match;
+    const buf = await getCachedTileBuffer(Number(z), Number(x), Number(y));
+    if (!buf) throw new Error('Offline tile not cached');
+    return { data: buf };
+  });
   protocolInstalled = true;
+}
+
+function buildCachedAreaStyle() {
+  return {
+    version: 8,
+    sources: {
+      'cached-raster': {
+        type: 'raster',
+        tiles: ['cachedtile://{z}/{x}/{y}'],
+        tileSize: 256,
+        maxzoom: 14,
+        attribution: '© OpenStreetMap · CARTO',
+      },
+    },
+    layers: [
+      {
+        id: 'cached-raster-layer',
+        type: 'raster',
+        source: 'cached-raster',
+        minzoom: 0,
+        maxzoom: 18,
+      },
+    ],
+  };
 }
 
 export function OfflineTripMap({
   pmtilesUrl,
+  cachedArea = null,
   position,
   track = [],
   entries = [],
@@ -47,18 +81,20 @@ export function OfflineTripMap({
   }, [onPinChange, onMapClick, pin]);
 
   useEffect(() => {
-    if (!pmtilesUrl || mapRef.current) return;
-    ensurePmtilesProtocol();
+    if ((!pmtilesUrl && !cachedArea) || mapRef.current) return;
+    ensureOfflineProtocols();
 
     const initialCenter = center
       ? [center.lng, center.lat]
       : position
         ? [position.lng, position.lat]
-        : [-111.5, 33.6];
+        : cachedArea?.center
+          ? [cachedArea.center.lng, cachedArea.center.lat]
+          : [-111.5, 33.6];
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: buildOfflineMapStyle(pmtilesUrl),
+      style: pmtilesUrl ? buildOfflineMapStyle(pmtilesUrl) : buildCachedAreaStyle(),
       center: initialCenter,
       zoom,
       interactive,
@@ -93,7 +129,7 @@ export function OfflineTripMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [pmtilesUrl]);
+  }, [pmtilesUrl, cachedArea]);
 
   useEffect(() => {
     if (!onReady) return undefined;

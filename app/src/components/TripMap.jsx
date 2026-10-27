@@ -44,14 +44,15 @@ export function TripMap({
 
     async function load() {
       const ids = offlineRegionIds.length ? offlineRegionIds : (trip?.offlineRegions || []);
-      if (!ids.length) {
+      const mapArea = trip?.mapArea || null;
+      if (!ids.length && !mapArea) {
         setOfflinePack(null);
         return;
       }
-      const resolved = await resolveOfflineMapForTrip({ offlineRegions: ids });
+      const resolved = await resolveOfflineMapForTrip({ offlineRegions: ids, mapArea });
       if (cancelled) return;
-      if (resolved?.blobUrl) {
-        blobUrl = resolved.blobUrl;
+      if (resolved?.blobUrl || resolved?.kind === 'cached-area') {
+        if (resolved.blobUrl) blobUrl = resolved.blobUrl;
         setOfflinePack(resolved);
       } else {
         setOfflinePack(null);
@@ -63,16 +64,23 @@ export function TripMap({
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [offlineRegionIds, trip?.offlineRegions]);
+  }, [offlineRegionIds, trip?.offlineRegions, trip?.mapArea]);
 
-  if (offlinePack?.blobUrl) {
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  const shouldUseOfflineMap = Boolean(
+    offlinePack?.blobUrl
+    || (offlinePack?.kind === 'cached-area' && (isOffline || !mapboxgl.accessToken)),
+  );
+
+  if (shouldUseOfflineMap) {
     return (
       <OfflineTripMap
         pmtilesUrl={offlinePack.blobUrl}
+        cachedArea={offlinePack.mapArea}
         position={position}
         track={track}
         entries={entries}
-        center={center || offlinePack.region?.center}
+        center={center || offlinePack.region?.center || offlinePack.center}
         zoom={zoom}
         interactive={interactive}
         onMapClick={onMapClick}

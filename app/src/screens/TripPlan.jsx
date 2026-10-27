@@ -20,6 +20,7 @@ import {
 import { ParticipantsTab } from '../components/ParticipantsTab';
 import { TripExpenses } from '../components/TripExpenses';
 import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
+import { TripMapDownloadPrompt } from '../components/TripMapDownloadPrompt';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants, resolveUserDisplayName } from '../lib/expenses';
 import { supabaseConfigured } from '../lib/supabase';
@@ -180,6 +181,9 @@ export function TripPlan({
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
         <div className="screen-content-inner">
+        {tab !== 'maps' && (
+          <TripMapDownloadPrompt trip={trip} onOpenMaps={() => selectTab('maps')} />
+        )}
         {tab === 'mine' && <MyResponsibilities trip={trip} onOpenPlan={selectTab} />}
         {tab === 'details' && canEditTrip && (
           <TripEditPanel
