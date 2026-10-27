@@ -1328,6 +1328,7 @@ function normalizeTripShape(trip) {
     mapArea: trip.mapArea || null,
     offlineRegions: Array.isArray(trip.offlineRegions) ? trip.offlineRegions : [],
     recap: trip.recap && typeof trip.recap === 'object' ? trip.recap : null,
+    ownerDeletedAt: trip.ownerDeletedAt || null,
   };
 }
 

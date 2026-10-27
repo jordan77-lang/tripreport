@@ -4,10 +4,11 @@ import { buildTripParticipants } from '../lib/tripParticipants';
 import { formatTripDateRange } from '../lib/tripEdit';
 import { SyncChip } from './SyncChip';
 import { MediaThumb } from './MediaThumb';
+import { OwnerDeletedTripBanner } from './OwnerDeletedTripBanner';
 import { Ic } from './Ic';
 import { ICONS } from '../tokens';
 
-export function TripDashboard({ trip, onOpen, onRecap, now }) {
+export function TripDashboard({ trip, onOpen, onRecap, onTripUpdate, onTripDeleted, now }) {
   const stage = getTripStage(trip, now);
   const userId = getCurrentUserId();
   const tasks = getMyResponsibilities(trip, userId);
@@ -26,6 +27,7 @@ export function TripDashboard({ trip, onOpen, onRecap, now }) {
       </div>
     </div>
     <div className="trip-dashboard-body">
+      <OwnerDeletedTripBanner trip={trip} onTripUpdate={onTripUpdate} onTripDeleted={onTripDeleted} />
       <h3>{stage.headline}</h3>
       <p className="dashboard-description">{stage.description}</p>
       <div className="dashboard-actions">

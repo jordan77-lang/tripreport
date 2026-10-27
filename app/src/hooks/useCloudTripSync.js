@@ -20,7 +20,7 @@ export function useCloudTripSync({ enabled = true, onSynced } = {}) {
     async function runFullSync() {
       try {
         const result = await runFullCloudSync();
-        if ((result.pulled || result.pushed) && onSynced) onSynced();
+        if ((result.pulled || result.pushed || result.reconciled) && onSynced) onSynced();
       } catch (e) {
         console.warn('Cloud trip sync failed', e);
       }

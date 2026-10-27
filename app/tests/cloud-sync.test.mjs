@@ -29,12 +29,12 @@ async function fixture({duringRequest,fail=false,mediaFail=false}={}) {
  const mocks={
   './supabase':{requireSupabase:()=>supabase,supabaseConfigured:true},
   './authUser':{getSignedInUserId:()=> 'owner',getSignedInDisplayName:()=> 'Owner'},
-  './storage':{saveTrip:t=>(local=engine.materialize(t)),getTrip:()=>local,getTrips:()=>[local],claimAnonymousTripsForUser:()=>{},isTripOwner:()=>true,isTripMember:()=>true,deleteLocalTrip:()=>{}},
+  './storage':{saveTrip:t=>(local=engine.materialize(t)),getTrip:()=>local,getTrips:()=>local?[local]:[],getCurrentUserId:()=> 'owner',claimAnonymousTripsForUser:()=>{},isTripOwner:(t,u)=>t?.ownerId===u,isTripMember:()=>true,deleteLocalTrip:()=>{local=null;}},
   './mediaSync':{syncTripMedia:async()=>{if(mediaFail)throw new Error('Attachment offline');}},
   './mediaRefs':refs,
   './tripSync':engine,
   './tripParticipants':{mergeCollaboratorsFromMembers:()=>[],memberProfilesFromRows:()=>({}),collaboratorsChanged:()=>false,dedupeCollaborators:x=>x},
-  './mediaStore':{listMediaForTrip:async()=>[]},
+  './mediaStore':{listMediaForTrip:async()=>[],deleteMediaRecord:async()=>{}},
  };
  const modules=new Map(Object.entries(mocks).map(([name,exports])=>[name,new vm.SyntheticModule(Object.keys(exports),function(){
    for(const [k,v] of Object.entries(exports))this.setExport(k,v);
@@ -78,4 +78,20 @@ test('pull-only cloud sync skips RPC write when server already contains all loca
  await f.cloud.pushTripToCloud(f.local());
  assert.equal(f.calls(),1);
  assert.equal(f.local().syncState,'synced');
+});
+test('owner-deleted cloud trip removes owner secondary copy and prompts collaborators to delete or take ownership',async()=>{
+ const f=await fixture();
+ await f.cloud.pushTripToCloud(f.local());
+ assert.ok(f.local()._sync.lastCloudSync);
+
+ // 1. Collaborator device sees trip was deleted by owner -> flags ownerDeletedAt for prompt
+ const collabTrip={...f.local(),ownerId:'owner',collaborators:[{id:'owner',userId:'owner',role:'owner'},{id:'collab-1',userId:'collab-1',role:'contributor'}]};
+ const memberOutcome=await f.cloud.handleCloudDeletedTrip(collabTrip,'collab-1');
+ assert.equal(memberOutcome.action,'prompt-member');
+ assert.ok(f.local().ownerDeletedAt);
+
+ // 2. Owner's other device sees trip was deleted -> automatically removes local copy
+ const ownerOutcome=await f.cloud.handleCloudDeletedTrip(f.local(),'owner');
+ assert.equal(ownerOutcome.action,'deleted-owner-copy');
+ assert.equal(f.local(),null);
 });

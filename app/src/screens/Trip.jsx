@@ -14,6 +14,7 @@ import { shareEntity } from '../lib/share';
 import { exportGpx, exportHtmlReport } from '../lib/export';
 import { TripSyncPanel } from '../components/TripSyncPanel';
 import { DuplicatePlacesBanner } from '../components/DuplicatePlacesBanner';
+import { OwnerDeletedTripBanner } from '../components/OwnerDeletedTripBanner';
 import { TripOverflowMenu, tripMenuIcon } from '../components/TripOverflowMenu';
 import { TripEditPanel } from '../components/TripEditPanel';
 import { LocationSaveForm } from '../components/LocationSaveForm';
@@ -447,6 +448,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
         <div className="screen-content-inner">
+        <OwnerDeletedTripBanner trip={trip} onTripUpdate={onTripUpdate} onTripDeleted={onTripDeleted} />
         {/* Always reachable from the ⋮ menu; shown inline only when there are conflicts to review. */}
         {trip?._sync?.conflicts?.length > 0 && (
           <button type="button" onClick={() => setShowSync(v=>!v)} aria-expanded={showSync}

@@ -3,11 +3,12 @@ import { Ic } from '../components/Ic';
 import { BottomNav } from '../components/BottomNav';
 import { MediaThumb } from '../components/MediaThumb';
 import { TripDashboard } from '../components/TripDashboard';
+import { OwnerDeletedTripBanner } from '../components/OwnerDeletedTripBanner';
 import { T, ICONS } from '../tokens';
 import { formatTripDate } from '../lib/tripEdit';
 import { forkTripAsTemplate } from '../lib/storage';
 
-export function Home({ trip, allTrips = [], onNav, onFab, onSelectTrip, onJoinTrip, onOpenSettings, onOpenRecap, auth }) {
+export function Home({ trip, allTrips = [], onNav, onFab, onSelectTrip, onTripUpdate, onTripDeleted, onJoinTrip, onOpenSettings, onOpenRecap, auth }) {
   const [tripSearch, setTripSearch] = useState('');
   const [selectedActivity, setSelectedActivity] = useState('All');
   const [pastTripsExpanded, setPastTripsExpanded] = useState(false);
@@ -50,7 +51,7 @@ export function Home({ trip, allTrips = [], onNav, onFab, onSelectTrip, onJoinTr
         <div className="dashboard-section-heading trips-heading"><div><p className="dashboard-eyebrow">Plan together. Capture the adventure.</p><h2>Your trips</h2></div>
           {onFab && <button className="dashboard-button primary" type="button" onClick={onFab}><Ic d={ICONS.plus} size={18} color="currentColor" /> New trip</button>}
         </div>
-        {trip ? <TripDashboard trip={trip} onOpen={(screen, params) => open(trip, screen, params)} onRecap={() => onOpenRecap?.(trip.id)} /> : <section className="trips-welcome">
+        {trip ? <TripDashboard trip={trip} onOpen={(screen, params) => open(trip, screen, params)} onRecap={() => onOpenRecap?.(trip.id)} onTripUpdate={onTripUpdate} onTripDeleted={onTripDeleted} /> : <section className="trips-welcome">
           <span className="trips-welcome-icon"><Ic d={ICONS.tent} size={36} color={T.accent} /></span>
           <h2>{allTrips.length ? 'Pick your next adventure.' : 'Good adventures start with good company.'}</h2>
           <p>{allTrips.length ? 'Open a trip below to see your plan, crew, and memories.' : 'Plan the details with your crew, save moments along the way, and bring the whole story home.'}</p>
@@ -62,6 +63,7 @@ export function Home({ trip, allTrips = [], onNav, onFab, onSelectTrip, onJoinTr
         {otherTrips.length > 0 && <section className="trips-list-section" aria-labelledby="upcoming-trips-title">
           <div className="dashboard-section-heading"><h2 id="upcoming-trips-title">{trip ? 'More adventures' : 'Upcoming & active'}</h2><span className="dashboard-caption">{otherTrips.length} trip{otherTrips.length === 1 ? '' : 's'}</span></div>
           <div className="trips-card-grid">{otherTrips.map(item => <article className="trip-list-card" key={item.id}>
+            <OwnerDeletedTripBanner trip={item} onTripUpdate={onTripUpdate} />
             <button className="trip-list-open" type="button" onClick={() => open(item)}>
               <TripThumbnail trip={item} /><div><span className="dashboard-eyebrow">{item.status === 'planning' ? 'Planning' : 'On the trip'}</span><h3>{item.name || 'Trip'}</h3><p>{formatTripDate(item.startDate)}{item.location ? ` · ${item.location}` : ''}</p></div>
             </button>
@@ -91,6 +93,7 @@ export function Home({ trip, allTrips = [], onNav, onFab, onSelectTrip, onJoinTr
           )}
           <input className="trips-search" aria-label="Search past trips" placeholder="Search trips, places, or crew…" value={tripSearch} onChange={event => { setTripSearch(event.target.value); setPastTripsExpanded(false); }} />
           <div className="trips-card-grid">{visiblePastTrips.map(item => <article className="trip-list-card" key={item.id}>
+            <OwnerDeletedTripBanner trip={item} onTripUpdate={onTripUpdate} />
             <button className="trip-list-open" type="button" onClick={() => open(item)}><TripThumbnail trip={item} /><div><h3>{item.name || 'Trip'}</h3><p>{item.location || (item.types || []).join(' · ') || 'Adventure'} · {formatTripDate(item.startDate)}</p></div></button>
             <div className="trip-list-actions">
               <button className="dashboard-text-button" type="button" onClick={() => open(item, 'home')}>Trip dashboard</button>

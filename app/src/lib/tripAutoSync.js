@@ -67,7 +67,7 @@ export async function runFullCloudSync() {
       const result = await syncUserTripsWithCloud();
       // Reaching the cloud clears "offline", but must not hide a push the server rejected.
       if (syncStatus.ok !== false || syncStatus.offline) recordSyncResult();
-      if (result.pulled || result.pushed) notifySynced();
+      if (result.pulled || result.pushed || result.reconciled) notifySynced();
       return result;
     } catch (e) {
       recordSyncResult(e);
@@ -94,7 +94,7 @@ export async function runTripCloudSync(tripId) {
     ]);
 
     const trip = getTrip(tripId);
-    if (!trip || trip.syncState !== 'pending') return { skipped: 'not-pending' };
+    if (!trip || trip.syncState !== 'pending' || (trip.ownerDeletedAt && !trip.claimingOwnership)) return { skipped: 'not-pending' };
 
     const userId = getSignedInUserId();
     if (!userId || !isTripMember(trip, userId)) return { skipped: 'not-member' };
@@ -168,7 +168,7 @@ export function initPassiveCloudSync({ onSynced, intervalMs = BACKGROUND_SYNC_MS
   const runIfReady = () => {
     if (!isDocumentVisible()) return;
     void runFullCloudSync().then((result) => {
-      if ((result?.pulled || result?.pushed) && onSynced) onSynced();
+      if ((result?.pulled || result?.pushed || result?.reconciled) && onSynced) onSynced();
     });
   };
 
@@ -219,8 +219,16 @@ export function initTripCloudRealtime({ onSynced } = {}) {
         if (!tripId) return;
 
         void (async () => {
-          const { pullTripIfCloudNewer } = await import('./tripCloud');
+          const { pullTripIfCloudNewer, handleCloudDeletedTripById } = await import('./tripCloud');
           try {
+            if (payload.eventType === 'DELETE') {
+              const delResult = await handleCloudDeletedTripById(tripId);
+              if (delResult.action !== 'none') {
+                notifySynced(tripId);
+                onSynced?.();
+              }
+              return;
+            }
             const result = await pullTripIfCloudNewer(tripId);
             if (result.pulled || result.pushed) {
               notifySynced(tripId);

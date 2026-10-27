@@ -4,6 +4,7 @@ import {
   saveTrip,
   getTrip,
   getTrips,
+  getCurrentUserId,
   claimAnonymousTripsForUser,
   isTripOwner,
   isTripMember,
@@ -69,6 +70,122 @@ function formatSupabaseError(error, fallback) {
 }
 
 const runningSyncs = new Map();
+
+export function hasTripSyncedToCloud(trip, userId = null) {
+  if (!trip) return false;
+  if (trip._sync?.lastCloudSync) return true;
+  if (Array.isArray(trip._sync?.acked) && trip._sync.acked.length > 0) return true;
+  if (userId && trip.ownerId && trip.ownerId !== userId) return true;
+  return false;
+}
+
+async function cleanupLocalTripMedia(tripId) {
+  try {
+    const { listMediaForTrip, deleteMediaRecord } = await import('./mediaStore');
+    const media = await listMediaForTrip(tripId);
+    for (const record of media) {
+      await deleteMediaRecord(record.id);
+    }
+  } catch (e) {
+    console.warn('Local media cleanup failed', e);
+  }
+}
+
+export async function handleCloudDeletedTrip(localTrip, userId = getSignedInUserId()) {
+  if (!localTrip?.id) return { action: 'none' };
+  // If the signed-in user IS the owner who deleted this trip on another device,
+  // remove it locally on this device too so it doesn't linger or resurrect.
+  if (userId && isTripOwner(localTrip, userId)) {
+    await cleanupLocalTripMedia(localTrip.id);
+    deleteLocalTrip(localTrip.id);
+    return { action: 'deleted-owner-copy', id: localTrip.id };
+  }
+  // Otherwise, this device belongs to another crew member: flag the trip so the
+  // UI prompts them to either Delete it or Take Ownership.
+  const synced = ensureSync(localTrip);
+  const allOpIds = (synced._sync?.ops || []).map((o) => o.id);
+  saveTrip({
+    ...synced,
+    ownerDeletedAt: localTrip.ownerDeletedAt || Date.now(),
+    _sync: {
+      ...synced._sync,
+      acked: allOpIds,
+      lastCloudSync: synced._sync?.lastCloudSync || Date.now(),
+    },
+    syncState: 'synced',
+  }, { capture: false, schedule: false });
+  return { action: 'prompt-member', id: localTrip.id };
+}
+
+export async function handleCloudDeletedTripById(tripId) {
+  const local = getTrip(tripId);
+  if (!local) return { action: 'none' };
+  return handleCloudDeletedTrip(local, getSignedInUserId());
+}
+
+export async function claimDeletedTripOwnership(tripId) {
+  if (!tripId) throw new Error('Trip id required');
+  const trip = getTrip(tripId);
+  if (!trip) throw new Error('Trip not found');
+
+  const signedInId = getSignedInUserId();
+  const userId = signedInId || getCurrentUserId();
+  const displayName = getSignedInDisplayName() || trip.memberProfiles?.[userId] || 'Owner';
+  const previousOwnerId = trip.ownerId;
+
+  const synced = ensureSync(trip);
+  const filteredCollabs = (synced.collaborators || []).filter(
+    (c) => (c.userId || c.id) !== previousOwnerId,
+  );
+  const hasSelf = filteredCollabs.some((c) => (c.userId || c.id) === userId);
+  const nextCollabs = hasSelf
+    ? filteredCollabs.map((c) => ((c.userId || c.id) === userId ? { ...c, role: 'owner', name: c.name || displayName } : c))
+    : [{ id: userId, userId, name: displayName, handle: displayName, role: 'owner' }, ...filteredCollabs];
+
+  const memberProfiles = { ...(synced.memberProfiles || {}), [userId]: displayName };
+  const reclaimed = saveTrip({
+    ...synced,
+    ownerId: userId,
+    ownerDeletedAt: null,
+    claimingOwnership: true,
+    collaborators: dedupeCollaborators(nextCollabs, { memberProfiles }),
+    memberProfiles,
+    _sync: {
+      ...synced._sync,
+      acked: [],
+      lastCloudSync: null,
+    },
+    syncState: 'pending',
+    updatedAt: Date.now(),
+  }, { capture: true, schedule: false });
+
+  if (supabaseConfigured && signedInId) {
+    await pushTripToCloud(reclaimed);
+    // Re-register any other collaborators who have cloud user IDs in trip_members
+    try {
+      const supabase = requireSupabase();
+      const otherMembers = (getTrip(tripId)?.collaborators || []).filter(
+        (c) => c.userId && c.userId !== signedInId && /^[0-9a-f-]{36}$/i.test(c.userId),
+      );
+      for (const m of otherMembers) {
+        await supabase.from('trip_members').upsert({
+          trip_id: tripId,
+          user_id: m.userId,
+          role: m.role === 'viewer' ? 'viewer' : 'contributor',
+        });
+      }
+    } catch (e) {
+      console.warn('Could not re-add crew members after ownership transfer', e);
+    }
+  }
+
+  const finalTrip = getTrip(tripId);
+  if (finalTrip?.claimingOwnership) {
+    saveTrip({ ...finalTrip, claimingOwnership: false }, { capture: false, schedule: false });
+  }
+  return getTrip(tripId);
+}
+
 export async function pushTripToCloud(localTrip) {
   if (runningSyncs.has(localTrip.id)) return runningSyncs.get(localTrip.id);
   const task = syncChanges(localTrip.id).finally(()=>runningSyncs.delete(localTrip.id));
@@ -86,6 +203,10 @@ async function syncChanges(tripId) {
     if (readError) throw readError;
     let latest=getTrip(tripId);
     if (!latest && !row) throw new Error('Trip not found.');
+    if (!row && latest && !latest.claimingOwnership && hasTripSyncedToCloud(latest, userId)) {
+      const outcome = await handleCloudDeletedTrip(latest, userId);
+      return { id: tripId, deletedInCloud: true, action: outcome.action };
+    }
     if (!latest) latest=cloudRowToLocalTrip(row);
     if (!row && !isTripOwner(latest,userId)) throw new Error('Join this trip online before syncing contributions.');
     let merged=row ? mergeSync(latest,cloudRowToLocalTrip(row)) : ensureSync(latest);
@@ -123,7 +244,8 @@ async function syncChanges(tripId) {
     // Re-read AFTER the request. Only changes actually returned by the server are acknowledged.
     const current=getTrip(tripId) || merged;
     const received=mergeSync(current,{...merged,_sync:{version:2,ops:data.ops,acked:[]}});
-    const saved=acknowledge({...received,ownerId:data.ownerId},data.ops.map(o=>o.id));
+    const saved=acknowledge({...received,ownerId:data.ownerId,ownerDeletedAt:null,claimingOwnership:false},data.ops.map(o=>o.id));
+    saved._sync={...saved._sync,lastCloudSync:Date.parse(data.updatedAt)||Date.now()};
     saveTrip(saved,{capture:false});
     const acknowledged=new Set(saved._sync.acked);
     if (saved._sync.ops.some(o=>!acknowledged.has(o.id))) continue;
@@ -341,22 +463,54 @@ export async function sendTripInviteByEmail(tripId, {
 
 /** Pull cloud trips and push local changes after sign-in or on reconnect. */
 export async function syncUserTripsWithCloud() {
-  if (!supabaseConfigured) return { pulled: 0, pushed: 0, skipped: 'not-configured' };
+  if (!supabaseConfigured) return { pulled: 0, pushed: 0, reconciled: 0, skipped: 'not-configured' };
 
   const supabase = requireSupabase();
   let userId;
   try {
     userId = await ensureSignedInProfile(supabase);
   } catch {
-    return { pulled: 0, pushed: 0, skipped: 'not-signed-in' };
+    return { pulled: 0, pushed: 0, reconciled: 0, skipped: 'not-signed-in' };
   }
 
   claimAnonymousTripsForUser(userId);
 
   let pulled = 0;
   let pushed = 0;
+  let reconciled = 0;
+
+  let cloudList = null;
+  try {
+    cloudList = await listCloudTrips();
+  } catch (e) {
+    console.warn('Could not list cloud trips', e);
+  }
+
+  // Reconcile local trips that were previously synced to the cloud but deleted by the owner.
+  if (Array.isArray(cloudList)) {
+    const cloudIds = new Set(cloudList.map((row) => row.id));
+    for (const localTrip of getTrips()) {
+      if (cloudIds.has(localTrip.id)) continue;
+      if (!hasTripSyncedToCloud(localTrip, userId)) continue;
+      if (localTrip.ownerDeletedAt && !isTripOwner(localTrip, userId)) continue;
+      try {
+        const { data: verifyRow, error: verifyErr } = await supabase
+          .from('trips')
+          .select('id')
+          .eq('id', localTrip.id)
+          .maybeSingle();
+        if (!verifyErr && !verifyRow) {
+          await handleCloudDeletedTrip(localTrip, userId);
+          reconciled += 1;
+        }
+      } catch (e) {
+        console.warn('Could not verify deleted cloud trip', localTrip.id, e);
+      }
+    }
+  }
 
   for (const trip of getTrips()) {
+    if (trip.ownerDeletedAt) continue;
     if (!isTripMember(trip, userId)) continue;
     if (trip.syncState === 'synced') continue;
     try {
@@ -367,8 +521,7 @@ export async function syncUserTripsWithCloud() {
     }
   }
 
-  try {
-    const cloudList = await listCloudTrips();
+  if (Array.isArray(cloudList)) {
     for (const row of cloudList) {
       try {
         await refreshTripMembersFromCloud(row.id);
@@ -390,11 +543,9 @@ export async function syncUserTripsWithCloud() {
         console.warn('Trip pull failed during cloud sync', row.id, e);
       }
     }
-  } catch (e) {
-    console.warn('Could not list cloud trips', e);
   }
 
-  return { pulled, pushed };
+  return { pulled, pushed, reconciled };
 }
 
 export async function deleteTripFromCloud(tripId) {
@@ -489,9 +640,10 @@ export async function fetchMapRegions() {
 }
 
 function cloudRowToLocalTrip(row) {
+  const cloudSyncTs = Date.parse(row.updated_at) || Date.now();
   if (row.payload?._sync?.version === 2) return materialize({
-    id: row.id, ownerId: row.owner_id, createdAt: Date.parse(row.created_at),
-    _sync: { ...row.payload._sync, acked: row.payload._sync.ops.map(o=>o.id) },
+    id: row.id, ownerId: row.owner_id, ownerDeletedAt: null, createdAt: Date.parse(row.created_at),
+    _sync: { ...row.payload._sync, acked: row.payload._sync.ops.map(o=>o.id), lastCloudSync: cloudSyncTs },
   });
   const p = row.payload || {};
   const existing = getTrip(row.id);

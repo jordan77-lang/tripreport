@@ -287,7 +287,7 @@ export default function App() {
         refreshTrip();
         nav.replace(saved.locationId ? 'location' : 'trip', { ...saved, notice });
       }} />;
-    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onJoinTrip={() => nav.push('join')} onOpenSettings={() => nav.push('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
+    case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} onJoinTrip={() => nav.push('join')} onOpenSettings={() => nav.push('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
     case 'settings': return <Settings onBack={nav.back} auth={auth} />;
     case 'recap':   return <TripRecap trip={trip} onBack={nav.back} onTripUpdate={refreshTrip} onForkedTrip={(forkedId) => onSelectTrip(forkedId)} initialTab={params.tab || 'report'} auth={auth} />;
     case 'trip':    return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;

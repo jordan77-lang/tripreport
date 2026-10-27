@@ -2,7 +2,7 @@
 export const COLLECTIONS = ['locations','events','entries','track','trackSessions','collaborators','gearItems','meals','expenses','expenseGroups','shoppingItems'];
 const TRIP_FIELDS = ['name','types','location','startDate','endDate','privacy','status','startedAt','endedAt','coverPhoto','mapArea','offlineRegions','recap','timeZone'];
 const MEDIA = ['photos','photoFiles','voiceFiles'];
-const OMIT = new Set(['syncState','updatedAt','orphanedLocationId','orphanedEventId']);
+const OMIT = new Set(['syncState','updatedAt','orphanedLocationId','orphanedEventId','ownerDeletedAt','claimingOwnership']);
 const unsafe = k => ['__proto__','constructor','prototype'].includes(k);
 export function canonical(value) {
   if (value === undefined) return 'null';
