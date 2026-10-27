@@ -75,6 +75,7 @@ export function mergeCollaboratorsFromMembers(trip, memberRows = []) {
       );
       return {
         ...(existing?.craft ? { craft: existing.craft } : {}),
+        ...(existing?.tripNickname ? { tripNickname: existing.tripNickname } : {}),
         id: row.user_id,
         userId: row.user_id,
         handle: row.profiles?.display_name || existing?.handle || 'Participant',
@@ -84,13 +85,13 @@ export function mergeCollaboratorsFromMembers(trip, memberRows = []) {
       };
     });
 
-  const ownerCraftEntry = ownerId
-    ? (trip?.collaborators || []).find((c) => (c.userId === ownerId || c.id === ownerId) && c.craft)
+  const ownerMetaEntry = ownerId
+    ? (trip?.collaborators || []).find((c) => (c.userId === ownerId || c.id === ownerId) && (c.craft || c.tripNickname))
     : null;
 
   const nextProfiles = memberProfilesFromRows(memberRows);
   const merged = dedupeCollaborators([...manual, ...fromCloud], { memberProfiles: nextProfiles });
-  return ownerCraftEntry ? [ownerCraftEntry, ...merged.filter((c) => c.id !== ownerCraftEntry.id && c.userId !== ownerId)] : merged;
+  return ownerMetaEntry ? [ownerMetaEntry, ...merged.filter((c) => c.id !== ownerMetaEntry.id && c.userId !== ownerId)] : merged;
 }
 
 export function memberProfilesFromRows(memberRows = []) {
@@ -109,12 +110,16 @@ export function collaboratorsChanged(before = [], after = []) {
 export function resolveUserDisplayName(trip, userId, currentUserId) {
   if (!userId) return 'Unknown';
 
-  const cached = trip?.memberProfiles?.[userId];
-  if (cached) return cached;
-
   const collaborator = (trip?.collaborators || []).find(
     (c) => c.userId === userId || c.id === userId,
   );
+  if (collaborator?.tripNickname?.trim()) {
+    return collaborator.tripNickname.trim();
+  }
+
+  const cached = trip?.memberProfiles?.[userId];
+  if (cached) return cached;
+
   if (collaborator?.handle || collaborator?.name) {
     return collaborator.handle || collaborator.name;
   }
@@ -144,7 +149,7 @@ export function buildTripParticipants(trip, currentUserId, { withOwnerMeta = fal
       (c) => c.userId === trip.ownerId || c.id === trip.ownerId,
     );
     out.push(withOwnerMeta
-      ? { id: trip.ownerId, label, role: 'owner', isOwner: true, craft: ownerCollab?.craft || null }
+      ? { id: trip.ownerId, label, role: 'owner', isOwner: true, craft: ownerCollab?.craft || null, tripNickname: ownerCollab?.tripNickname || null }
       : { id: trip.ownerId, label });
     seenUids.add(trip.ownerId);
     if (nameKey) seenNames.add(nameKey);
@@ -171,7 +176,7 @@ export function buildTripParticipants(trip, currentUserId, { withOwnerMeta = fal
     }
 
     out.push(withOwnerMeta
-      ? { id, label, role: c.role || 'contributor', isOwner: false, joinedViaInvite: isJoinedMember(c), craft: c.craft || null }
+      ? { id, label, role: c.role || 'contributor', isOwner: false, joinedViaInvite: isJoinedMember(c), craft: c.craft || null, tripNickname: c.tripNickname || null }
       : { id, label });
   }
 

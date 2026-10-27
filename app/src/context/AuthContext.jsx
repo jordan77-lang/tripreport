@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase, supabaseConfigured } from '../lib/supabase';
-import { setSignedInUser } from '../lib/authUser';
+import { setPreferredDisplayName, setSignedInUser } from '../lib/authUser';
+import { updateUserDefaultDisplayName } from '../lib/storage';
 
 const AuthContext = createContext(null);
 function cachedProfile(id) { try { return JSON.parse(localStorage.getItem('tr_profile:'+id)||'null'); } catch { return null; } }
@@ -102,15 +103,20 @@ export function AuthProvider({ children }) {
     };
   }, [loadProfile]);
 
-  const signInWithEmail = useCallback(async (email) => {
+  const signInWithEmail = useCallback(async (email, displayName = '') => {
     requireSupabase();
+    const trimmedName = (displayName || '').trim();
+    if (trimmedName) setPreferredDisplayName(trimmedName);
     const redirectUrl = new URL(window.location.pathname, window.location.origin);
     const inviteCode = new URLSearchParams(window.location.search).get('join') || new URLSearchParams(window.location.search).get('code');
     if (inviteCode) redirectUrl.searchParams.set('join', inviteCode);
     const redirectTo = redirectUrl.toString();
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: redirectTo },
+      options: {
+        emailRedirectTo: redirectTo,
+        ...(trimmedName ? { data: { display_name: trimmedName } } : {}),
+      },
     });
     if (error) throw error;
   }, []);
@@ -124,16 +130,42 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }, []);
 
-  const signUpWithPassword = useCallback(async (email, password) => {
+  const signUpWithPassword = useCallback(async (email, password, displayName = '') => {
     requireSupabase();
-    const { error } = await supabase.auth.signUp({
+    const trimmedName = (displayName || '').trim();
+    if (trimmedName) setPreferredDisplayName(trimmedName);
+    const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
         emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
+        ...(trimmedName ? { data: { display_name: trimmedName } } : {}),
       },
     });
     if (error) throw error;
+    if (trimmedName && data?.user?.id) {
+      updateUserDefaultDisplayName(data.user.id, trimmedName);
+      if (data.session) {
+        try {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .upsert({
+              id: data.user.id,
+              display_name: trimmedName,
+              updated_at: new Date().toISOString(),
+            })
+            .select('id, display_name, created_at, updated_at')
+            .single();
+          if (prof) {
+            cacheProfile(prof);
+            setProfile(prof);
+            setSignedInUser(data.user.id, prof.display_name);
+          }
+        } catch {
+          // handle_new_user trigger also sets display_name from user_metadata
+        }
+      }
+    }
   }, []);
 
   const signOut = useCallback(async () => {
@@ -170,6 +202,7 @@ export function AuthProvider({ children }) {
     cacheProfile(data);
     setProfile(data);
     setSignedInUser(userId, data.display_name);
+    updateUserDefaultDisplayName(userId, data.display_name);
     return data;
   }, [session?.user?.id]);
 

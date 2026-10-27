@@ -6,9 +6,11 @@ import {
   getCurrentUserId,
   getSharedTripCountsByPerson,
   getTrip,
+  isTripOwner,
   removeTripCollaborator,
   saveTrip,
   updateCollaboratorCraft,
+  updateCollaboratorTripNickname,
 } from '../lib/storage';
 import { dedupeCollaborators, isJoinedMember } from '../lib/tripParticipants';
 import { buildTripParticipants } from '../lib/expenses';
@@ -37,6 +39,8 @@ export function ParticipantsTab({
   const currentUserId = getCurrentUserId();
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingNicknameId, setEditingNicknameId] = useState(null);
+  const [nicknameDraft, setNicknameDraft] = useState('');
   const [inviteFocus, setInviteFocus] = useState({ name: null, mode: 'email', token: 0 });
   const inviteRef = useRef(null);
 
@@ -135,8 +139,11 @@ export function ParticipantsTab({
           const displayName = p.label.replace(/\s*\(owner\)\s*$/i, '');
           const nameKey = displayName.trim().toLowerCase();
           const tripCount = Math.max(sharedCounts.byId[p.id] || 0, sharedCounts.byName[nameKey] || 0);
+          const canEditThisName = p.id === currentUserId || isTripOwner(trip, currentUserId);
+          const isEditingNickname = editingNicknameId === p.id;
           return (
-            <div key={p.id} style={rowStyle}>
+            <div key={p.id} style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>{p.label}</span>
@@ -153,6 +160,34 @@ export function ParticipantsTab({
                 </div>
                 <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 2 }}>
                   {isOwner ? 'Owner' : joined ? 'Joined via invite' : 'Roster only — not in app yet'}
+                  {canEditThisName && (
+                    <>
+                      {' · '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isEditingNickname) {
+                            setEditingNicknameId(null);
+                          } else {
+                            setEditingNicknameId(p.id);
+                            setNicknameDraft(p.tripNickname || displayName);
+                          }
+                        }}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#2A5C8E',
+                          fontSize: ts(11),
+                          fontWeight: 700,
+                          padding: 0,
+                          cursor: 'pointer',
+                          fontFamily: F,
+                        }}
+                      >
+                        {isEditingNickname ? 'Cancel' : (p.id === currentUserId ? 'Change my trip name' : 'Edit trip name')}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -200,6 +235,63 @@ export function ParticipantsTab({
                   </button>
                 )}
               </div>
+              </div>
+              {isEditingNickname && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+                  <input
+                    value={nicknameDraft}
+                    onChange={(e) => setNicknameDraft(e.target.value)}
+                    placeholder="Name people call you on this trip…"
+                    maxLength={40}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 8,
+                      padding: '6px 10px',
+                      fontSize: ts(12),
+                      fontFamily: F,
+                      background: T.bg,
+                      color: T.text,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void savePlanningToCloud(trip.id, () => {
+                        updateCollaboratorTripNickname(trip.id, p.id, nicknameDraft);
+                      }).then(() => {
+                        setEditingNicknameId(null);
+                        onTripUpdate?.();
+                      });
+                    }}
+                    style={rowInviteBtn}
+                  >
+                    Save
+                  </button>
+                  {p.tripNickname && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void savePlanningToCloud(trip.id, () => {
+                          updateCollaboratorTripNickname(trip.id, p.id, '');
+                        }).then(() => {
+                          setEditingNicknameId(null);
+                          onTripUpdate?.();
+                        });
+                      }}
+                      style={{
+                        ...rowInviteBtn,
+                        background: T.bg,
+                        color: T.textSub,
+                        borderColor: T.border,
+                      }}
+                    >
+                      Use account default
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

@@ -6,6 +6,7 @@ import { T, F } from '../tokens';
 export function AuthScreen({ inviteCode = null }) {
   const { signInWithEmail, signInWithPassword, signUpWithPassword } = useAuth();
   const [mode, setMode] = useState('signin'); // signin | signup | magic
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -19,10 +20,13 @@ export function AuthScreen({ inviteCode = null }) {
     setMessage(null);
     try {
       if (mode === 'magic') {
-        await signInWithEmail(email);
+        await signInWithEmail(email, displayName);
         setMessage('Check your email for a sign-in link. Open it on this phone.');
       } else if (mode === 'signup') {
-        await signUpWithPassword(email, password);
+        if (!displayName.trim()) {
+          throw new Error('Enter the name or trail name you want your crew to call you.');
+        }
+        await signUpWithPassword(email, password, displayName);
         setMessage('Account created. Check email to confirm, or sign in if confirmation is off.');
       } else {
         await signInWithPassword(email, password);
@@ -70,6 +74,28 @@ export function AuthScreen({ inviteCode = null }) {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {(mode === 'signup' || mode === 'magic') && (
+            <div style={{ marginBottom: 14 }}>
+              <label htmlFor="auth-display-name" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>
+                What should your crew call you? {mode === 'magic' ? '(optional if already signed up)' : ''}
+              </label>
+              <input
+                id="auth-display-name"
+                type="text"
+                autoComplete="nickname"
+                required={mode === 'signup'}
+                maxLength={40}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g. Jordan, River Rat, Captain Dan"
+                style={inputStyle}
+              />
+              <div style={{ fontSize: 11, color: T.textFaint, marginTop: 4, lineHeight: 1.4 }}>
+                Used on your trips, gear, meals, and stories. You can also customize your name per trip.
+              </div>
+            </div>
+          )}
+
           <label htmlFor="auth-email" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Email</label>
           <input
             id="auth-email"

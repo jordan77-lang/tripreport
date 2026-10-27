@@ -5,7 +5,7 @@ const ACTIVE_KEY = 'tr_active_trip_id';
 const USER_KEY = 'tr_user_id';
 const CONTACTS_KEY = 'tr_contacts';
 
-import { getSignedInUserId, getSignedInDisplayName } from './authUser';
+import { getSignedInUserId, getSignedInDisplayName, setPreferredDisplayName } from './authUser';
 import { defaultEventName } from './eventTypes';
 import { captureChanges, materialize } from './tripSync';
 
@@ -219,6 +219,73 @@ export function updateCollaboratorCraft(tripId, participantId, craft) {
     }
     return null;
   });
+}
+
+export function updateCollaboratorTripNickname(tripId, participantId, nickname) {
+  if (!tripId || !participantId) return null;
+  const nextNickname = (nickname || '').trim();
+  return mutateTrip(tripId, (trip, now) => {
+    const list = trip.collaborators || [];
+    const idx = list.findIndex((c) => c.id === participantId || c.userId === participantId);
+    if (idx >= 0) {
+      const updated = {
+        ...list[idx],
+        tripNickname: nextNickname || null,
+        updatedAt: now,
+        syncState: 'pending',
+      };
+      trip.collaborators = list.map((c, i) => (i === idx ? updated : c));
+      return updated;
+    }
+    if (trip.ownerId === participantId || trip.memberProfiles?.[participantId]) {
+      const displayName = trip.memberProfiles?.[participantId] || getSignedInDisplayName() || 'Owner';
+      const created = {
+        id: participantId,
+        userId: participantId,
+        handle: displayName,
+        name: displayName,
+        role: trip.ownerId === participantId ? 'owner' : 'contributor',
+        joinedViaInvite: trip.ownerId !== participantId,
+        tripNickname: nextNickname || null,
+        updatedAt: now,
+        syncState: 'pending',
+      };
+      trip.collaborators = [...list, created];
+      return created;
+    }
+    return null;
+  });
+}
+
+export function updateUserDefaultDisplayName(userId, displayName) {
+  const trimmed = (displayName || '').trim();
+  if (!trimmed) return 0;
+  setPreferredDisplayName(trimmed);
+  const uid = userId || getCurrentUserId();
+  let updatedCount = 0;
+  for (const trip of getTrips()) {
+    if (!isTripMember(trip, uid)) continue;
+    const nextProfiles = { ...(trip.memberProfiles || {}), [uid]: trimmed };
+    const nextCollabs = (trip.collaborators || []).map((c) => {
+      if ((c.userId || c.id) !== uid) return c;
+      return {
+        ...c,
+        name: trimmed,
+        handle: trimmed,
+        updatedAt: Date.now(),
+        syncState: 'pending',
+      };
+    });
+    saveTrip({
+      ...trip,
+      memberProfiles: nextProfiles,
+      collaborators: nextCollabs,
+      updatedAt: Date.now(),
+      syncState: 'pending',
+    });
+    updatedCount += 1;
+  }
+  return updatedCount;
 }
 
 export function getSharedTripCountsByPerson() {
