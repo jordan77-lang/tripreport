@@ -12,7 +12,7 @@ import {
   getCurrentUserId,
   isTripOwner,
   isTripMember,
-  addGearItem, updateGearItem, removeGearItem, claimGearItem,
+  addGearItem, updateGearItem, removeGearItem, claimGearItem, getGearAssigneeIds,
   addMeal, updateMeal, removeMeal, claimMeal, getTrips,
   addShoppingItem, updateShoppingItem, removeShoppingItem,
   generateShoppingList,
@@ -214,36 +214,53 @@ export function TripPlan({
 function GearTab({ trip, participants, onTripUpdate }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('group');
-  const [assignedTo, setAssignedTo] = useState('');
+  const [assignedToIds, setAssignedToIds] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const gear = trip.gearItems || [];
+  const currentUserId = getCurrentUserId();
+
+  function resolvePersonLabel(uid) {
+    const found = participants.find((p) => p.id === uid);
+    if (found?.label) return found.label;
+    return resolveUserDisplayName(trip, uid, currentUserId);
+  }
 
   function resetForm() {
     setEditingId(null);
     setName('');
     setCategory('group');
-    setAssignedTo('');
+    setAssignedToIds([]);
   }
 
   function startEdit(item) {
     setEditingId(item.id);
     setName(item.name || '');
     setCategory(normalizeGearCategory(item.category));
-    setAssignedTo(item.assignedTo || '');
+    setAssignedToIds(getGearAssigneeIds(item));
+  }
+
+  function toggleFormAssignee(personId) {
+    setAssignedToIds((prev) => (
+      prev.includes(personId)
+        ? prev.filter((id) => id !== personId)
+        : [...prev, personId]
+    ));
   }
 
   async function save() {
     if (!name.trim() || saving) return;
     setSaving(true);
     try {
-      const who = participants.find((p) => p.id === assignedTo);
+      const cleanIds = assignedToIds.filter(Boolean);
+      const labels = cleanIds.map((uid) => resolvePersonLabel(uid)).filter(Boolean);
       const cat = normalizeGearCategory(category);
       const payload = {
         name: name.trim(),
         category: cat,
-        assignedTo: assignedTo || null,
-        assignedToLabel: who?.label || null,
+        assignedTo: cleanIds[0] || null,
+        assignedToIds: cleanIds,
+        assignedToLabel: labels.length > 0 ? labels.join(', ') : null,
         shared: cat !== 'personal',
       };
       await savePlanningToCloud(trip.id, () => {
@@ -277,10 +294,32 @@ function GearTab({ trip, participants, onTripUpdate }) {
     onTripUpdate?.();
   }
 
-  function reassign(item, value) {
-    const who = participants.find((p) => p.id === value);
-    updateGearItem(trip.id, item.id, { assignedTo: value || null, assignedToLabel: who?.label || null });
-    onTripUpdate?.();
+  function setItemAssignees(item, nextIds) {
+    const cleanIds = Array.from(new Set((nextIds || []).filter(Boolean)));
+    const labels = cleanIds.map((uid) => resolvePersonLabel(uid)).filter(Boolean);
+    void savePlanningToCloud(trip.id, () => {
+      updateGearItem(trip.id, item.id, {
+        assignedTo: cleanIds[0] || null,
+        assignedToIds: cleanIds,
+        assignedToLabel: labels.length > 0 ? labels.join(', ') : null,
+      });
+    }).then(() => onTripUpdate?.());
+  }
+
+  function addItemAssignee(item, personId) {
+    if (!personId) return;
+    if (personId === '__clear__') {
+      setItemAssignees(item, []);
+      return;
+    }
+    const current = getGearAssigneeIds(item);
+    if (current.includes(personId)) return;
+    setItemAssignees(item, [...current, personId]);
+  }
+
+  function removeItemAssignee(item, personId) {
+    const current = getGearAssigneeIds(item);
+    setItemAssignees(item, current.filter((id) => id !== personId));
   }
 
   const { toBring, ready } = useMemo(() => {
@@ -301,6 +340,13 @@ function GearTab({ trip, participants, onTripUpdate }) {
 
   function renderGearItem(item) {
     const done = isGearComplete(item);
+    const itemAssigneeIds = getGearAssigneeIds(item);
+    const availableParticipants = participants.filter((p) => !itemAssigneeIds.includes(p.id));
+    const amAssigned = Boolean(currentUserId && itemAssigneeIds.includes(currentUserId));
+    const assignedDisplayLabel = itemAssigneeIds.length > 0
+      ? itemAssigneeIds.map((uid) => resolvePersonLabel(uid)).filter(Boolean).join(', ')
+      : item.assignedToLabel;
+
     return (
       <div
         key={item.id}
@@ -328,31 +374,79 @@ function GearTab({ trip, participants, onTripUpdate }) {
             {item.name}
           </div>
           {!done ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-              <select
-                value={item.assignedTo || ''}
-                onChange={(e) => reassign(item, e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  fontSize: 10.5,
-                  color: T.textSub,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 7,
-                  padding: '2px 5px',
-                  background: T.bg,
-                  fontFamily: F,
-                }}
-              >
-                <option value="">Who brings it?</option>
-                {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </select>
-              {!item.assignedTo && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
+              {itemAssigneeIds.map((uid) => (
+                <span
+                  key={uid}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    color: T.accent,
+                    background: T.accentLight,
+                    border: `1px solid ${T.accent}40`,
+                    borderRadius: 999,
+                    padding: '2px 7px',
+                    fontFamily: F,
+                  }}
+                >
+                  {resolvePersonLabel(uid)}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${resolvePersonLabel(uid)} from ${item.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeItemAssignee(item, uid);
+                    }}
+                    style={{
+                      border: 'none',
+                      background: 'none',
+                      color: T.accent,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: 0,
+                      lineHeight: 1,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {(availableParticipants.length > 0 || itemAssigneeIds.length > 0) && (
+                <select
+                  value=""
+                  onChange={(e) => addItemAssignee(item, e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    fontSize: 10.5,
+                    color: T.textSub,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 7,
+                    padding: '2px 5px',
+                    background: T.bg,
+                    fontFamily: F,
+                  }}
+                >
+                  <option value="">{itemAssigneeIds.length === 0 ? 'Who brings it?' : '+ Add person'}</option>
+                  {availableParticipants.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                  {itemAssigneeIds.length > 0 && (
+                    <option value="__clear__">Clear all</option>
+                  )}
+                </select>
+              )}
+              {!amAssigned && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     void savePlanningToCloud(trip.id, () => {
-                      claimGearItem(trip.id, item.id);
+                      claimGearItem(trip.id, item.id, { asCoBringer: itemAssigneeIds.length > 0 });
                     }).then(() => onTripUpdate?.());
                   }}
                   style={{
@@ -367,14 +461,14 @@ function GearTab({ trip, participants, onTripUpdate }) {
                     cursor: 'pointer',
                   }}
                 >
-                  I'll bring this
+                  {itemAssigneeIds.length === 0 ? "I'll bring this" : "+ I'll bring some too"}
                 </button>
               )}
             </div>
           ) : (
-            item.assignedToLabel && (
+            assignedDisplayLabel && (
               <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
-                {item.assignedToLabel}
+                {assignedDisplayLabel}
               </div>
             )
           )}
@@ -392,17 +486,32 @@ function GearTab({ trip, participants, onTripUpdate }) {
     <div>
       <Composer title={editingId ? 'Edit gear' : 'Add gear'} onCancel={editingId ? resetForm : null}>
         <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
-               placeholder="Add gear (tent, stove, first-aid…)" style={inputStyle} />
+               placeholder="Add gear (tent, firewood, stove, first-aid…)" style={inputStyle} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
           <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...selectStyle, width: '100%', flex: 'none' }}>
             {GEAR_CATEGORIES.map((c) => <option key={c} value={c}>{capitalize(c)}</option>)}
           </select>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={{ ...selectStyle, flex: 1, minWidth: 0 }}>
-              <option value="">Unassigned</option>
-              {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-            <SaveButton onClick={() => void save()} busy={saving} label={editingId ? 'Update' : 'Save'} />
+          {participants.length > 0 && (
+            <ChoiceRow label="Who is bringing it? (tap 1 or more)">
+              <ChoiceChip
+                selected={assignedToIds.length === 0}
+                onClick={() => setAssignedToIds([])}
+              >
+                Unassigned
+              </ChoiceChip>
+              {participants.map((p) => (
+                <ChoiceChip
+                  key={p.id}
+                  selected={assignedToIds.includes(p.id)}
+                  onClick={() => toggleFormAssignee(p.id)}
+                >
+                  {p.label}
+                </ChoiceChip>
+              ))}
+            </ChoiceRow>
+          )}
+          <div style={{ marginTop: 2 }}>
+            <SaveButton onClick={() => void save()} busy={saving} wide label={editingId ? 'Update' : 'Save'} />
           </div>
         </div>
       </Composer>

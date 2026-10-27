@@ -1,11 +1,12 @@
 import { getCurrentUserId } from '../lib/storage';
-import { getMyResponsibilities, isGearReady, mealResponsibilityLabel } from '../lib/tripDashboard';
+import { gearResponsibilityLabel, getMyResponsibilities, isGearReady, mealResponsibilityLabel } from '../lib/tripDashboard';
 import { money } from '../lib/expenses';
 import { Ic } from './Ic';
 import { ICONS, T } from '../tokens';
 
 export function MyResponsibilities({ trip, onOpenPlan }) {
-  const tasks = getMyResponsibilities(trip, getCurrentUserId());
+  const currentUserId = getCurrentUserId();
+  const tasks = getMyResponsibilities(trip, currentUserId);
   const completed = trip?.status === 'completed';
   return (
     <section className="responsibilities" aria-labelledby="my-responsibilities-title">
@@ -19,7 +20,7 @@ export function MyResponsibilities({ trip, onOpenPlan }) {
       <p className="dashboard-description">{completed ? 'Review what you brought, cooked, and spent.' : 'Everything with your name on it, in one place. Open a list to make changes.'}</p>
       <div className="responsibility-grid">
         <ResponsibilityGroup title="Gear to bring" icon={ICONS.tent} action="Open gear list" onOpen={() => onOpenPlan('gear')}
-          empty="No gear assigned to you yet." items={tasks.gear.map(item => ({ id: item.id, title: item.name, detail: isGearReady(item) ? 'Ready' : 'To bring', done: isGearReady(item) }))} />
+          empty="No gear assigned to you yet." items={tasks.gear.map(item => ({ id: item.id, title: item.name, detail: gearResponsibilityLabel(item, trip, currentUserId), done: isGearReady(item) }))} />
         <ResponsibilityGroup title="Your meals" icon={ICONS.fork} action="Open meal plan" onOpen={() => onOpenPlan('meals')}
           empty="No meals assigned to you yet." items={tasks.meals.map(item => ({ id: item.id, title: item.name, detail: mealResponsibilityLabel(item, trip.startDate) }))} />
         <ResponsibilityGroup title="Shopping you added" icon={ICONS.plus} action="Open shopping list" onOpen={() => onOpenPlan('shopping')}

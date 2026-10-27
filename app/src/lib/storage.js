@@ -989,16 +989,64 @@ function removePlanningItem(tripId, collection, id) {
   });
 }
 
+export function getGearAssigneeIds(item) {
+  if (!item || typeof item !== 'object') return [];
+  const raw = Array.isArray(item.assignedToIds)
+    ? item.assignedToIds
+    : item.assignedTo
+      ? [item.assignedTo]
+      : [];
+  const seen = new Set();
+  const out = [];
+  for (const id of raw) {
+    const trimmed = typeof id === 'string' ? id.trim() : '';
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  const primary = typeof item.assignedTo === 'string' ? item.assignedTo.trim() : '';
+  if (primary && !seen.has(primary)) {
+    out.unshift(primary);
+  }
+  return out;
+}
+
+function resolveTripGearPersonLabel(trip, uid, explicitLabel = null) {
+  if (explicitLabel && typeof explicitLabel === 'string' && explicitLabel.trim()) {
+    return explicitLabel.trim();
+  }
+  if (!uid) return null;
+  return (
+    trip?.memberProfiles?.[uid]
+    || (trip?.collaborators || []).find((c) => c.userId === uid || c.id === uid)?.name
+    || (uid === getCurrentUserId() ? getSignedInDisplayName() || 'Me' : null)
+    || uid
+  );
+}
+
+function buildGearAssignedToLabel(trip, assignedToIds, explicitByUid = {}) {
+  const labels = (assignedToIds || [])
+    .map((uid) => resolveTripGearPersonLabel(trip, uid, explicitByUid?.[uid]))
+    .filter(Boolean);
+  return labels.length > 0 ? labels.join(', ') : null;
+}
+
 export function addGearItem(tripId, item) {
   return mutateTrip(tripId, (trip, now) => {
+    const assignedToIds = getGearAssigneeIds(item);
+    const primary = assignedToIds[0] || null;
+    const assignedToLabel = item.assignedToLabel
+      || buildGearAssignedToLabel(trip, assignedToIds);
     const full = {
       id: crypto.randomUUID(),
       name: (item.name || '').trim() || 'Untitled gear',
       category: item.category || 'group',
       quantity: Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1,
       shared: item.shared !== false,
-      assignedTo: item.assignedTo || null,
-      assignedToLabel: item.assignedToLabel || null,
+      assignedTo: primary,
+      assignedToIds,
+      assignedToLabel,
       status: item.status || 'needed', // needed | have (legacy: claimed, packed)
       notes: item.notes || '',
       createdBy: item.createdBy || getCurrentUserId(),
@@ -1012,25 +1060,47 @@ export function addGearItem(tripId, item) {
 }
 
 export function updateGearItem(tripId, id, patch) {
-  return updatePlanningItem(tripId, 'gearItems', id, patch);
+  const normalized = { ...patch };
+  if (Array.isArray(normalized.assignedToIds)) {
+    const cleanIds = getGearAssigneeIds({ assignedToIds: normalized.assignedToIds });
+    normalized.assignedToIds = cleanIds;
+    normalized.assignedTo = cleanIds[0] || null;
+    if (normalized.assignedToLabel === undefined) {
+      const trip = getTrip(tripId);
+      normalized.assignedToLabel = buildGearAssignedToLabel(trip, cleanIds);
+    }
+  } else if (normalized.assignedTo !== undefined && normalized.assignedToIds === undefined) {
+    normalized.assignedToIds = normalized.assignedTo ? [normalized.assignedTo] : [];
+  }
+  return updatePlanningItem(tripId, 'gearItems', id, normalized);
 }
 
 export function removeGearItem(tripId, id) {
   return removePlanningItem(tripId, 'gearItems', id);
 }
 
-export function claimGearItem(tripId, gearId, { userId = null, label = null } = {}) {
+export function claimGearItem(tripId, gearId, { userId = null, label = null, asCoBringer = false } = {}) {
   const trip = getTrip(tripId);
   if (!trip || !gearId) return null;
+  const existing = (trip.gearItems || []).find((g) => g.id === gearId);
+  if (!existing) return null;
   const uid = userId || getCurrentUserId();
-  const displayName = label
-    || trip.memberProfiles?.[uid]
-    || (trip.collaborators || []).find((c) => c.userId === uid || c.id === uid)?.name
-    || getSignedInDisplayName()
-    || 'Me';
+  const displayName = resolveTripGearPersonLabel(trip, uid, label) || 'Me';
+  const currentIds = getGearAssigneeIds(existing);
+  let nextIds;
+  if (currentIds.includes(uid)) {
+    nextIds = asCoBringer ? currentIds.filter((id) => id !== uid) : currentIds;
+  } else {
+    nextIds = [...currentIds, uid];
+  }
+  const explicitByUid = { [uid]: displayName };
+  if (existing.assignedTo && existing.assignedToLabel && currentIds.length === 1) {
+    explicitByUid[existing.assignedTo] = existing.assignedToLabel;
+  }
   return updateGearItem(tripId, gearId, {
-    assignedTo: uid,
-    assignedToLabel: displayName,
+    assignedToIds: nextIds,
+    assignedTo: nextIds[0] || null,
+    assignedToLabel: buildGearAssignedToLabel(trip, nextIds, explicitByUid),
   });
 }
 
@@ -1201,6 +1271,7 @@ export function forkTripAsTemplate(sourceTripId, { name = null, startDate = '', 
       quantity: gear.quantity || 1,
       shared: true,
       assignedTo: null,
+      assignedToIds: [],
       assignedToLabel: null,
       status: 'needed',
       notes: gear.notes || '',

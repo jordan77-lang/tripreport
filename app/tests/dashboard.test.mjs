@@ -16,7 +16,7 @@ async function load(name) {
   await module.evaluate();
   return module;
 }
-const { buildCrewActivityFeed, getMyResponsibilities, getTripStage, mealResponsibilityLabel } = (await load('./tripDashboard')).namespace;
+const { buildCrewActivityFeed, gearResponsibilityLabel, getMyResponsibilities, getTripStage, mealResponsibilityLabel } = (await load('./tripDashboard')).namespace;
 const ids = list => Array.from(list, item => item.id);
 
 test('responsibilities use IDs and aliases without confusing people who share a name', () => {
@@ -109,4 +109,41 @@ test('co-cooks, planned locations, and crew activity feed work across social pla
   assert.match(feed[0].text, /Sam shared "Osprey dive" at Pine Camp ⭐/);
   assert.match(feed[1].text, /Sam commented on "Granite Rapid"/);
   assert.match(feed[2].text, /Jordan signed up to cook Dutch Oven Lasagna/);
+});
+
+test('multiple people can be assigned to bring the same gear item (like firewood)', () => {
+  const trip = {
+    ownerId: 'leader',
+    memberProfiles: { leader: 'Jordan', u2: 'Sam', u3: 'Alex' },
+    collaborators: [
+      { id: 'u2', userId: 'u2', name: 'Sam' },
+      { id: 'u3', userId: 'u3', name: 'Alex' },
+    ],
+    gearItems: [
+      {
+        id: 'firewood',
+        name: 'Firewood',
+        assignedTo: 'leader',
+        assignedToIds: ['leader', 'u2', 'u3'],
+        assignedToLabel: 'Jordan, Sam, Alex',
+        status: 'needed',
+        updatedAt: 500,
+      },
+    ],
+  };
+
+  for (const uid of ['leader', 'u2', 'u3']) {
+    const tasks = getMyResponsibilities(trip, uid);
+    assert.deepEqual(ids(tasks.gear), ['firewood']);
+    assert.deepEqual(ids(tasks.gearToBring), ['firewood']);
+    assert.equal(tasks.unassignedGear, 0);
+  }
+
+  assert.equal(
+    gearResponsibilityLabel(trip.gearItems[0], trip, 'u2'),
+    'With Jordan, Alex · To bring',
+  );
+
+  const feed = buildCrewActivityFeed(trip, 'leader', 5);
+  assert.match(feed[0].text, /Jordan, Sam, Alex are bringing Firewood/);
 });

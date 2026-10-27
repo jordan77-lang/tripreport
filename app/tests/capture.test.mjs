@@ -19,7 +19,7 @@ async function fixture() {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
     }, { context, identifier: name });
   }
-  modules.set('./authUser', synthetic('auth', { getSignedInUserId: () => null, getSignedInDisplayName: () => '' }));
+  modules.set('./authUser', synthetic('auth', { getSignedInUserId: () => null, getSignedInDisplayName: () => '', getPreferredDisplayName: () => '', setPreferredDisplayName: () => '' }));
   modules.set('./eventTypes', synthetic('types', { defaultEventName: type => type }));
   modules.set('./mediaStore', synthetic('media', { putMediaRecord: async record => media.set(record.id, record) }));
   async function load(name) {
@@ -223,10 +223,13 @@ test('social planning: planned locations, hype votes, check-ins, comments, gear/
   storage.markLocationVisited(trip.id, loc.id);
   assert.equal(storage.getTrip(trip.id).locations[0].visitStatus, 'visited');
 
-  const gear = storage.addGearItem(trip.id, { name: 'Groover', category: 'group' });
+  const gear = storage.addGearItem(trip.id, { name: 'Firewood', category: 'group' });
   storage.claimGearItem(trip.id, gear.id, { userId: 'user-2', label: 'Sam' });
   assert.equal(storage.getTrip(trip.id).gearItems[0].assignedTo, 'user-2');
   assert.equal(storage.getTrip(trip.id).gearItems[0].assignedToLabel, 'Sam');
+  storage.claimGearItem(trip.id, gear.id, { userId: 'user-3', label: 'Alex', asCoBringer: true });
+  assert.deepEqual([...storage.getTrip(trip.id).gearItems[0].assignedToIds], ['user-2', 'user-3']);
+  assert.equal(storage.getTrip(trip.id).gearItems[0].assignedToLabel, 'Sam, Alex');
 
   const meal = storage.addMeal(trip.id, { name: 'Fajitas', dayIndex: 1, slot: 'dinner' });
   storage.claimMeal(trip.id, meal.id, { userId: 'user-1', label: 'Jordan' });

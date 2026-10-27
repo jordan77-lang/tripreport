@@ -5,6 +5,29 @@ export function isGearReady(item) {
   return ['have', 'claimed', 'packed'].includes(item.status);
 }
 
+export function getGearAssigneeIds(item) {
+  if (!item || typeof item !== 'object') return [];
+  const raw = Array.isArray(item.assignedToIds)
+    ? item.assignedToIds
+    : item.assignedTo
+      ? [item.assignedTo]
+      : [];
+  const seen = new Set();
+  const out = [];
+  for (const id of raw) {
+    const trimmed = typeof id === 'string' ? id.trim() : '';
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  const primary = typeof item.assignedTo === 'string' ? item.assignedTo.trim() : '';
+  if (primary && !seen.has(primary)) {
+    out.unshift(primary);
+  }
+  return out;
+}
+
 // Resolve saved participant IDs, never display names: two people can share a name.
 export function getMyResponsibilities(trip, userId) {
   const participants = buildTripParticipants(trip, userId);
@@ -12,7 +35,7 @@ export function getMyResponsibilities(trip, userId) {
   const participantId = participants.find(p => p.id === userId)?.id
     || (trip?.collaborators || []).find(p => p.id === userId && p.userId)?.userId;
   const mine = id => Boolean(userId && id && (id === userId || (participantId && aliases.get(id) === participantId)));
-  const gear = (trip?.gearItems || []).filter(item => mine(item.assignedTo));
+  const gear = (trip?.gearItems || []).filter(item => getGearAssigneeIds(item).some(mine));
   const meals = (trip?.meals || []).filter(item => mine(item.assignedTo) || (Array.isArray(item.coCooks) && item.coCooks.some(mine)))
     .slice().sort((a, b) => (a.dayIndex || 1) - (b.dayIndex || 1)
       || ['breakfast', 'lunch', 'dinner', 'snack'].indexOf(a.slot) - ['breakfast', 'lunch', 'dinner', 'snack'].indexOf(b.slot));
@@ -25,7 +48,7 @@ export function getMyResponsibilities(trip, userId) {
     shoppingToBuy: shopping.filter(item => !item.checked),
     balance: participantId ? roundMoney(balances[participantId] || 0) : 0,
     hasExpenses: (trip?.expenses || []).length > 0,
-    unassignedGear: (trip?.gearItems || []).filter(item => !item.assignedTo && !isGearReady(item)).length,
+    unassignedGear: (trip?.gearItems || []).filter(item => getGearAssigneeIds(item).length === 0 && !isGearReady(item)).length,
     unassignedMeals: (trip?.meals || []).filter(item => !item.assignedTo).length,
     plannedLocations: (trip?.locations || []).filter(loc => loc.visitStatus === 'planned').length,
   };
@@ -86,14 +109,18 @@ export function buildCrewActivityFeed(trip, currentUserId = null, limit = 5) {
   }
 
   for (const gear of trip.gearItems || []) {
-    if (!gear.assignedTo) continue;
+    const assigneeIds = getGearAssigneeIds(gear);
+    if (assigneeIds.length === 0) continue;
     const at = Number(gear.updatedAt || gear.createdAt) || 0;
-    const holder = gear.assignedToLabel || who(gear.assignedTo);
+    const names = assigneeIds.map((uid) => who(uid));
+    const holder = gear.assignedToLabel
+      || (names.length === 1 ? names[0] : names.join(', '));
+    const verb = assigneeIds.length > 1 ? 'are bringing' : 'is bringing';
     items.push({
       id: `gear-${gear.id}`,
       at,
       actor: holder,
-      text: `${holder} is bringing ${gear.name}${isGearReady(gear) ? ' (Ready)' : ''}`,
+      text: `${holder} ${verb} ${gear.name}${isGearReady(gear) ? ' (Ready)' : ''}`,
       icon: '🎒',
       screen: 'plan',
       params: { tab: 'gear' },
@@ -146,4 +173,16 @@ export function mealResponsibilityLabel(meal, startDate) {
   if (start == null) return `${slot} · Day ${day}`;
   const date = new Date((start + day - 1) * 86400000);
   return `${slot} · ${date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}`;
+}
+
+export function gearResponsibilityLabel(gear, trip = null, currentUserId = null) {
+  const statusText = isGearReady(gear) ? 'Ready' : 'To bring';
+  const assigneeIds = getGearAssigneeIds(gear);
+  if (assigneeIds.length <= 1 || !trip) return statusText;
+  const others = assigneeIds
+    .filter((uid) => uid !== currentUserId)
+    .map((uid) => resolveUserDisplayName(trip, uid, currentUserId))
+    .filter((name) => name && name !== 'Unknown');
+  if (others.length === 0) return statusText;
+  return `With ${others.join(', ')} · ${statusText}`;
 }
