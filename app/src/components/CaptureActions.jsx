@@ -16,7 +16,9 @@ export function CaptureActions({ trip, onCapture }) {
             style={{ minHeight: 64, border: '1px solid ' + T.border, borderRadius: 14, background: T.card,
               color: T.text, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 10,
               padding: '10px 12px', fontSize: ts(15), fontWeight: 800, cursor: 'pointer', textAlign: 'left' }}>
-            <Ic d={item.icon} size={22} color={item.col} /><span>{item.label}</span>
+            {item.img
+              ? <img src={item.img} alt="" aria-hidden="true" width={34} height={34} style={{ objectFit: 'contain', flexShrink: 0 }} />
+              : <Ic d={item.icon} size={22} color={item.col} />}<span>{item.label}</span>
           </button>
         ))}
       </div>

@@ -1,5 +1,6 @@
 import { buildParticipantAliasMap, buildTripParticipants, computeBalances, resolveUserDisplayName, roundMoney } from './expenses';
 import { tripDayKey, tripTimeZone } from './tripTimeline';
+import { mealDaysLabel, mealEndDay, mealSlotLabel, mealSlotOrder, mealStartDay } from './mealSlots';
 
 export function isGearReady(item) {
   return ['have', 'claimed', 'packed'].includes(item.status);
@@ -38,7 +39,7 @@ export function getMyResponsibilities(trip, userId) {
   const gear = (trip?.gearItems || []).filter(item => getGearAssigneeIds(item).some(mine));
   const meals = (trip?.meals || []).filter(item => mine(item.assignedTo) || (Array.isArray(item.coCooks) && item.coCooks.some(mine)))
     .slice().sort((a, b) => (a.dayIndex || 1) - (b.dayIndex || 1)
-      || ['breakfast', 'lunch', 'dinner', 'snack'].indexOf(a.slot) - ['breakfast', 'lunch', 'dinner', 'snack'].indexOf(b.slot));
+      || mealSlotOrder(a.slot) - mealSlotOrder(b.slot));
   // Shopping has no assignee field. Keep authorship explicit in the UI.
   const shopping = (trip?.shoppingItems || []).filter(item => mine(item.addedBy));
   const balances = computeBalances(trip?.expenses || [], participants, { trip });
@@ -97,11 +98,15 @@ export function buildCrewActivityFeed(trip, currentUserId = null, limit = 5) {
     const at = Number(meal.updatedAt || meal.createdAt) || 0;
     const cook = meal.assignedToLabel || who(meal.assignedTo);
     const coCount = Array.isArray(meal.coCooks) ? meal.coCooks.length : 0;
+    const coText = coCount ? ` + ${coCount} co-cook${coCount === 1 ? '' : 's'}` : '';
+    const assigner = meal.assignedBy && meal.assignedBy !== meal.assignedTo ? who(meal.assignedBy, null) : null;
     items.push({
       id: `meal-${meal.id}`,
       at,
-      actor: cook,
-      text: `${cook} signed up to cook ${meal.name} (Day ${meal.dayIndex || 1})${coCount ? ` + ${coCount} co-cook${coCount === 1 ? '' : 's'}` : ''}`,
+      actor: assigner || cook,
+      text: assigner
+        ? `${cook} was assigned to cook ${meal.name} (${mealDaysLabel(meal)}) by ${assigner}${coText}`
+        : `${cook} signed up to cook ${meal.name} (${mealDaysLabel(meal)})${coText}`,
       icon: '🍳',
       screen: 'plan',
       params: { tab: 'meals' },
@@ -116,11 +121,15 @@ export function buildCrewActivityFeed(trip, currentUserId = null, limit = 5) {
     const holder = gear.assignedToLabel
       || (names.length === 1 ? names[0] : names.join(', '));
     const verb = assigneeIds.length > 1 ? 'are bringing' : 'is bringing';
+    const assigner = gear.assignedBy && !assigneeIds.includes(gear.assignedBy) ? who(gear.assignedBy, null) : null;
+    const readyText = isGearReady(gear) ? ' (Ready)' : '';
     items.push({
       id: `gear-${gear.id}`,
       at,
-      actor: holder,
-      text: `${holder} ${verb} ${gear.name}${isGearReady(gear) ? ' (Ready)' : ''}`,
+      actor: assigner || holder,
+      text: assigner
+        ? `${holder} ${assigneeIds.length > 1 ? 'were' : 'was'} assigned ${gear.name} by ${assigner}${readyText}`
+        : `${holder} ${verb} ${gear.name}${readyText}`,
       icon: '🎒',
       screen: 'plan',
       params: { tab: 'gear' },
@@ -167,12 +176,14 @@ export function getTripStage(trip, now = new Date()) {
 }
 
 export function mealResponsibilityLabel(meal, startDate) {
-  const slot = meal.slot ? meal.slot.charAt(0).toUpperCase() + meal.slot.slice(1) : 'Meal';
-  const day = Math.max(1, Number(meal.dayIndex) || 1);
+  const slot = meal.slot ? mealSlotLabel(meal.slot) : 'Meal';
+  const day = mealStartDay(meal);
+  const lastDay = mealEndDay(meal);
   const start = dateNumber(startDate);
-  if (start == null) return `${slot} · Day ${day}`;
-  const date = new Date((start + day - 1) * 86400000);
-  return `${slot} · ${date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}`;
+  if (start == null) return `${slot} · ${mealDaysLabel(meal)}`;
+  const fmt = (n) => new Date((start + n - 1) * 86400000)
+    .toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${slot} · ${lastDay > day ? `${fmt(day)} – ${fmt(lastDay)}` : fmt(day)}`;
 }
 
 export function gearResponsibilityLabel(gear, trip = null, currentUserId = null) {

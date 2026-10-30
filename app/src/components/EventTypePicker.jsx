@@ -40,7 +40,9 @@ export function EventTypePicker({ trip, onSelect, title = 'Add an event', hint =
               justifyContent: 'center',
               flexShrink: 0,
             }}>
-              <Ic d={item.icon} size={15} color={item.col} sw={1.8} />
+              {item.img
+                ? <img src={item.img} alt="" aria-hidden="true" width={28} height={28} style={{ objectFit: 'contain' }} />
+                : <Ic d={item.icon} size={15} color={item.col} sw={1.8} />}
             </div>
             <span style={{ fontSize: ts(12), fontWeight: 700, color: T.text, lineHeight: 1.25 }}>{item.label}</span>
           </button>

@@ -1047,6 +1047,7 @@ export function addGearItem(tripId, item) {
       assignedTo: primary,
       assignedToIds,
       assignedToLabel,
+      assignedBy: assignedToIds.length ? (item.assignedBy || getCurrentUserId()) : null,
       status: item.status || 'needed', // needed | have (legacy: claimed, packed)
       notes: item.notes || '',
       createdBy: item.createdBy || getCurrentUserId(),
@@ -1071,6 +1072,12 @@ export function updateGearItem(tripId, id, patch) {
     }
   } else if (normalized.assignedTo !== undefined && normalized.assignedToIds === undefined) {
     normalized.assignedToIds = normalized.assignedTo ? [normalized.assignedTo] : [];
+  }
+  if (normalized.assignedToIds !== undefined) {
+    const existing = (getTrip(tripId)?.gearItems || []).find((g) => g.id === id);
+    const before = [...getGearAssigneeIds(existing)].sort().join('|');
+    const after = [...normalized.assignedToIds].sort().join('|');
+    if (before !== after) normalized.assignedBy = normalized.assignedToIds.length ? getCurrentUserId() : null;
   }
   return updatePlanningItem(tripId, 'gearItems', id, normalized);
 }
@@ -1109,10 +1116,13 @@ export function addMeal(tripId, meal) {
     const full = {
       id: crypto.randomUUID(),
       dayIndex: Number.isFinite(meal.dayIndex) ? meal.dayIndex : 1,
-      slot: meal.slot || 'dinner', // breakfast | lunch | dinner | snack
+      slot: meal.slot || 'dinner', // breakfast | lunch | happy-hour | dinner | dessert | snack
+      endDayIndex: Number.isFinite(meal.endDayIndex) && meal.endDayIndex > (Number.isFinite(meal.dayIndex) ? meal.dayIndex : 1)
+        ? meal.endDayIndex : null,
       name: (meal.name || '').trim() || 'Untitled meal',
       assignedTo: meal.assignedTo || null,
       assignedToLabel: meal.assignedToLabel || null,
+      assignedBy: meal.assignedTo ? (meal.assignedBy || getCurrentUserId()) : null,
       coCooks: Array.isArray(meal.coCooks) ? meal.coCooks : [],
       servings: Number.isFinite(meal.servings) && meal.servings > 0 ? meal.servings : null,
       ingredients: Array.isArray(meal.ingredients) ? meal.ingredients : [],
@@ -1128,7 +1138,15 @@ export function addMeal(tripId, meal) {
 }
 
 export function updateMeal(tripId, id, patch) {
-  return updatePlanningItem(tripId, 'meals', id, patch);
+  const next = { ...patch };
+  if ('assignedTo' in patch) {
+    const existing = (getTrip(tripId)?.meals || []).find((m) => m.id === id);
+    const before = existing?.assignedTo || null;
+    const after = patch.assignedTo || null;
+    // Remember who made the assignment, but not when an unrelated edit resends the same cook.
+    if (before !== after) next.assignedBy = after ? getCurrentUserId() : null;
+  }
+  return updatePlanningItem(tripId, 'meals', id, next);
 }
 
 export function claimMeal(tripId, mealId, { asCoCook = false, userId = null, label = null } = {}) {
@@ -1253,6 +1271,7 @@ export function forkTripAsTemplate(sourceTripId, { name = null, startDate = '', 
   for (const meal of source.meals || []) {
     addMeal(forked.id, {
       dayIndex: meal.dayIndex || 1,
+      endDayIndex: meal.endDayIndex || null,
       slot: meal.slot || 'dinner',
       name: meal.name,
       servings: meal.servings || null,

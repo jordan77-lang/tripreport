@@ -5,6 +5,7 @@ import { SyncChip } from '../components/SyncChip';
 import { TripCrewList } from '../components/TripCrewList';
 import { UnassignedEntries } from '../components/UnassignedEntries';
 import { Ic } from '../components/Ic';
+import { CrewActivityPulse } from '../components/CrewActivityPulse';
 import { T, F, ICONS } from '../tokens';
 import { addLocation, finalizeTrip, getCurrentUserId, isTripMember, isTripOwner, markLocationVisited, reopenTrip, toggleLocationVote } from '../lib/storage';
 import { getSignedInUserId } from '../lib/authUser';
@@ -526,6 +527,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
         )}
 
         <UnassignedEntries trip={trip} onTripUpdate={onTripUpdate} onAddLocation={() => onNav?.('add-location')} />
+        <CrewActivityPulse trip={trip} onOpen={(screen, params) => onNav?.(screen, params)} style={{ marginTop: 0, marginBottom: 14 }} />
         <div style={{ fontSize: ts(17), fontWeight: 800, color: T.text, marginBottom: 8 }}>Your locations</div>
         <p style={{ fontSize: ts(14), color: T.textSub, lineHeight: 1.5, marginBottom: 14 }}>Open a location to add its information and trip entries.</p>
         <div style={{ marginBottom: 14 }}>

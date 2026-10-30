@@ -152,7 +152,7 @@ export function ParticipantsTab({
                       {p.craft}
                     </span>
                   )}
-                  {tripCount > 1 && (
+                  {tripCount > 1 && p.id !== currentUserId && (
                     <span style={{ fontSize: ts(10.5), fontWeight: 700, color: '#2E6D3A', background: '#E5F4E8', borderRadius: 8, padding: '1px 7px' }}>
                       {tripCount} trips together
                     </span>

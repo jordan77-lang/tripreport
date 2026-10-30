@@ -1,15 +1,24 @@
 import { ICONS } from '../tokens';
+import campsiteImg from '../assets/campsite.png';
+import photoImg from '../assets/photo.png';
+import weatherImg from '../assets/weather.png';
+import riverFlowImg from '../assets/river-flow.png';
+import riverFeatureImg from '../assets/river-feature.png';
+import wildlifeImg from '../assets/wildlife.png';
+import mealImg from '../assets/meal.png';
+import expenseImg from '../assets/expense.png';
+import customImg from '../assets/custom.png';
 
 export const EVENT_CAPTURE_TYPES = [
-  { type: 'campsite', label: 'Campsite', icon: ICONS.tent, col: '#B8702E' },
-  { type: 'photo', label: 'Photo', icon: ICONS.camera, col: '#2C5F3E' },
-  { type: 'weather', label: 'Weather', icon: ICONS.compass, col: '#517EA3' },
-  { type: 'gauge', label: 'River Flow', icon: ICONS.gauge, col: '#2A5C8E' },
-  { type: 'river-feature', label: 'River Feature', icon: ICONS.drop, col: '#3A72A8' },
-  { type: 'wildlife', label: 'Wildlife', icon: ICONS.leaf, col: '#4A7A34' },
-  { type: 'food', label: 'Meal', icon: ICONS.fork, col: '#B06030' },
-  { type: 'expense', label: 'Expense', icon: ICONS.expense, col: '#2A5C8E' },
-  { type: 'custom-event', label: 'Custom', icon: ICONS.plus, col: '#2C5F3E' },
+  { type: 'campsite', label: 'Campsite', icon: ICONS.tent, img: campsiteImg, col: '#B8702E' },
+  { type: 'photo', label: 'Photo', icon: ICONS.camera, img: photoImg, col: '#2C5F3E' },
+  { type: 'weather', label: 'Weather', icon: ICONS.compass, img: weatherImg, col: '#517EA3' },
+  { type: 'gauge', label: 'River Flow', icon: ICONS.gauge, img: riverFlowImg, col: '#2A5C8E' },
+  { type: 'river-feature', label: 'River Feature', icon: ICONS.drop, img: riverFeatureImg, col: '#3A72A8' },
+  { type: 'wildlife', label: 'Wildlife', icon: ICONS.leaf, img: wildlifeImg, col: '#4A7A34' },
+  { type: 'food', label: 'Meal', icon: ICONS.fork, img: mealImg, col: '#B06030' },
+  { type: 'expense', label: 'Expense', icon: ICONS.expense, img: expenseImg, col: '#2A5C8E' },
+  { type: 'custom-event', label: 'Custom', icon: ICONS.plus, img: customImg, col: '#2C5F3E' },
 ];
 
 export function eventTypesForTrip() {

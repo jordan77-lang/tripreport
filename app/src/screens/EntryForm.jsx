@@ -13,6 +13,7 @@ import { EntryLocationPicker } from '../components/EntryLocationPicker';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 import { ts } from '../lib/textScale';
 import { addMeal, getTrips } from '../lib/storage';
+import { MEAL_SLOTS as MEAL_SLOT_IDS, SLOT_LABEL, mealDaysLabel, mealSlotOrder } from '../lib/mealSlots';
 import { listSavedMeals, publishSavedMeal, refreshSharedMeals, rememberMeal, savedMealByName } from '../lib/mealLibrary';
 
 /**
@@ -811,12 +812,7 @@ export function EntryForm({
   );
 }
 
-const MEAL_SLOTS = [
-  { id: 'breakfast', label: 'Breakfast' },
-  { id: 'lunch', label: 'Lunch' },
-  { id: 'dinner', label: 'Dinner' },
-  { id: 'snack', label: 'Snack' },
-];
+const MEAL_SLOTS = MEAL_SLOT_IDS.map((id) => ({ id, label: SLOT_LABEL[id] }));
 
 function slotForNow(date = new Date()) {
   const hour = date.getHours();
@@ -902,7 +898,7 @@ function MealChoice({
   const ordered = [...meals].sort((a, b) => {
     const day = (a.dayIndex || 1) - (b.dayIndex || 1);
     if (day) return day;
-    return MEAL_SLOTS.findIndex((item) => item.id === a.slot) - MEAL_SLOTS.findIndex((item) => item.id === b.slot);
+    return mealSlotOrder(a.slot) - mealSlotOrder(b.slot);
   });
   return (
     <div style={{ marginBottom: 16 }}>
@@ -920,7 +916,7 @@ function MealChoice({
                   border: `1.5px solid ${selected ? '#B06030' : T.border}`, background: selected ? '#F8EDE4' : T.card }}>
                 <span style={{ display: 'block', fontSize: ts(14), fontWeight: 800, color: T.text }}>{meal.name}</span>
                 <span style={{ display: 'block', fontSize: ts(12), color: T.textSub, marginTop: 2 }}>
-                  Day {meal.dayIndex || 1} · {mealSlotLabel(meal.slot)}{meal.assignedToLabel ? ` · ${meal.assignedToLabel}` : ''}
+                  {mealDaysLabel(meal)} · {mealSlotLabel(meal.slot)}{meal.assignedToLabel ? ` · ${meal.assignedToLabel}` : ''}
                 </span>
               </button>
             );

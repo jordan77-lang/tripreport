@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { MyResponsibilities } from '../components/MyResponsibilities';
 import { Ic } from '../components/Ic';
+import { SlotIcon } from '../components/SlotIcon';
 import { SyncChip } from '../components/SyncChip';
 import { TripEditPanel } from '../components/TripEditPanel';
 import { T, F, ICONS } from '../tokens';
@@ -17,6 +18,10 @@ import {
   addShoppingItem, updateShoppingItem, removeShoppingItem,
   generateShoppingList,
 } from '../lib/storage';
+import {
+  MEAL_SLOTS, SLOT_LABEL, mealDayOptionLabel, tripDayCount,
+  mealDaysLabel, mealEndDay, mealStartDay, mealSlotOrder,
+} from '../lib/mealSlots';
 import { ParticipantsTab } from '../components/ParticipantsTab';
 import { TripExpenses } from '../components/TripExpenses';
 import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
@@ -28,7 +33,6 @@ import { getSignedInUserId } from '../lib/authUser';
 import {
   INGREDIENT_CATEGORIES,
   classifyIngredientCategory,
-  getIngredientCategoryMeta,
   groupIngredientsByCategory,
   listSavedIngredients,
   listSavedMeals,
@@ -59,8 +63,6 @@ function planTab(tab) {
 const GEAR_CATEGORIES = ['group', 'shelter', 'cooking', 'safety', 'personal'];
 const GEAR_NEED_LABEL = 'To bring';
 const GEAR_READY_LABEL = 'Ready';
-const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
-const SLOT_LABEL = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
 
 function isGearComplete(item) {
   const s = item?.status;
@@ -622,6 +624,7 @@ function parseIngredientString(raw) {
 function MealsTab({ trip, participants, onTripUpdate }) {
   const [name, setName] = useState('');
   const [dayIndex, setDayIndex] = useState(1);
+  const [endDayIndex, setEndDayIndex] = useState('');
   const [slot, setSlot] = useState('dinner');
   const [assignedTo, setAssignedTo] = useState('');
   const [coCookIds, setCoCookIds] = useState([]);
@@ -642,6 +645,11 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   const [sharedTick, setSharedTick] = useState(0);
 
   const meals = trip.meals || [];
+  // Trip length, extended so meals planned beyond it (e.g. after a date change) stay editable.
+  const dayNumbers = useMemo(() => {
+    const last = Math.max(tripDayCount(trip), ...meals.map((m) => mealEndDay(m)), Number(dayIndex) || 1);
+    return Array.from({ length: last }, (_, i) => i + 1);
+  }, [trip, meals, dayIndex]);
   const savedMeals = useMemo(() => {
     const others = getTrips().filter((item) => item.id !== trip.id);
     return listSavedMeals([...others, { meals }]);
@@ -700,6 +708,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     setEditingId(null);
     setName('');
     setDayIndex(1);
+    setEndDayIndex('');
     setSlot('dinner');
     setAssignedTo('');
     setCoCookIds([]);
@@ -712,7 +721,8 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   function startEdit(meal) {
     setEditingId(meal.id);
     setName(meal.name || '');
-    setDayIndex(meal.dayIndex || 1);
+    setDayIndex(mealStartDay(meal));
+    setEndDayIndex(mealEndDay(meal) > mealStartDay(meal) ? mealEndDay(meal) : '');
     setSlot(meal.slot || 'dinner');
     setAssignedTo(meal.assignedTo || '');
     setCoCookIds(Array.isArray(meal.coCooks) ? meal.coCooks : []);
@@ -783,13 +793,16 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     setSaving(true);
     try {
       const who = participants.find((p) => p.id === assignedTo);
+      const startDay = Number(dayIndex) || 1;
+      const endDay = Number(endDayIndex) || startDay;
       const cleanCoCooks = coCookIds.filter((id) => id && id !== assignedTo);
       const ingList = sortIngredients(parseIngredientString(combinedIngredients), 'category')
         .map((n) => ({ name: n, qty: '' }));
       const parsedServings = Number(servings);
       const payload = {
         name: name.trim(),
-        dayIndex: Number(dayIndex) || 1,
+        dayIndex: startDay,
+        endDayIndex: endDay > startDay ? endDay : null,
         slot,
         assignedTo: assignedTo || null,
         assignedToLabel: who?.label || null,
@@ -824,7 +837,12 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   }
 
   const byDay = useMemo(() => {
-    const map = groupBy(meals, (m) => String(m.dayIndex || 1));
+    const map = {};
+    for (const m of meals) {
+      for (let d = mealStartDay(m); d <= mealEndDay(m); d += 1) {
+        (map[d] ||= []).push(m);
+      }
+    }
     return Object.entries(map).sort((a, b) => Number(a[0]) - Number(b[0]));
   }, [meals]);
 
@@ -832,7 +850,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
 
   return (
     <div>
-      <Composer title={editingId ? `Edit meal · ${name || 'Meal'}` : 'Add meal'} onCancel={editingId ? resetForm : null}>
+      <Composer title={editingId ? `Edit meal · ${name || 'Meal'}` : 'Add meal'} onCancel={editingId ? resetForm : null} scrollToken={editingId}>
         {savedMeals.length > 0 && (
           <div style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -1027,8 +1045,24 @@ function MealsTab({ trip, participants, onTripUpdate }) {
         />
 
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <select value={dayIndex} onChange={(e) => setDayIndex(e.target.value)} style={selectStyle}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((d) => <option key={d} value={d}>Day {d}</option>)}
+          <select
+            value={dayIndex}
+            onChange={(e) => {
+              setDayIndex(e.target.value);
+              if (Number(endDayIndex) <= Number(e.target.value)) setEndDayIndex('');
+            }}
+            style={selectStyle}
+          >
+            {dayNumbers.map((d) => <option key={d} value={d}>{mealDayOptionLabel(trip, d)}</option>)}
+          </select>
+          <select
+            aria-label="Last day"
+            value={endDayIndex}
+            onChange={(e) => setEndDayIndex(e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">Single day</option>
+            {dayNumbers.filter((d) => d > Number(dayIndex)).map((d) => <option key={d} value={d}>Through {mealDayOptionLabel(trip, d)}</option>)}
           </select>
           <select value={slot} onChange={(e) => setSlot(e.target.value)} style={selectStyle}>
             {MEAL_SLOTS.map((s) => <option key={s} value={s}>{SLOT_LABEL[s]}</option>)}
@@ -1110,7 +1144,6 @@ function MealsTab({ trip, participants, onTripUpdate }) {
           {sortedCurrentIngredients.length > 0 ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
               {sortedCurrentIngredients.map((ing) => {
-                const catMeta = getIngredientCategoryMeta(classifyIngredientCategory(ing));
                 return (
                   <span
                     key={ing.toLowerCase()}
@@ -1127,7 +1160,6 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                       color: T.text,
                     }}
                   >
-                    <span aria-hidden="true">{catMeta.icon}</span>
                     {ing}
                     <button
                       type="button"
@@ -1209,7 +1241,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
                 {[
                   { id: 'all', label: 'All' },
-                  ...INGREDIENT_CATEGORIES.map((c) => ({ id: c.id, label: `${c.icon} ${c.shortLabel}` })),
+                  ...INGREDIENT_CATEGORIES.map((c) => ({ id: c.id, label: c.shortLabel })),
                 ].map((cat) => (
                   <button
                     key={cat.id}
@@ -1237,7 +1269,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                   {groupedSavedIngredients.map((group) => (
                     <div key={group.id}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: T.textFaint, marginBottom: 4 }}>
-                        {group.icon} {group.label}
+                        {group.label}
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                         {group.items.map((ingredient) => {
@@ -1292,8 +1324,8 @@ function MealsTab({ trip, participants, onTripUpdate }) {
 
       {byDay.map(([day, dayMeals]) => (
         <div key={day} style={{ marginBottom: 14 }}>
-          <SectionLabel>Day {day}</SectionLabel>
-          {dayMeals.sort((a, b) => MEAL_SLOTS.indexOf(a.slot) - MEAL_SLOTS.indexOf(b.slot)).map((m) => {
+          <SectionLabel>{mealDayOptionLabel(trip, Number(day))}</SectionLabel>
+          {dayMeals.sort((a, b) => mealSlotOrder(a.slot) - mealSlotOrder(b.slot)).map((m) => {
             const currentUserId = getCurrentUserId();
             const coCooks = Array.isArray(m.coCooks) ? m.coCooks : [];
             const amCoCook = coCooks.includes(currentUserId);
@@ -1312,8 +1344,11 @@ function MealsTab({ trip, participants, onTripUpdate }) {
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
-                    <span style={{ color: T.accent, fontSize: 10.5, fontWeight: 800 }}>{SLOT_LABEL[m.slot]} · </span>
+                    <span style={{ color: T.accent, fontSize: 10.5, fontWeight: 800 }}><SlotIcon slot={m.slot} />{SLOT_LABEL[m.slot]} · </span>
                     {m.name}
+                    {mealEndDay(m) > mealStartDay(m) ? (
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textFaint }}> · {mealDaysLabel(m)}</span>
+                    ) : null}
                     {m.servings ? (
                       <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textFaint }}> · {m.servings} servings</span>
                     ) : null}
@@ -1327,7 +1362,6 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                   {sortedMealIngs.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
                       {sortedMealIngs.map((i) => {
-                        const catMeta = getIngredientCategoryMeta(classifyIngredientCategory(i.name));
                         return (
                           <span
                             key={i.name}
@@ -1341,7 +1375,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                               padding: '1px 6px',
                             }}
                           >
-                            {catMeta.icon} {i.name}
+                            {i.name}
                           </span>
                         );
                       })}
@@ -1449,7 +1483,7 @@ function ShoppingTab({ trip, onTripUpdate }) {
         const key = String(ing?.name || '').trim().toLowerCase();
         if (!key) continue;
         if (!map.has(key)) map.set(key, []);
-        const label = `Day ${m.dayIndex || 1} ${SLOT_LABEL[m.slot] || ''} (${m.name})`.trim();
+        const label = `${mealDaysLabel(m)} ${SLOT_LABEL[m.slot] || ''} (${m.name})`.trim();
         if (!map.get(key).includes(label)) map.get(key).push(label);
       }
     }
@@ -1558,7 +1592,6 @@ function ShoppingTab({ trip, onTripUpdate }) {
   function renderShoppingItem(item) {
     const done = Boolean(item.checked);
     const usedInMeals = mealNamesByIngredient.get(String(item.name || '').trim().toLowerCase());
-    const catMeta = getIngredientCategoryMeta(classifyIngredientCategory(item.name));
     return (
       <div
         key={item.id}
@@ -1583,7 +1616,6 @@ function ShoppingTab({ trip, onTripUpdate }) {
             color: done ? T.textFaint : T.text,
             textDecoration: done ? 'line-through' : 'none',
           }}>
-            <span aria-hidden="true" style={{ marginRight: 5 }}>{catMeta.icon}</span>
             {item.name}{item.qty ? ` · ${item.qty}` : ''}
           </div>
           {usedInMeals && usedInMeals.length > 0 ? (
@@ -1751,9 +1783,13 @@ function CompletionCheck({ checked, onToggle, label }) {
   );
 }
 
-function Composer({ title, onCancel, children }) {
+function Composer({ title, onCancel, scrollToken, children }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (scrollToken) ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [scrollToken]);
   return (
-    <div style={{ background: T.card, borderRadius: 14, padding: '12px 14px', border: `1px solid ${T.border}`, marginBottom: 16 }}>
+    <div ref={ref} style={{ background: T.card, borderRadius: 14, padding: '12px 14px', border: `1px solid ${T.border}`, marginBottom: 16, scrollMarginTop: 12 }}>
       {title && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{title}</div>

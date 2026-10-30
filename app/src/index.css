@@ -151,8 +151,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .responsibility-list li > div { min-width: 0; }
 .responsibility-list p { font-size: .875rem; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
 .responsibility-list li div > span { font-size: .75rem; color: #6B6763; line-height: 1.6; }
-.responsibility-marker { background: #FBF0E4; color: #865222; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; }
-.responsibility-marker.done { background: #EBF3ED; color: #2C5F3E; }
+.responsibility-marker { width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; }
+.responsibility-marker.done { opacity: .9; }
 .responsibility-balance { font-size: 2rem; color: #2C5F3E; font-weight: 800; letter-spacing: -.04em; margin-bottom: 10px; }
 .dashboard-help { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; background: #EBF3ED; border-radius: 16px; padding: 18px; margin-top: 20px; }
 .dashboard-help h3 { color: #2C5F3E; font-size: .95rem; margin-bottom: 6px; }
