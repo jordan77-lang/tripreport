@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { parseInviteCode } from '../lib/inviteCode';
 import { joinTripByCode } from '../lib/tripCloud';
 import { T, F } from '../tokens';
+import { ts } from '../lib/textScale';
 
 export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
   const [code, setCode] = useState(() => String(initialCode || '').trim().toUpperCase());
@@ -29,12 +30,12 @@ export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
       <div style={{ padding: '16px 16px 24px', maxWidth: 420, margin: '0 auto' }}>
         <button type="button" onClick={onBack} style={backBtn}>← Back</button>
         <div style={{ fontSize: 22, fontWeight: 900, color: T.text, marginBottom: 8 }}>Join a trip</div>
-        <div style={{ fontSize: 13, color: T.textSub, marginBottom: 20, lineHeight: 1.5 }}>
+        <div style={{ fontSize: ts(13), color: T.textSub, marginBottom: 20, lineHeight: 1.5 }}>
           Paste an invite link or enter the code from your trip lead.
         </div>
 
         <form onSubmit={handleJoin}>
-          <label htmlFor="join-code" style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 700 }}>Invite link or code</label>
+          <label htmlFor="join-code" style={{ display: 'block', marginBottom: 8, fontSize: ts(14), fontWeight: 700 }}>Invite link or code</label>
           <input id="join-code"
             type="text"
             required
@@ -59,7 +60,7 @@ export function JoinTrip({ onJoined, onBack, initialCode = '' }) {
           />
 
           {!!error && (
-            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: '#FBE4E4', color: '#8A1414', fontSize: 12, fontWeight: 600 }}>
+            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: '#FBE4E4', color: '#8A1414', fontSize: ts(12), fontWeight: 600 }}>
               {error}
             </div>
           )}
@@ -77,7 +78,7 @@ const backBtn = {
   border: 'none',
   background: 'transparent',
   color: T.textSub,
-  fontSize: 13,
+  fontSize: ts(13),
   fontWeight: 700,
   cursor: 'pointer',
   padding: '0 0 12px',
@@ -92,7 +93,7 @@ function primaryBtn(disabled) {
     padding: '13px 16px',
     background: T.accent,
     color: 'white',
-    fontSize: 14,
+    fontSize: ts(14),
     fontWeight: 800,
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.65 : 1,

@@ -5,6 +5,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { OfflineTripMap } from './OfflineTripMap';
 import { resolveOfflineMapForTrip } from '../lib/offlineMaps';
 import { applyMapSymbol, syncPinMarker } from './mapPin';
+import { ts } from '../lib/textScale';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -323,8 +324,8 @@ function MapboxTripMap({
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
                     justifyContent: 'center', background: '#E8E5E0', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#6B6763' }}>Map unavailable</div>
-        <div style={{ fontSize: 11, color: '#A09D99', textAlign: 'center', padding: '0 20px' }}>
+        <div style={{ fontSize: ts(13), fontWeight: 700, color: '#6B6763' }}>Map unavailable</div>
+        <div style={{ fontSize: ts(11), color: '#A09D99', textAlign: 'center', padding: '0 20px' }}>
           {!mapboxgl.accessToken
             ? 'The online map is unavailable. Downloaded map packs can still be used.'
             : 'WebGL is not supported in this browser. Open in Chrome or Safari to use the map.'}

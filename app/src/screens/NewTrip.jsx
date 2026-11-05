@@ -8,6 +8,7 @@ import { createTripInvite, pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { listMapRegions, regionMatchesTripTypes } from '../lib/mapRegions';
 import { preloadAllTripMaps } from '../lib/offlineMaps';
+import { ts } from '../lib/textScale';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -248,7 +249,7 @@ export function NewTrip({ onDone, onBack }) {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -.4 }}>New Trip</div>
           </div>
-          <div style={{ fontSize: 12, color: T.textFaint }}>{step} of 3</div>
+          <div style={{ fontSize: ts(12), color: T.textFaint }}>{step} of 3</div>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {[1, 2, 3].map(s => (
@@ -270,11 +271,11 @@ export function NewTrip({ onDone, onBack }) {
             <div style={{ marginBottom: 18 }}>
               <Label>Trip Cover Photo</Label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <label style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '8px 10px', fontSize: 11, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
+                <label style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '8px 10px', fontSize: ts(11), fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
                   Choose Photo
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onTripCoverSelected(e.target.files)} />
                 </label>
-                {!!coverPhoto && <span onClick={() => { if (coverPhoto?.previewUrl) URL.revokeObjectURL(coverPhoto.previewUrl); setCoverPhoto(null); }} style={{ fontSize: 10.5, color: T.textFaint, cursor: 'pointer' }}>Remove</span>}
+                {!!coverPhoto && <span onClick={() => { if (coverPhoto?.previewUrl) URL.revokeObjectURL(coverPhoto.previewUrl); setCoverPhoto(null); }} style={{ fontSize: ts(10.5), color: T.textFaint, cursor: 'pointer' }}>Remove</span>}
               </div>
               {!!coverPhoto && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 9px' }}>
@@ -282,8 +283,8 @@ export function NewTrip({ onDone, onBack }) {
                     ? <img src={coverPhoto.previewUrl} alt="Trip cover" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8 }} />
                     : <div style={{ width: 44, height: 44, borderRadius: 8, background: T.bg, border: `1px solid ${T.border}` }} />}
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 11.5, color: T.text, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{coverPhoto.name}</div>
-                    <div style={{ fontSize: 10, color: T.textFaint }}>{Math.round((coverPhoto.size || 0) / 1024)} KB</div>
+                    <div style={{ fontSize: ts(11.5), color: T.text, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{coverPhoto.name}</div>
+                    <div style={{ fontSize: ts(10), color: T.textFaint }}>{Math.round((coverPhoto.size || 0) / 1024)} KB</div>
                   </div>
                 </div>
               )}
@@ -294,7 +295,7 @@ export function NewTrip({ onDone, onBack }) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {ALL_TYPES.map(t => (
                   <div key={t} onClick={() => toggleType(t)}
-                       style={{ padding: '7px 13px', borderRadius: 22, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                       style={{ padding: '7px 13px', borderRadius: 22, fontSize: ts(12), fontWeight: 600, cursor: 'pointer',
                                 background: types.includes(t) ? T.accent : T.card,
                                 color: types.includes(t) ? 'white' : T.textSub,
                                 border: types.includes(t) ? 'none' : `1.5px solid ${T.border}` }}>
@@ -302,22 +303,22 @@ export function NewTrip({ onDone, onBack }) {
                   </div>
                 ))}
               </div>
-              {types.length > 0 && <div style={{ marginTop: 8, fontSize: 11, color: T.accentMid }}>✓ {types.join(' + ')}</div>}
+              {types.length > 0 && <div style={{ marginTop: 8, fontSize: ts(11), color: T.accentMid }}>✓ {types.join(' + ')}</div>}
             </div>
 
             <div style={{ marginBottom: 18 }}>
               <Label>Planned Dates</Label>
               <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 10, color: T.textFaint, marginBottom: 4 }}>Start</div>
+                  <div style={{ fontSize: ts(10), color: T.textFaint, marginBottom: 4 }}>Start</div>
                   <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle(T)} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 10, color: T.textFaint, marginBottom: 4 }}>End (optional)</div>
+                  <div style={{ fontSize: ts(10), color: T.textFaint, marginBottom: 4 }}>End (optional)</div>
                   <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle(T)} />
                 </div>
               </div>
-              <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 8, lineHeight: 1.45 }}>
+              <div style={{ fontSize: ts(10.5), color: T.textSub, marginTop: 8, lineHeight: 1.45 }}>
                 Plan gear, shopping, and invites anytime — even before trip dates. Open Trip for map, journal, and field logging whenever you need them.
               </div>
             </div>
@@ -329,13 +330,13 @@ export function NewTrip({ onDone, onBack }) {
           <>
             <div style={{ marginBottom: 18 }}>
               <Label>Trip Participants</Label>
-              <div style={{ fontSize: 11, color: T.textSub, marginBottom: 10, lineHeight: 1.45 }}>
+              <div style={{ fontSize: ts(11), color: T.textSub, marginBottom: 10, lineHeight: 1.45 }}>
                 Add names for gear and meals. After creating the trip, Trip Plan → Crew is where you email invites or share a join code.
               </div>
 
               {pastCrew.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>
+                  <div style={{ fontSize: ts(10), fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>
                     Past crew
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -348,7 +349,7 @@ export function NewTrip({ onDone, onBack }) {
                           style={{
                             padding: '6px 10px',
                             borderRadius: 14,
-                            fontSize: 11,
+                            fontSize: ts(11),
                             fontWeight: 700,
                             cursor: added ? 'default' : 'pointer',
                             background: added ? T.accentLight : T.bg,
@@ -374,7 +375,7 @@ export function NewTrip({ onDone, onBack }) {
                     placeholder="Search or add by name"
                     style={inputStyle(T)}
                   />
-                  <div onClick={() => addInvite()} style={{ minWidth: 72, borderRadius: 12, background: T.accent, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 800 }}>
+                  <div onClick={() => addInvite()} style={{ minWidth: 72, borderRadius: 12, background: T.accent, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: ts(12), fontWeight: 800 }}>
                     Add
                   </div>
                 </div>
@@ -382,7 +383,7 @@ export function NewTrip({ onDone, onBack }) {
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 80, background: T.card, border: `1px solid ${T.border}`, borderRadius: 9, marginTop: 3, zIndex: 20, boxShadow: '0 4px 12px rgba(0,0,0,.10)', overflow: 'hidden' }}>
                     {suggestions.map(c => (
                       <div key={c.id} onClick={() => addInvite(c.name)}
-                           style={{ padding: '8px 12px', fontSize: 12, color: T.text, cursor: 'pointer', borderBottom: `1px solid ${T.border}` }}>
+                           style={{ padding: '8px 12px', fontSize: ts(12), color: T.text, cursor: 'pointer', borderBottom: `1px solid ${T.border}` }}>
                         {c.name}
                       </div>
                     ))}
@@ -390,15 +391,15 @@ export function NewTrip({ onDone, onBack }) {
                 )}
               </div>
               {invites.length === 0
-                ? <div style={{ fontSize: 11, color: T.textFaint }}>No participants yet. Continue solo or add people above.</div>
+                ? <div style={{ fontSize: ts(11), color: T.textFaint }}>No participants yet. Continue solo or add people above.</div>
                 : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {invites.map(i => (
                       <div key={i.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{i.handle || i.name}</div>
+                          <div style={{ fontSize: ts(12.5), fontWeight: 700, color: T.text }}>{i.handle || i.name}</div>
                         </div>
-                        <div onClick={() => removeInvite(i.id)} style={{ color: T.textFaint, cursor: 'pointer', fontSize: 13 }}>✕</div>
+                        <div onClick={() => removeInvite(i.id)} style={{ color: T.textFaint, cursor: 'pointer', fontSize: ts(13) }}>✕</div>
                       </div>
                     ))}
                   </div>
@@ -415,8 +416,8 @@ export function NewTrip({ onDone, onBack }) {
                       <Ic d={opt.icon} size={16} color={privacy === opt.id ? 'white' : T.textSub} sw={1.8} />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{opt.label}</div>
-                      <div style={{ fontSize: 11, color: T.textFaint, marginTop: 1 }}>{opt.sub}</div>
+                      <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>{opt.label}</div>
+                      <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 1 }}>{opt.sub}</div>
                     </div>
                     <div style={{ width: 20, height: 20, borderRadius: 10, border: `2px solid ${privacy === opt.id ? T.accent : T.border}`, background: privacy === opt.id ? T.accent : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {privacy === opt.id && <div style={{ width: 8, height: 8, borderRadius: 4, background: 'white' }} />}
@@ -427,10 +428,10 @@ export function NewTrip({ onDone, onBack }) {
             </div>
 
             <div style={{ background: T.accentLight, borderRadius: 12, padding: '12px 14px', marginBottom: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, marginBottom: 4 }}>Trip summary</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>{name || 'Unnamed Trip'}</div>
-              <div style={{ fontSize: 11, color: T.accentMid, marginTop: 2 }}>{types.join(' · ') || 'No activity type'}</div>
-              <div style={{ fontSize: 11, color: T.accentMid, marginTop: 2 }}>{invites.length} {invites.length === 1 ? 'participant' : 'participants'}</div>
+              <div style={{ fontSize: ts(12), fontWeight: 700, color: T.accent, marginBottom: 4 }}>Trip summary</div>
+              <div style={{ fontSize: ts(13), fontWeight: 800, color: T.text }}>{name || 'Unnamed Trip'}</div>
+              <div style={{ fontSize: ts(11), color: T.accentMid, marginTop: 2 }}>{types.join(' · ') || 'No activity type'}</div>
+              <div style={{ fontSize: ts(11), color: T.accentMid, marginTop: 2 }}>{invites.length} {invites.length === 1 ? 'participant' : 'participants'}</div>
             </div>
           </>
         )}
@@ -440,8 +441,8 @@ export function NewTrip({ onDone, onBack }) {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Search bar */}
             <div style={{ padding: '12px 16px 8px', background: T.card, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 6 }}>Select Trip Map for Your Crew</div>
-              <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
+              <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 6 }}>Select Trip Map for Your Crew</div>
+              <div style={{ fontSize: ts(11), color: T.textFaint, marginBottom: 8 }}>
                 Search and frame your trip area below (or select an offline pack). This map is saved to the trip and crew members will be prompted to download it to their device when they join.
               </div>
               <div style={{ position: 'relative' }}>
@@ -451,9 +452,9 @@ export function NewTrip({ onDone, onBack }) {
                     onChange={e => setMapSearch(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') searchPlace(); }}
                     placeholder="Search place, river, trailhead…"
-                    style={{ ...inputStyle(T), fontSize: 12, padding: '8px 11px' }}
+                    style={{ ...inputStyle(T), fontSize: ts(12), padding: '8px 11px' }}
                   />
-                  <div onClick={searchPlace} style={{ padding: '8px 14px', borderRadius: 10, background: T.accent, color: 'white', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <div onClick={searchPlace} style={{ padding: '8px 14px', borderRadius: 10, background: T.accent, color: 'white', fontSize: ts(11.5), fontWeight: 700, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
                     {searching ? '…' : <><Ic d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" size={14} color="white" sw={2} /> Go</>}
                   </div>
                 </div>
@@ -461,12 +462,12 @@ export function NewTrip({ onDone, onBack }) {
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, marginTop: 3, zIndex: 30, boxShadow: '0 6px 20px rgba(0,0,0,.14)', overflow: 'hidden' }}>
                     {searchResults.map(f => (
                       <div key={f.id} onClick={() => pickPlace(f)}
-                           style={{ padding: '10px 13px', fontSize: 12, color: T.text, cursor: 'pointer', borderBottom: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                           style={{ padding: '10px 13px', fontSize: ts(12), color: T.text, cursor: 'pointer', borderBottom: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 1 }}>
                         <span style={{ fontWeight: 700 }}>{f.text}</span>
-                        <span style={{ fontSize: 10.5, color: T.textFaint }}>{f.place_name}</span>
+                        <span style={{ fontSize: ts(10.5), color: T.textFaint }}>{f.place_name}</span>
                       </div>
                     ))}
-                    <div onClick={() => setSearchResults([])} style={{ padding: '7px 13px', fontSize: 10.5, color: T.textFaint, cursor: 'pointer', textAlign: 'center' }}>Dismiss</div>
+                    <div onClick={() => setSearchResults([])} style={{ padding: '7px 13px', fontSize: ts(10.5), color: T.textFaint, cursor: 'pointer', textAlign: 'center' }}>Dismiss</div>
                   </div>
                 )}
               </div>
@@ -477,28 +478,28 @@ export function NewTrip({ onDone, onBack }) {
 
             {/* Zoom / detail control */}
             <div style={{ padding: '10px 16px', background: T.card, borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>Map Detail Level</div>
+              <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>Map Detail Level</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {ZOOM_OPTIONS.map(z => (
                   <div key={z.level} onClick={() => setMaxZoom(z.level)}
                        style={{ flex: 1, padding: '8px 6px', borderRadius: 10, cursor: 'pointer', textAlign: 'center',
                                 border: `1.5px solid ${maxZoom === z.level ? T.accent : T.border}`,
                                 background: maxZoom === z.level ? T.accentLight : T.bg }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: maxZoom === z.level ? T.accent : T.text }}>{z.label}</div>
-                    <div style={{ fontSize: 9.5, color: T.textFaint, marginTop: 2 }}>~{z.estimateMb} MB</div>
+                    <div style={{ fontSize: ts(11), fontWeight: 700, color: maxZoom === z.level ? T.accent : T.text }}>{z.label}</div>
+                    <div style={{ fontSize: ts(9.5), color: T.textFaint, marginTop: 2 }}>~{z.estimateMb} MB</div>
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize: 10, color: T.textFaint, marginTop: 6 }}>
+              <div style={{ fontSize: ts(10), color: T.textFaint, marginTop: 6 }}>
                 Tiles load on demand when online. Frame this area, then download it from Plan → Maps before you lose service.
               </div>
 
               {listMapRegions().length > 0 && (
               <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>
+                <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>
                   Offline map packs (optional)
                 </div>
-                <div style={{ fontSize: 10.5, color: T.textFaint, marginBottom: 8 }}>
+                <div style={{ fontSize: ts(10.5), color: T.textFaint, marginBottom: 8 }}>
                   Download on Wi‑Fi before your trip. More regions will appear here over time.
                 </div>
                 {listMapRegions().map((region) => {
@@ -529,10 +530,10 @@ export function NewTrip({ onDone, onBack }) {
                         {checked && <Ic d="M20 6L9 17l-5-5" size={10} color="white" sw={3} />}
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{region.name}</div>
-                        <div style={{ fontSize: 10.5, color: T.textFaint }}>{region.description}</div>
+                        <div style={{ fontSize: ts(12), fontWeight: 700, color: T.text }}>{region.name}</div>
+                        <div style={{ fontSize: ts(10.5), color: T.textFaint }}>{region.description}</div>
                         {suggested && !checked && (
-                          <div style={{ fontSize: 10, color: T.accentMid, marginTop: 3, fontWeight: 600 }}>Suggested for your activity types</div>
+                          <div style={{ fontSize: ts(10), color: T.accentMid, marginTop: 3, fontWeight: 600 }}>Suggested for your activity types</div>
                         )}
                       </div>
                     </div>
@@ -550,7 +551,7 @@ export function NewTrip({ onDone, onBack }) {
         {step < 3 ? (
           <div onClick={() => setStep(s => Math.min(3, s + 1))}
                style={{ background: T.accent, borderRadius: 14, padding: '15px', textAlign: 'center', boxShadow: `0 4px 16px ${T.accent}50`, cursor: 'pointer' }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: 'white' }}>Continue →</span>
+            <span style={{ fontSize: ts(15), fontWeight: 800, color: 'white' }}>Continue →</span>
           </div>
         ) : (
           <div onClick={handleLaunch}
@@ -566,10 +567,10 @@ export function NewTrip({ onDone, onBack }) {
 }
 
 const Label = ({ children }) => (
-  <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 7 }}>{children}</div>
+  <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 7 }}>{children}</div>
 );
 
 const inputStyle = (T) => ({
   width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 12, padding: '11px 14px',
-  fontSize: 13.5, fontFamily: F, color: T.text, background: T.card, outline: 'none', boxSizing: 'border-box',
+  fontSize: ts(13.5), fontFamily: F, color: T.text, background: T.card, outline: 'none', boxSizing: 'border-box',
 });

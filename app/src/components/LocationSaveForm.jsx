@@ -94,7 +94,7 @@ export function LocationSaveForm({
         style={inputStyle}
       />
 
-      <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Type</div>
+      <div style={{ fontSize: ts(10.5), color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Type</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
         {LOCATION_TYPES.map((tp) => (
           <button
@@ -125,7 +125,7 @@ export function LocationSaveForm({
 
       {showPinControls && (
         <>
-      <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Where</div>
+      <div style={{ fontSize: ts(10.5), color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Where</div>
       {/* Search jumps the map to the right area; the pin is still set by hand. */}
       {onSearchPick && locationSource === 'map' && (
         <PlaceSearch onPick={onSearchPick} />
@@ -172,7 +172,7 @@ export function LocationSaveForm({
 
       {/* When: always visible. A location logged after the trip needs a real date,
           and hiding that behind a disclosure made "Now" a silent wrong default. */}
-      <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Status</div>
+      <div style={{ fontSize: ts(10.5), color: T.textSub, fontWeight: 700, marginBottom: 6 }}>Status</div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
         <button
           type="button"
@@ -191,7 +191,7 @@ export function LocationSaveForm({
         </button>
       </div>
 
-      <div style={{ fontSize: 10.5, color: T.textSub, fontWeight: 700, marginBottom: 6 }}>When</div>
+      <div style={{ fontSize: ts(10.5), color: T.textSub, fontWeight: 700, marginBottom: 6 }}>When</div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
         {TIME_MODES.map((opt) => (
           <button key={opt.id} type="button" onClick={() => set({ timeMode: opt.id })} style={chipStyle(draft.timeMode === opt.id)}>
@@ -263,7 +263,7 @@ export function LocationSaveForm({
               <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onCoverPhotoChange?.(e.target.files)} />
             </label>
             {coverPhoto && (
-              <button type="button" onClick={() => onCoverPhotoChange?.(null)} style={{ border: 'none', background: 'transparent', color: T.textFaint, fontSize: 11, cursor: 'pointer', fontFamily: F }}>
+              <button type="button" onClick={() => onCoverPhotoChange?.(null)} style={{ border: 'none', background: 'transparent', color: T.textFaint, fontSize: ts(11), cursor: 'pointer', fontFamily: F }}>
                 Remove
               </button>
             )}
@@ -271,7 +271,7 @@ export function LocationSaveForm({
           {coverPhoto && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <MediaThumb media={coverPhoto} alt="Cover" style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover' }} />
-              <span style={{ fontSize: 11, color: T.textFaint }}>{coverPhoto.name}</span>
+              <span style={{ fontSize: ts(11), color: T.textFaint }}>{coverPhoto.name}</span>
             </div>
           )}
         </>
@@ -324,7 +324,7 @@ const fileBtnStyle = {
   border: '1px solid #3A72A840',
   borderRadius: 10,
   padding: '7px 10px',
-  fontSize: 11,
+  fontSize: ts(11),
   fontWeight: 700,
   color: '#2A5C8E',
   cursor: 'pointer',

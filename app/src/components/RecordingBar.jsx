@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { startGpsSession,pauseGpsSession,resumeGpsSession,stopGpsSession,updateGpsSession } from '../lib/storage';
 import { routeStats } from '../lib/gpsRecorder';
 import { T } from '../tokens';
+import { ts } from '../lib/textScale';
 
 export function RecordingBar({trip,gps={},onUpdate,onOpenTrip}) {
   const [error,setError]=useState(null),[finished,setFinished]=useState(null),[label,setLabel]=useState(''),[locationId,setLocationId]=useState('');
@@ -20,9 +21,9 @@ export function RecordingBar({trip,gps={},onUpdate,onOpenTrip}) {
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
       <div style={{minWidth:0}}>
         <strong role="status">{status}</strong>
-        <div style={{fontSize:12}}><button style={{border:0,padding:0,background:'transparent',color:T.accent,cursor:'pointer'}} onClick={onOpenTrip}>{trip.name}</button> · This phone
+        <div style={{fontSize:ts(12)}}><button style={{border:0,padding:0,background:'transparent',color:T.accent,cursor:'pointer'}} onClick={onOpenTrip}>{trip.name}</button> · This phone
           {session && ' · '+stats.miles+' mi · '+Math.max(0,Math.floor((now-session.startedAt)/60000))+' min elapsed'}</div>
-        {active && gps.lastSavedAt && <div style={{fontSize:12}}>Last saved {new Date(gps.lastSavedAt).toLocaleTimeString()}{gps.position?.accuracy!=null?' · ±'+Math.round(gps.position.accuracy)+' m':''}</div>}
+        {active && gps.lastSavedAt && <div style={{fontSize:ts(12)}}>Last saved {new Date(gps.lastSavedAt).toLocaleTimeString()}{gps.position?.accuracy!=null?' · ±'+Math.round(gps.position.accuracy)+' m':''}</div>}
       </div>
       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
         {!session && trip.status!=='completed' && <button style={button} onClick={()=>act(()=>startGpsSession(trip.id))}>Start recording</button>}
@@ -32,8 +33,8 @@ export function RecordingBar({trip,gps={},onUpdate,onOpenTrip}) {
         {session && <button style={button} onClick={finish}>{points.length?'Finish':'Cancel'}</button>}
       </div>
     </div>
-    {(error||gps.error) && <p role="alert" style={{fontSize:12,margin:'6px 0'}}>{error||gps.error}</p>}
-    {active && <div style={{fontSize:11,marginTop:4}}>{gps.background?'Native mode supports recording with the screen locked; location permissions are required.':'Keep the app visible to record. Leaving it pauses recording; returning starts a new segment.'}</div>}
+    {(error||gps.error) && <p role="alert" style={{fontSize:ts(12),margin:'6px 0'}}>{error||gps.error}</p>}
+    {active && <div style={{fontSize:ts(11),marginTop:4}}>{gps.background?'Native mode supports recording with the screen locked; location permissions are required.':'Keep the app visible to record. Leaving it pauses recording; returning starts a new segment.'}</div>}
     {finished?.tripId===trip.id && <details open style={{marginTop:8}}>
       <summary>Route saved · optional details</summary>
       <div style={{display:'flex',gap:8,flexWrap:'wrap',paddingTop:8}}>

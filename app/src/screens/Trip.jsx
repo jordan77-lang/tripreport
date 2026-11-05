@@ -498,7 +498,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             borderRadius: 12,
             padding: '10px 12px',
             marginBottom: 12,
-            fontSize: 11.5,
+            fontSize: ts(11.5),
             fontWeight: 700,
             color: cloudSyncStatus.kind === 'error' ? '#8A1414' : '#2E6D3A',
           }}>
@@ -512,7 +512,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             borderRadius: 12,
             padding: '10px 12px',
             marginBottom: 12,
-            fontSize: 11.5,
+            fontSize: ts(11.5),
             fontWeight: 700,
             color: exchangeStatus.kind === 'error' ? '#8A1414' : T.accent,
           }}>
@@ -552,9 +552,11 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             return (
             <div key={loc.id}
                  style={{ background: T.card, borderRadius: 11, border: `1px solid ${selectedLocationId === loc.id ? '#2A5C8E' : (isPlanned ? '#E8C9A0' : T.border)}`, marginBottom: 6, overflow: 'hidden' }}>
-              <div style={{ padding: '10px 11px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              {/* Wraps on narrow screens: the place name keeps the full first line and the
+                  action buttons move to a second line instead of squeezing the name. */}
+              <div style={{ padding: '10px 11px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => { setSelectedLocationId(loc.id); onOpenLocation?.(loc.id); }}
-                   style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', padding: 0, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontFamily: F, textAlign: 'left' }}>
+                   style={{ flex: '1 1 230px', minWidth: 0, border: 'none', background: 'transparent', padding: 0, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontFamily: F, textAlign: 'left' }}>
               <div style={{ width: loc.coverPhoto ? 36 : 40, height: loc.coverPhoto ? 36 : 40, borderRadius: loc.coverPhoto ? 9 : 0, background: loc.coverPhoto ? (isPlanned ? '#FBF0E4' : T.bg) : 'transparent', border: loc.coverPhoto ? `1px solid ${isPlanned ? '#E8C9A0' : T.border}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
                 {loc.coverPhoto ? (
                   <MediaThumb media={loc.coverPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -564,11 +566,11 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: ts(13), fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ fontSize: ts(14), fontWeight: 700, color: T.text, lineHeight: 1.3, minWidth: 0, overflowWrap: 'anywhere' }}>
                     {idx + 1}. {loc.name}
                   </span>
                   {isPlanned && (
-                    <span style={{ fontSize: 9.5, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', border: '1px solid #E8C9A0', borderRadius: 6, padding: '1px 6px' }}>
+                    <span style={{ fontSize: ts(9.5), fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', border: '1px solid #E8C9A0', borderRadius: 6, padding: '1px 6px' }}>
                       Planned
                     </span>
                   )}
@@ -600,7 +602,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                           border: `1.5px solid ${T.card}`,
                           marginLeft: cIdx === 0 ? 0 : -6,
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 10, fontWeight: 800,
+                          fontSize: ts(10), fontWeight: 800,
                         }}
                       >
                         {(name || '?').charAt(0).toUpperCase()}
@@ -611,6 +613,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
               )}
               <Ic d="M9 18l6-6-6-6" size={16} color={T.textFaint} sw={2} />
               </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
               {canEditTrip && (
                 <button
                   type="button"
@@ -716,6 +719,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                   <Ic d={eventsOpen ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} size={16} color={T.textSub} sw={2} />
                 </button>
               )}
+              </div>
               </div>
               {eventsOpen && placeEvents.length > 0 && (
                 <div style={{ borderTop: `1px solid ${T.border}`, padding: '6px 11px 8px 46px' }}>
@@ -889,7 +893,7 @@ function ExpenseSummaryLink({ trip, onOpen }) {
          style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px',
                   marginBottom: 14, display: 'flex', alignItems: 'center', gap: 11, cursor: 'pointer' }}>
       <div style={{ width: 32, height: 32, borderRadius: 9, background: T.accentLight, display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 15 }}>
+                    alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: ts(15) }}>
         💵
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -938,27 +942,27 @@ function TripSummaryCard({ trip, entries, locations, track }) {
 
   return (
     <div style={{ background: T.card, borderRadius: 12, border: `2px solid #A4CFAD`, padding: '12px 14px', marginBottom: 12 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: '#2E6D3A', letterSpacing: .7, textTransform: 'uppercase', marginBottom: 10 }}>
+      <div style={{ fontSize: ts(10.5), fontWeight: 700, color: '#2E6D3A', letterSpacing: .7, textTransform: 'uppercase', marginBottom: 10 }}>
         Trip Summary
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         {days != null && (
           <div style={statStyle}>
             <div style={{ fontSize: 22, fontWeight: 800, color: '#2E6D3A' }}>{days}</div>
-            <div style={{ fontSize: 9.5, color: T.textFaint, marginTop: 2 }}>Days</div>
+            <div style={{ fontSize: ts(9.5), color: T.textFaint, marginTop: 2 }}>Days</div>
           </div>
         )}
         <div style={statStyle}>
           <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{entries.length}</div>
-          <div style={{ fontSize: 9.5, color: T.textFaint, marginTop: 2 }}>Entries</div>
+          <div style={{ fontSize: ts(9.5), color: T.textFaint, marginTop: 2 }}>Entries</div>
         </div>
         <div style={statStyle}>
           <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{locations.length}</div>
-          <div style={{ fontSize: 9.5, color: T.textFaint, marginTop: 2 }}>Locations</div>
+          <div style={{ fontSize: ts(9.5), color: T.textFaint, marginTop: 2 }}>Locations</div>
         </div>
         <div style={statStyle}>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#2A5C8E' }}>{distanceMi}</div>
-          <div style={{ fontSize: 9.5, color: T.textFaint, marginTop: 2 }}>mi tracked</div>
+          <div style={{ fontSize: ts(9.5), color: T.textFaint, marginTop: 2 }}>mi tracked</div>
         </div>
       </div>
 
@@ -967,13 +971,13 @@ function TripSummaryCard({ trip, entries, locations, track }) {
           {minTempC != null && (
             <div style={statStyle}>
               <div style={{ fontSize: 16, fontWeight: 800, color: '#517EA3' }}>{minTempC}–{maxTempC}°C</div>
-              <div style={{ fontSize: 9.5, color: T.textFaint, marginTop: 2 }}>Temp range</div>
+              <div style={{ fontSize: ts(9.5), color: T.textFaint, marginTop: 2 }}>Temp range</div>
             </div>
           )}
           {minCfs != null && (
             <div style={statStyle}>
               <div style={{ fontSize: 16, fontWeight: 800, color: '#2A5C8E' }}>{minCfs}–{maxCfs}</div>
-              <div style={{ fontSize: 9.5, color: T.textFaint, marginTop: 2 }}>CFS range</div>
+              <div style={{ fontSize: ts(9.5), color: T.textFaint, marginTop: 2 }}>CFS range</div>
             </div>
           )}
         </div>
@@ -981,10 +985,10 @@ function TripSummaryCard({ trip, entries, locations, track }) {
 
       {topTypes.length > 0 && (
         <div>
-          <div style={{ fontSize: 9.5, color: T.textFaint, marginBottom: 5 }}>Entry breakdown</div>
+          <div style={{ fontSize: ts(9.5), color: T.textFaint, marginBottom: 5 }}>Entry breakdown</div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {topTypes.map(([type, count]) => (
-              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 4, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, padding: '3px 8px', fontSize: 10.5 }}>
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 4, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, padding: '3px 8px', fontSize: ts(10.5) }}>
                 <span>{defaultTagSymbol(type)}</span>
                 <span style={{ fontWeight: 700, color: T.text }}>{count}</span>
                 <span style={{ color: T.textFaint }}>{type}</span>

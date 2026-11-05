@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { T } from '../tokens';
 import { microphoneArt } from '../lib/locationArt';
 import { ArtImg } from './LocationMark';
+import { ts } from '../lib/textScale';
 
 export function VoiceRecorder({ disabled, onRecorded, onRecordingChange }) {
   const [recording, setRecording] = useState(false);
@@ -81,9 +82,9 @@ export function VoiceRecorder({ disabled, onRecorded, onRecordingChange }) {
         {starting ? 'Opening microphone…' : recording ? 'Stop recording' : 'Record voice'}
       </button>
     </div>
-    <p role="status" style={{ fontSize: 13, color: T.textSub, marginTop: 6 }}>
+    <p role="status" style={{ fontSize: ts(13), color: T.textSub, marginTop: 6 }}>
       {recording ? 'Recording… stops automatically after 5 minutes.' : 'Record up to 5 minutes, or add an audio file below.'}
     </p>
-    {error && <p role="alert" style={{ color: '#8A1414', fontSize: 14 }}>{error}</p>}
+    {error && <p role="alert" style={{ color: '#8A1414', fontSize: ts(14) }}>{error}</p>}
   </div>;
 }

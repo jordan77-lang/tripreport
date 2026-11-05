@@ -7,6 +7,7 @@ import { OwnerDeletedTripBanner } from '../components/OwnerDeletedTripBanner';
 import { T, ICONS } from '../tokens';
 import { formatTripDate } from '../lib/tripEdit';
 import { forkTripAsTemplate } from '../lib/storage';
+import { ts } from '../lib/textScale';
 
 export function Home({ trip, allTrips = [], onNav, onFab, onSelectTrip, onTripUpdate, onTripDeleted, onJoinTrip, onOpenSettings, onOpenRecap, auth }) {
   const [tripSearch, setTripSearch] = useState('');
@@ -81,7 +82,7 @@ export function Home({ trip, allTrips = [], onNav, onFab, onSelectTrip, onTripUp
                   onClick={() => { setSelectedActivity(tp); setPastTripsExpanded(false); }}
                   style={{
                     border: `1px solid ${selectedActivity === tp ? T.accent : T.border}`,
-                    borderRadius: 16, padding: '4px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    borderRadius: 16, padding: '4px 10px', fontSize: ts(12), fontWeight: 700, cursor: 'pointer',
                     background: selectedActivity === tp ? T.accentLight : T.card,
                     color: selectedActivity === tp ? T.accent : T.textSub,
                   }}

@@ -122,6 +122,10 @@ const myTasks = renderToStaticMarkup(<MyResponsibilities trip={planningTrip} />)
 for (const label of ['My responsibilities', 'Tent', 'Camp chili', 'Beans', 'Shopping you added', 'Your trip balance']) assert.ok(myTasks.includes(label));
 const plan = renderToStaticMarkup(<TripPlan trip={planningTrip} />);
 assert.ok(plan.includes('My responsibilities')); assert.ok(plan.includes('aria-label="Plan" aria-current="page"'));
+const mealsTrip = { ...planningTrip, meals: [{ ...planningTrip.meals[0], ingredients: [{ name: 'Onion' }, { name: 'Black beans' }] }] };
+const mealsPlan = renderToStaticMarkup(<TripPlan trip={mealsTrip} initialTab="meals" />);
+for (const label of ['Start from a saved meal', 'Add an ingredient', 'Browse saved (2)']) assert.ok(mealsPlan.includes(label), label);
+assert.ok(!mealsPlan.includes('<select aria-label="Saved meals"'), 'saved meals use the in-app sheet, not a native select');
 const home = renderToStaticMarkup(<Home trip={{ ...trip, status: 'completed' }} allTrips={[{ ...trip, status: 'completed' }]} />);
 assert.ok(home.includes('Bring the story home.')); assert.ok(home.includes('Recap &amp; share'));
 const welcome = renderToStaticMarkup(<Home allTrips={[]} />);

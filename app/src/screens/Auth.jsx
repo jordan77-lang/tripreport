@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { InstallAppCard } from '../components/InstallAppCard';
 import { T, F } from '../tokens';
+import { ts } from '../lib/textScale';
 
 export function AuthScreen({ inviteCode = null }) {
   const { signInWithEmail, signInWithPassword, signUpWithPassword } = useAuth();
@@ -42,7 +43,7 @@ export function AuthScreen({ inviteCode = null }) {
     <div style={{ minHeight: '100%', background: T.bg, fontFamily: F, display: 'flex', flexDirection: 'column' }}>
       <div style={{ flex: 1, padding: '32px 20px 24px', maxWidth: 420, margin: '0 auto', width: '100%' }}>
         <div style={{ fontSize: 28, fontWeight: 900, color: T.text, letterSpacing: -0.6, marginBottom: 6 }}>TripReport</div>
-        <div style={{ fontSize: 13, color: T.textSub, marginBottom: 28, lineHeight: 1.5 }}>
+        <div style={{ fontSize: ts(13), color: T.textSub, marginBottom: 28, lineHeight: 1.5 }}>
           {inviteCode ? 'You have a trip invitation. Sign in or create an account, then join your crew.' : 'Sign in to plan trips with your crew and sync when you have service.'}
         </div>
 
@@ -63,7 +64,7 @@ export function AuthScreen({ inviteCode = null }) {
                 color: mode === tab.id ? T.accent : T.textSub,
                 borderRadius: 10,
                 padding: '9px 8px',
-                fontSize: 11.5,
+                fontSize: ts(11.5),
                 fontWeight: 700,
                 cursor: 'pointer',
               }}
@@ -76,7 +77,7 @@ export function AuthScreen({ inviteCode = null }) {
         <form onSubmit={handleSubmit}>
           {(mode === 'signup' || mode === 'magic') && (
             <div style={{ marginBottom: 14 }}>
-              <label htmlFor="auth-display-name" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>
+              <label htmlFor="auth-display-name" style={{ display: 'block', fontSize: ts(11), fontWeight: 700, color: T.textSub, marginBottom: 6 }}>
                 What should your crew call you? {mode === 'magic' ? '(optional if already signed up)' : ''}
               </label>
               <input
@@ -90,13 +91,13 @@ export function AuthScreen({ inviteCode = null }) {
                 placeholder="e.g. Jordan, River Rat, Captain Dan"
                 style={inputStyle}
               />
-              <div style={{ fontSize: 11, color: T.textFaint, marginTop: 4, lineHeight: 1.4 }}>
+              <div style={{ fontSize: ts(11), color: T.textFaint, marginTop: 4, lineHeight: 1.4 }}>
                 Used on your trips, gear, meals, and stories. You can also customize your name per trip.
               </div>
             </div>
           )}
 
-          <label htmlFor="auth-email" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Email</label>
+          <label htmlFor="auth-email" style={{ display: 'block', fontSize: ts(11), fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Email</label>
           <input
             id="auth-email"
             type="email"
@@ -110,7 +111,7 @@ export function AuthScreen({ inviteCode = null }) {
 
           {mode !== 'magic' && (
             <>
-              <label htmlFor="auth-password" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6, marginTop: 14 }}>Password</label>
+              <label htmlFor="auth-password" style={{ display: 'block', fontSize: ts(11), fontWeight: 700, color: T.textSub, marginBottom: 6, marginTop: 14 }}>Password</label>
               <input
                 id="auth-password"
                 type="password"
@@ -126,12 +127,12 @@ export function AuthScreen({ inviteCode = null }) {
           )}
 
           {!!error && (
-            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: '#FBE4E4', color: '#8A1414', fontSize: 12, fontWeight: 600 }}>
+            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: '#FBE4E4', color: '#8A1414', fontSize: ts(12), fontWeight: 600 }}>
               {error}
             </div>
           )}
           {!!message && (
-            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: T.accentLight, color: T.accent, fontSize: 12, fontWeight: 600 }}>
+            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: T.accentLight, color: T.accent, fontSize: ts(12), fontWeight: 600 }}>
               {message}
             </div>
           )}
@@ -147,7 +148,7 @@ export function AuthScreen({ inviteCode = null }) {
               padding: '14px 16px',
               background: T.accent,
               color: 'white',
-              fontSize: 14,
+              fontSize: ts(14),
               fontWeight: 800,
               cursor: busy ? 'wait' : 'pointer',
               opacity: busy ? 0.7 : 1,
@@ -159,7 +160,7 @@ export function AuthScreen({ inviteCode = null }) {
         </form>
 
         {mode === 'magic' && (
-          <div style={{ marginTop: 16, fontSize: 11, color: T.textFaint, lineHeight: 1.5 }}>
+          <div style={{ marginTop: 16, fontSize: ts(11), color: T.textFaint, lineHeight: 1.5 }}>
             Email links work best with service. For the river, create an account with password while you still have Wi‑Fi.
           </div>
         )}
@@ -176,7 +177,7 @@ const inputStyle = {
   border: `1px solid ${T.border}`,
   borderRadius: 10,
   padding: '12px 13px',
-  fontSize: 14,
+  fontSize: ts(14),
   background: T.card,
   color: T.text,
 };

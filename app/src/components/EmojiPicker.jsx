@@ -17,7 +17,7 @@ export function EmojiPicker({
   return (
     <div style={{ marginBottom: 8 }}>
       {label && (
-        <div style={{ fontSize: 10.5, color: T.textSub, marginBottom: 6, fontWeight: 700 }}>{label}</div>
+        <div style={{ fontSize: ts(10.5), color: T.textSub, marginBottom: 6, fontWeight: 700 }}>{label}</div>
       )}
 
       {showCustom && (
@@ -101,7 +101,7 @@ function EmojiListRow({ emoji, rowLabel, selected, accentColor, onClick }) {
         {rowLabel}
       </span>
       {selected && (
-        <span style={{ fontSize: 11, fontWeight: 800, color: accentColor, flexShrink: 0 }}>✓</span>
+        <span style={{ fontSize: ts(11), fontWeight: 800, color: accentColor, flexShrink: 0 }}>✓</span>
       )}
     </button>
   );

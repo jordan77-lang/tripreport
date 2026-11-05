@@ -27,8 +27,15 @@ export function textScaleOptions() {
   ];
 }
 
-/** Scale a base pixel font size for readability with a minimum floor to avoid tiny text on phone screens. */
-export function ts(px, minFloor = 11) {
-  const scaled = Math.round(px * getTextScale());
-  return Math.max(minFloor, scaled);
+/**
+ * Readable font size for inline styles. `px` is the size at a 16px root.
+ *
+ * Returns a CSS length in rem, so it follows the root size that index.css sets for the
+ * A / A+ / A++ setting and for phones (larger root under 768px), and updates the moment
+ * the setting changes. `minFloor` keeps captions and badges from going below a legible
+ * size on small screens.
+ */
+export function ts(px, minFloor = 12) {
+  const rem = Math.round((px / 16) * 1000) / 1000;
+  return `max(${minFloor}px, ${rem}rem)`;
 }

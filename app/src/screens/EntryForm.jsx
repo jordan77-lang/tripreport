@@ -707,12 +707,12 @@ export function EntryForm({
                     ) : (
                       <div style={{ width: 72, height: 72, borderRadius: 10, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 3 }}>
                         <span style={{ fontSize: 18 }}>{mediaMode === 'video' ? '🎥' : mediaMode === 'voice' ? '🎙' : '📷'}</span>
-                        <span style={{ fontSize: 9, color: T.textFaint, textAlign: 'center', padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 68 }}>{f.name}</span>
+                        <span style={{ fontSize: ts(9), color: T.textFaint, textAlign: 'center', padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 68 }}>{f.name}</span>
                       </div>
                     )}
                     <button type="button" aria-label="Remove attachment" onClick={() => removeMediaFile(mediaMode, idx)}
                          style={{ position: 'absolute', top: -5, right: -5, width: 44, height: 44, border: 'none', borderRadius: 22, background: '#C04040', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                      <span style={{ fontSize: 10, color: 'white', fontWeight: 700, lineHeight: 1 }}>✕</span>
+                      <span style={{ fontSize: ts(10), color: 'white', fontWeight: 700, lineHeight: 1 }}>✕</span>
                     </button>
                   </div>
                   {/* Per-file caption — the entry's Notes field below still describes the whole observation. */}

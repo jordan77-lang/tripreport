@@ -18,6 +18,7 @@ import { commentArt, locationMapSymbol, starArt } from '../lib/locationArt';
 import { ArtImg, LocationMark } from '../components/LocationMark';
 import { resolveUserDisplayName } from '../lib/tripParticipants';
 import { EntryForm } from './EntryForm';
+import { ts } from '../lib/textScale';
 
 export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdate, onOpenEvent, initialEventId, initialEdit = false, notice }) {
   const currentUserId = getCurrentUserId();
@@ -209,17 +210,19 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
             <Ic d="M19 12H5 M12 5l-7 7 7 7" size={18} color={T.text} sw={2} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -0.4, display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+            {/* Wraps on narrow screens: the name keeps its own line and the action buttons
+                move below it, so neither the icon nor the badge can spill over the buttons. */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -0.4, display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flex: '1 1 200px' }}>
                 <LocationMark location={location} size={26} />
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{location.name}</span>
+                <span style={{ minWidth: 0, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{location.name}</span>
                 {location.visitStatus === 'planned' && (
-                  <span style={{ fontSize: 10, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', border: '1px solid #E8C9A0', borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>
+                  <span style={{ fontSize: ts(10), fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', border: '1px solid #E8C9A0', borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>
                     Planned
                   </span>
                 )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', marginLeft: 'auto' }}>
                 {canEditLocation && (
                   <button
                     type="button"
@@ -247,7 +250,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                       background: '#E5F4E8',
                       color: '#2E6D3A',
                       fontWeight: 800,
-                      fontSize: 12,
+                      fontSize: ts(12),
                       cursor: 'pointer',
                       fontFamily: F,
                     }}
@@ -274,12 +277,12 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                 )}
               </div>
             </div>
-            <div style={{ fontSize: 11, color: T.textSub }}>{locationTypeLabel(location.type)} · {events.length} events</div>
-            {!!location.notes && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{location.notes}</div>}
-            <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
+            <div style={{ fontSize: ts(11), color: T.textSub }}>{locationTypeLabel(location.type)} · {events.length} events</div>
+            {!!location.notes && <div style={{ fontSize: ts(10.5), color: T.textSub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{location.notes}</div>}
+            <div style={{ fontSize: ts(10.5), color: T.textFaint, marginTop: 2 }}>
               {location.lat?.toFixed(5)}, {location.lng?.toFixed(5)}
             </div>
-            <div style={{ fontSize: 10.5, color: T.textFaint }}>{formatLocationTime(location)}</div>
+            <div style={{ fontSize: ts(10.5), color: T.textFaint }}>{formatLocationTime(location)}</div>
           </div>
           <SyncChip state={location.syncState || 'pending'} compact />
         </div>
@@ -288,7 +291,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
         <div className="screen-content-inner">
-        {(entryNotice || notice) && <p role="status" style={{ padding: 12, marginBottom: 14, borderRadius: 12, background: T.accentLight, color: T.accent, fontSize: 14 }}>{entryNotice || notice}</p>}
+        {(entryNotice || notice) && <p role="status" style={{ padding: 12, marginBottom: 14, borderRadius: 12, background: T.accentLight, color: T.accent, fontSize: ts(14) }}>{entryNotice || notice}</p>}
         {editingLocation && (
           <LocationSaveForm
             title="Edit location"
@@ -314,7 +317,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
         )}
 
         {canDeleteLocation && editingLocation && (
-          <button type="button" onClick={() => void handleDeleteLocation()} style={{ width: '100%', border: 'none', background: 'transparent', color: '#8A1414', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '0 0 12px', fontFamily: F, textAlign: 'left' }}>
+          <button type="button" onClick={() => void handleDeleteLocation()} style={{ width: '100%', border: 'none', background: 'transparent', color: '#8A1414', fontSize: ts(11), fontWeight: 700, cursor: 'pointer', padding: '0 0 12px', fontFamily: F, textAlign: 'left' }}>
             Delete location and its events
           </button>
         )}
@@ -333,7 +336,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
         {viewingMedia && (
           <div style={{ marginBottom: 12 }}>
             <button type="button" onClick={() => setViewingMedia(false)}
-              style={{ minHeight: 36, marginBottom: 8, border: 'none', background: 'transparent', color: T.accent, fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: F, padding: 0 }}>
+              style={{ minHeight: 36, marginBottom: 8, border: 'none', background: 'transparent', color: T.accent, fontWeight: 800, fontSize: ts(13), cursor: 'pointer', fontFamily: F, padding: 0 }}>
               ← Hide photos
             </button>
             <PhotoGallery
@@ -347,11 +350,11 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
 
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>At this place</span>
-            <span style={{ fontSize: 11.5, color: T.textSub }}>{events.length} {events.length === 1 ? 'event' : 'events'}</span>
+            <span style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>At this place</span>
+            <span style={{ fontSize: ts(11.5), color: T.textSub }}>{events.length} {events.length === 1 ? 'event' : 'events'}</span>
           </div>
           {events.length === 0 && (
-            <div style={{ fontSize: 12, color: T.textFaint, lineHeight: 1.45, marginBottom: 10 }}>
+            <div style={{ fontSize: ts(12), color: T.textFaint, lineHeight: 1.45, marginBottom: 10 }}>
               This location is ready. Add meals, wildlife sightings, photos, notes, and other trip entries here.
             </div>
           )}
@@ -368,11 +371,11 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                   <button type="button" onClick={() => openViewEvent(ev.id)}
                     style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: F }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{ev.name}</span>
+                      <span style={{ fontSize: ts(14), fontWeight: 800, color: T.text }}>{ev.name}</span>
                       {ev.highlighted && <span title="Trip highlight" aria-label="Trip highlight"><ArtImg src={starArt} size={16} /></span>}
                     </div>
-                    <div style={{ fontSize: 12, color: EVENT_COLORS[ev.type] || T.accent, fontWeight: 700, marginTop: 2 }}>{typeLabel} · {who}</div>
-                    <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>{formatEventWhen(ev)}</div>
+                    <div style={{ fontSize: ts(12), color: EVENT_COLORS[ev.type] || T.accent, fontWeight: 700, marginTop: 2 }}>{typeLabel} · {who}</div>
+                    <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 2 }}>{formatEventWhen(ev)}</div>
                   </button>
                   {contributors.length > 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }} title={contributors.map((uid) => resolveUserDisplayName(trip, uid, currentUserId)).join(', ')}>
@@ -387,7 +390,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                               border: `1.5px solid ${T.card}`,
                               marginLeft: cIdx === 0 ? 0 : -6,
                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 10, fontWeight: 800,
+                              fontSize: ts(10), fontWeight: 800,
                             }}
                           >
                             {(name || '?').charAt(0).toUpperCase()}
@@ -409,22 +412,22 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                 {moments.map((entry) => (
                   <div key={entry.id} style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{entry.title || entry.type}</span>
+                      <span style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>{entry.title || entry.type}</span>
                       {entry.highlighted && <span title="Trip highlight" aria-label="Trip highlight"><ArtImg src={starArt} size={14} /></span>}
                     </div>
-                    <div style={{ fontSize: 12, color: '#2A5C8E', marginTop: 2 }}>
+                    <div style={{ fontSize: ts(12), color: '#2A5C8E', marginTop: 2 }}>
                       {resolveUserDisplayName(trip, entry.authorId, currentUserId) || 'Crew member'}
                     </div>
-                    {entry.notes && <div style={{ fontSize: 13, color: T.textSub, marginTop: 2, lineHeight: 1.4 }}>{entry.notes}</div>}
+                    {entry.notes && <div style={{ fontSize: ts(13), color: T.textSub, marginTop: 2, lineHeight: 1.4 }}>{entry.notes}</div>}
                     {canAddToEvents && <button className="dashboard-text-button" type="button" onClick={() => { setEditingEntry(entry); setEntryError(null); }}>Edit entry</button>}
                     {(entry.weatherSummary || entry.weatherTempC != null) && (
-                      <div style={{ fontSize: 12, color: '#2A5C8E', marginTop: 2 }}>
+                      <div style={{ fontSize: ts(12), color: '#2A5C8E', marginTop: 2 }}>
                         {entry.weatherSummary || 'Weather'}{entry.weatherTempC != null ? ` · ${Math.round(entry.weatherTempC * 9 / 5 + 32)}°F` : ''}
                       </div>
                     )}
-                    {entry.cfs != null && <div style={{ fontSize: 12, color: '#3A72A8', fontWeight: 700, marginTop: 2 }}>{entry.cfs} CFS{entry.gaugeSiteName ? ` · ${entry.gaugeSiteName}` : ''}</div>}
+                    {entry.cfs != null && <div style={{ fontSize: ts(12), color: '#3A72A8', fontWeight: 700, marginTop: 2 }}>{entry.cfs} CFS{entry.gaugeSiteName ? ` · ${entry.gaugeSiteName}` : ''}</div>}
                     {(entry.weatherSyncPending || entry.gaugeSyncPending) && (
-                      <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>Reading will fill in when you have service</div>
+                      <div style={{ fontSize: ts(12), color: T.textFaint, marginTop: 2 }}>Reading will fill in when you have service</div>
                     )}
                   </div>
                 ))}
@@ -432,7 +435,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
             );
           })}
           {placeCosts.length > 0 && (
-            <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>
+            <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 4 }}>
               {placeCosts.length} {placeCosts.length === 1 ? 'cost' : 'costs'} tagged here · settle in Money
             </div>
           )}
@@ -440,23 +443,23 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
 
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 13px', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: ts(11), fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase' }}>
               <ArtImg src={commentArt} size={16} />
               Crew chatter &amp; scouting notes ({(location.comments || []).length})
             </span>
           </div>
           {(location.comments || []).length === 0 ? (
-            <div style={{ fontSize: 12, color: T.textFaint, marginBottom: canEditLocation ? 8 : 0 }}>
+            <div style={{ fontSize: ts(12), color: T.textFaint, marginBottom: canEditLocation ? 8 : 0 }}>
               Drop a scouting note, campsite tip, or question for the crew.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: canEditLocation ? 10 : 0 }}>
               {(location.comments || []).map((c) => (
                 <div key={c.id || c.createdAt} style={{ background: T.bg, borderRadius: 9, padding: '7px 10px', border: `1px solid ${T.border}` }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#2A5C8E' }}>
+                  <div style={{ fontSize: ts(11), fontWeight: 800, color: '#2A5C8E' }}>
                     {c.authorName || resolveUserDisplayName(trip, c.authorId, currentUserId) || 'Crew'}
                   </div>
-                  <div style={{ fontSize: 12.5, color: T.text, marginTop: 2, lineHeight: 1.4 }}>{c.text}</div>
+                  <div style={{ fontSize: ts(12.5), color: T.text, marginTop: 2, lineHeight: 1.4 }}>{c.text}</div>
                 </div>
               ))}
             </div>
@@ -476,7 +479,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                 placeholder="Add a note or question for the crew…"
                 style={{
                   flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 9,
-                  padding: '8px 10px', fontSize: 12.5, fontFamily: F, background: T.bg, outline: 'none',
+                  padding: '8px 10px', fontSize: ts(12.5), fontFamily: F, background: T.bg, outline: 'none',
                 }}
               />
               <button
@@ -497,7 +500,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
         </div>
 
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 12 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>Map</div>
+          <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>Map</div>
           <div style={{ borderRadius: 12, overflow: 'hidden', height: 180 }}>
             <TripMap
               style="outdoors-v12"
@@ -569,7 +572,7 @@ function placeActionBtn(filled) {
     background: filled ? T.accent : T.card,
     color: filled ? 'white' : T.text,
     fontWeight: 800,
-    fontSize: 14,
+    fontSize: ts(14),
     cursor: 'pointer',
     fontFamily: F,
   };
@@ -599,7 +602,7 @@ function headerBtn(filled) {
     background: filled ? '#2A5C8E' : T.bg,
     color: filled ? 'white' : '#2A5C8E',
     fontWeight: 800,
-    fontSize: 13,
+    fontSize: ts(13),
     cursor: 'pointer',
     fontFamily: F,
     flexShrink: 0,

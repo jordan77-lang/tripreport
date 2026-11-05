@@ -100,7 +100,7 @@ export function PhotoGallery({
                   {isVideoRef(p) ? (
                     <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: 18 }}>🎥</span>
-                      <span style={{ fontSize: 8.5, color: T.textFaint, padding: '0 4px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{p.name}</span>
+                      <span style={{ fontSize: ts(8.5), color: T.textFaint, padding: '0 4px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{p.name}</span>
                     </div>
                   ) : (
                     <MediaThumb media={p} alt={p.caption || `Photo ${i + 1}`}
@@ -108,12 +108,12 @@ export function PhotoGallery({
                   )}
                   {isCover && (
                     <div style={{ position: 'absolute', top: 3, left: 3, background: 'rgba(0,0,0,.55)', color: 'white',
-                                  borderRadius: 5, padding: '1px 5px', fontSize: 8.5, fontWeight: 700 }}>Cover</div>
+                                  borderRadius: 5, padding: '1px 5px', fontSize: ts(8.5), fontWeight: 700 }}>Cover</div>
                   )}
                   {p.caption && (
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
                                   background: 'linear-gradient(transparent, rgba(0,0,0,.6))', color: 'white',
-                                  fontSize: 9, padding: '10px 4px 3px', overflow: 'hidden',
+                                  fontSize: ts(9), padding: '10px 4px 3px', overflow: 'hidden',
                                   textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {p.caption}
                     </div>
@@ -202,18 +202,18 @@ function Lightbox({ photos, index, onIndexChange, onClose }) {
              style={{ maxWidth: '100%', maxHeight: '74vh', objectFit: 'contain', borderRadius: 8 }}
              onClick={(e) => e.stopPropagation()} />
       ) : (
-        <div style={{ color: 'rgba(255,255,255,.6)', fontSize: 13 }}>
+        <div style={{ color: 'rgba(255,255,255,.6)', fontSize: ts(13) }}>
           {isVideoRef(photo) ? `🎥 ${photo.name || 'Video'}` : 'Preview unavailable'}
         </div>
       )}
 
       {photo.caption && (
-        <div style={{ color: 'rgba(255,255,255,.85)', fontSize: 12.5, marginTop: 12, maxWidth: 520, textAlign: 'center', lineHeight: 1.5 }}>
+        <div style={{ color: 'rgba(255,255,255,.85)', fontSize: ts(12.5), marginTop: 12, maxWidth: 520, textAlign: 'center', lineHeight: 1.5 }}>
           {photo.caption}
         </div>
       )}
       {photo.authorName && (
-        <div style={{ color: 'rgba(255,255,255,.45)', fontSize: 10.5, marginTop: 5 }}>
+        <div style={{ color: 'rgba(255,255,255,.45)', fontSize: ts(10.5), marginTop: 5 }}>
           Added by {photo.authorName}
         </div>
       )}
@@ -222,12 +222,12 @@ function Lightbox({ photos, index, onIndexChange, onClose }) {
         {index > 0 && (
           <div onClick={(e) => { e.stopPropagation(); onIndexChange(index - 1); }} style={lightboxNav}>← Prev</div>
         )}
-        <span style={{ color: 'rgba(255,255,255,.5)', fontSize: 11 }}>{index + 1} / {photos.length}</span>
+        <span style={{ color: 'rgba(255,255,255,.5)', fontSize: ts(11) }}>{index + 1} / {photos.length}</span>
         {index < photos.length - 1 && (
           <div onClick={(e) => { e.stopPropagation(); onIndexChange(index + 1); }} style={lightboxNav}>Next →</div>
         )}
       </div>
-      <div style={{ marginTop: 10, color: 'rgba(255,255,255,.35)', fontSize: 10.5 }}>Tap anywhere to close</div>
+      <div style={{ marginTop: 10, color: 'rgba(255,255,255,.35)', fontSize: ts(10.5) }}>Tap anywhere to close</div>
     </div>
   );
 }
@@ -249,7 +249,7 @@ const microBtn = {
   background: T.bg,
   borderRadius: 6,
   padding: '3px 6px',
-  fontSize: 9.5,
+  fontSize: ts(9.5),
   fontWeight: 700,
   color: T.textSub,
   cursor: 'pointer',
@@ -262,6 +262,6 @@ const lightboxNav = {
   padding: '8px 16px',
   cursor: 'pointer',
   color: 'white',
-  fontSize: 12,
+  fontSize: ts(12),
   fontWeight: 700,
 };

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { MyResponsibilities } from '../components/MyResponsibilities';
+import { IngredientField, SavedMealSheet, SavedMealTrigger } from '../components/MealPickers';
 import { Ic } from '../components/Ic';
 import { SlotIcon } from '../components/SlotIcon';
 import { SyncChip } from '../components/SyncChip';
@@ -32,8 +33,6 @@ import { canonicalParticipantId, participantDisplayName } from '../lib/tripParti
 import { supabaseConfigured } from '../lib/supabase';
 import { getSignedInUserId } from '../lib/authUser';
 import {
-  INGREDIENT_CATEGORIES,
-  classifyIngredientCategory,
   groupIngredientsByCategory,
   listSavedIngredients,
   listSavedMeals,
@@ -383,7 +382,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontSize: 13,
+            fontSize: ts(13),
             fontWeight: 700,
             color: done ? T.textFaint : T.text,
             textDecoration: done ? 'line-through' : 'none',
@@ -400,7 +399,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 4,
-                    fontSize: 10.5,
+                    fontSize: ts(10.5),
                     fontWeight: 700,
                     color: personReady ? '#2A6A14' : T.accent,
                     background: personReady ? '#EBF5EB' : T.accentLight,
@@ -419,7 +418,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
                       border: 'none',
                       background: 'none',
                       color: 'inherit',
-                      fontSize: 11,
+                      fontSize: ts(11),
                       fontWeight: 800,
                       padding: 0,
                       lineHeight: 1,
@@ -436,7 +435,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
                 value=""
                 onChange={(e) => addItemAssignee(item, e.target.value)}
                 style={{
-                  fontSize: 10.5,
+                  fontSize: ts(10.5),
                   color: T.textSub,
                   border: `1px solid ${T.border}`,
                   borderRadius: 7,
@@ -468,7 +467,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
                   padding: '2px 7px',
                   background: T.accentLight,
                   color: T.accent,
-                  fontSize: 10.5,
+                  fontSize: ts(10.5),
                   fontWeight: 800,
                   fontFamily: F,
                   cursor: 'pointer',
@@ -488,7 +487,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
                   padding: '2px 8px',
                   background: myReady ? '#E2F4E2' : T.accent,
                   color: myReady ? '#2A6A14' : 'white',
-                  fontSize: 10.5,
+                  fontSize: ts(10.5),
                   fontWeight: 800,
                   fontFamily: F,
                   cursor: 'pointer',
@@ -508,7 +507,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
                   padding: '2px 8px',
                   background: done ? '#E2F4E2' : T.bg,
                   color: done ? '#2A6A14' : T.text,
-                  fontSize: 10.5,
+                  fontSize: ts(10.5),
                   fontWeight: 800,
                   fontFamily: F,
                   cursor: 'pointer',
@@ -574,7 +573,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
           {Object.entries(groupedNeed).map(([cat, items]) => (
             <div key={cat} style={{ marginBottom: 14 }}>
               {Object.keys(groupedNeed).length > 1 && (
-                <div style={{ fontSize: 10, fontWeight: 700, color: T.textFaint, marginBottom: 6, textTransform: 'capitalize' }}>
+                <div style={{ fontSize: ts(10), fontWeight: 700, color: T.textFaint, marginBottom: 6, textTransform: 'capitalize' }}>
                   {capitalize(cat)}
                 </div>
               )}
@@ -585,7 +584,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
       )}
 
       {toBring.length === 0 && ready.length > 0 && (
-        <div style={{ fontSize: 11.5, color: T.textSub, marginBottom: 10, textAlign: 'center' }}>
+        <div style={{ fontSize: ts(11.5), color: T.textSub, marginBottom: 10, textAlign: 'center' }}>
           Everything is {GEAR_READY_LABEL.toLowerCase()}.
         </div>
       )}
@@ -597,19 +596,10 @@ function GearTab({ trip, participants, onTripUpdate }) {
   );
 }
 
-function toggleIngredient(current, ingredient) {
-  const parts = current.split(',').map((part) => part.trim()).filter(Boolean);
-  const key = ingredient.toLowerCase();
-  const index = parts.findIndex((part) => part.toLowerCase() === key);
-  if (index >= 0) parts.splice(index, 1);
-  else parts.push(ingredient);
-  return parts.join(', ');
-}
-
 function ChoiceRow({ label, children }) {
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{children}</div>
     </div>
   );
@@ -625,7 +615,7 @@ function ChoiceChip({ selected, onClick, children }) {
         border: selected ? 'none' : `1px solid ${T.border}`,
         background: selected ? T.accent : T.bg,
         color: selected ? 'white' : T.text,
-        fontSize: 12,
+        fontSize: ts(12),
         fontWeight: 700,
         cursor: 'pointer',
         fontFamily: F,
@@ -664,16 +654,8 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   const [notes, setNotes] = useState('');
   const [ingredients, setIngredients] = useState('');
   const [ingredientDraft, setIngredientDraft] = useState('');
-  const [ingredientSortMode, setIngredientSortMode] = useState('category'); // 'category' | 'alpha'
-  const [ingredientCatFilter, setIngredientCatFilter] = useState('all');
-  const [ingredientSearch, setIngredientSearch] = useState('');
-  const [showSavedIngredients, setShowSavedIngredients] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [managingSaved, setManagingSaved] = useState(false);
-  const [editingSavedKey, setEditingSavedKey] = useState(null);
-  const [savedEditName, setSavedEditName] = useState('');
-  const [savedEditSlot, setSavedEditSlot] = useState('dinner');
-  const [savedEditIngredients, setSavedEditIngredients] = useState('');
+  const [savedSheetOpen, setSavedSheetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sharedTick, setSharedTick] = useState(0);
 
@@ -688,17 +670,6 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     return listSavedMeals([...others, { meals }]);
   }, [meals, trip.id, sharedTick]);
 
-  const savedMealsBySlot = useMemo(() => {
-    const grouped = new Map(MEAL_SLOTS.map((s) => [s, []]));
-    for (const m of savedMeals) {
-      const s = MEAL_SLOTS.includes(m.slot) ? m.slot : 'dinner';
-      grouped.get(s).push(m);
-    }
-    return MEAL_SLOTS
-      .map((s) => ({ slot: s, label: SLOT_LABEL[s], items: grouped.get(s) || [] }))
-      .filter((g) => g.items.length > 0);
-  }, [savedMeals]);
-
   const savedIngredients = useMemo(() => {
     const others = getTrips().filter((item) => item.id !== trip.id);
     return listSavedIngredients([...others, { meals }]);
@@ -707,26 +678,6 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   const currentIngredientNames = useMemo(
     () => parseIngredientString(ingredients),
     [ingredients],
-  );
-
-  const sortedCurrentIngredients = useMemo(
-    () => sortIngredients(currentIngredientNames, ingredientSortMode),
-    [currentIngredientNames, ingredientSortMode],
-  );
-
-  const filteredSavedIngredients = useMemo(() => {
-    const q = ingredientSearch.trim().toLowerCase();
-    const filtered = savedIngredients.filter((ing) => {
-      if (q && !ing.toLowerCase().includes(q)) return false;
-      if (ingredientCatFilter !== 'all' && classifyIngredientCategory(ing) !== ingredientCatFilter) return false;
-      return true;
-    });
-    return sortIngredients(filtered, ingredientSortMode);
-  }, [savedIngredients, ingredientSearch, ingredientCatFilter, ingredientSortMode]);
-
-  const groupedSavedIngredients = useMemo(
-    () => groupIngredientsByCategory(filteredSavedIngredients),
-    [filteredSavedIngredients],
   );
 
   useEffect(() => {
@@ -765,55 +716,29 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     setIngredientDraft('');
   }
 
-  function handleSelectSavedMeal(mealKey) {
-    if (!mealKey) return;
-    const picked = savedMeals.find((m) => m.nameKey === mealKey);
+  function handleSelectSavedMeal(picked) {
     if (!picked) return;
     setName(picked.name);
     if (picked.slot) setSlot(picked.slot);
     setIngredients((picked.ingredients || []).map((item) => item.name).join(', '));
+    setSavedSheetOpen(false);
   }
 
-  function addDraftIngredients() {
-    const toAdd = parseIngredientString(ingredientDraft);
-    if (toAdd.length === 0) return;
-    let next = ingredients;
-    for (const item of toAdd) {
-      const exists = parseIngredientString(next).some((p) => p.toLowerCase() === item.toLowerCase());
-      if (!exists) {
-        next = next.trim() ? `${next}, ${item}` : item;
-      }
-    }
-    setIngredients(next);
-    setIngredientDraft('');
-  }
-
-  function startEditSavedRecipe(savedMeal) {
-    setEditingSavedKey(savedMeal.nameKey);
-    setSavedEditName(savedMeal.name || '');
-    setSavedEditSlot(savedMeal.slot || 'dinner');
-    setSavedEditIngredients((savedMeal.ingredients || []).map((i) => i.name).join(', '));
-  }
-
-  function saveEditedRecipe() {
-    if (!editingSavedKey || !savedEditName.trim()) return;
-    const ingList = parseIngredientString(savedEditIngredients).map((n) => ({ name: n, qty: '' }));
-    const updated = updateSavedMeal(editingSavedKey, {
-      name: savedEditName.trim(),
-      slot: savedEditSlot,
-      ingredients: ingList,
+  function saveEditedRecipe(savedKey, { name: nextName, slot: nextSlot, ingredients: names }) {
+    const updated = updateSavedMeal(savedKey, {
+      name: nextName,
+      slot: nextSlot,
+      ingredients: names.map((n) => ({ name: n, qty: '' })),
     });
     if (updated) {
       void publishSavedMeal(updated).then(() => setSharedTick((t) => t + 1));
     }
-    setEditingSavedKey(null);
     setSharedTick((t) => t + 1);
   }
 
   function handleDeleteSavedRecipe(savedMeal) {
     if (!confirmRemoveItem(savedMeal.name, 'saved meals library')) return;
     removeSavedMeal(savedMeal.nameKey);
-    if (editingSavedKey === savedMeal.nameKey) setEditingSavedKey(null);
     setSharedTick((t) => t + 1);
   }
 
@@ -885,189 +810,23 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     <div>
       <Composer title={editingId ? `Edit meal · ${name || 'Meal'}` : 'Add meal'} onCancel={editingId ? resetForm : null} scrollToken={editingId}>
         {savedMeals.length > 0 && (
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-                Saved meals ({savedMeals.length})
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setManagingSaved((v) => !v);
-                  setEditingSavedKey(null);
-                }}
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  color: T.accent,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  padding: 0,
-                  fontFamily: F,
-                }}
-              >
-                {managingSaved ? 'Done managing' : 'Edit saved meals'}
-              </button>
-            </div>
-            <select
-              aria-label="Saved meals"
-              value={selectedSavedKey}
-              onChange={(e) => handleSelectSavedMeal(e.target.value)}
-              style={{ ...selectStyle, width: '100%' }}
-            >
-              <option value="">Choose a saved meal template…</option>
-              {savedMealsBySlot.map((group) => (
-                <optgroup key={group.slot} label={group.label}>
-                  {group.items.map((meal) => (
-                    <option key={meal.nameKey} value={meal.nameKey}>
-                      {meal.name}{meal.ingredients?.length ? ` (${meal.ingredients.length} ingredients)` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-
-            {managingSaved && (
-              <div style={{
-                marginTop: 8,
-                padding: 10,
-                borderRadius: 10,
-                background: T.bg,
-                border: `1px solid ${T.border}`,
-              }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: T.text, marginBottom: 6 }}>
-                  Saved Meal Library (shared across trips)
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
-                  {savedMeals.map((sm) => {
-                    const isEditingThis = editingSavedKey === sm.nameKey;
-                    if (isEditingThis) {
-                      return (
-                        <div key={sm.nameKey} style={{ padding: 8, borderRadius: 8, background: T.card, border: `1px solid ${T.accent}` }}>
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <input
-                              value={savedEditName}
-                              onChange={(e) => setSavedEditName(e.target.value)}
-                              placeholder="Recipe name"
-                              style={{ ...inputStyle, height: 32, fontSize: 12 }}
-                            />
-                            <select
-                              value={savedEditSlot}
-                              onChange={(e) => setSavedEditSlot(e.target.value)}
-                              style={{ ...selectStyle, height: 32, fontSize: 11.5, flex: '0 0 105px' }}
-                            >
-                              {MEAL_SLOTS.map((s) => <option key={s} value={s}>{SLOT_LABEL[s]}</option>)}
-                            </select>
-                          </div>
-                          <input
-                            value={savedEditIngredients}
-                            onChange={(e) => setSavedEditIngredients(e.target.value)}
-                            placeholder="Ingredients, comma separated"
-                            style={{ ...inputStyle, height: 32, fontSize: 11.5, marginTop: 6 }}
-                          />
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 6 }}>
-                            <button
-                              type="button"
-                              onClick={() => setEditingSavedKey(null)}
-                              style={{
-                                border: `1px solid ${T.border}`,
-                                background: T.bg,
-                                color: T.textSub,
-                                borderRadius: 7,
-                                padding: '3px 8px',
-                                fontSize: 11,
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={saveEditedRecipe}
-                              style={{
-                                border: 'none',
-                                background: T.accent,
-                                color: 'white',
-                                borderRadius: 7,
-                                padding: '3px 10px',
-                                fontSize: 11,
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Save recipe
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div
-                        key={sm.nameKey}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                          padding: '6px 8px',
-                          borderRadius: 8,
-                          background: T.card,
-                          border: `1px solid ${T.border}`,
-                        }}
-                      >
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
-                            {sm.name} <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textFaint }}>· {SLOT_LABEL[sm.slot] || 'Dinner'}</span>
-                          </div>
-                          {(sm.ingredients || []).length > 0 && (
-                            <div style={{ fontSize: 10.5, color: T.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {sm.ingredients.map((i) => i.name).join(', ')}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                          <button
-                            type="button"
-                            onClick={() => startEditSavedRecipe(sm)}
-                            style={{
-                              border: `1px solid ${T.border}`,
-                              background: T.bg,
-                              color: T.text,
-                              borderRadius: 6,
-                              padding: '2px 7px',
-                              fontSize: 10.5,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSavedRecipe(sm)}
-                            style={{
-                              border: `1px solid ${T.red}35`,
-                              background: T.redLight,
-                              color: T.red,
-                              borderRadius: 6,
-                              padding: '2px 7px',
-                              fontSize: 10.5,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+          <div style={{ marginBottom: 10 }}>
+            <SavedMealTrigger
+              count={savedMeals.length}
+              currentName={selectedSavedKey ? name.trim() : ''}
+              onOpen={() => setSavedSheetOpen(true)}
+            />
           </div>
+        )}
+        {savedSheetOpen && (
+          <SavedMealSheet
+            savedMeals={savedMeals}
+            selectedKey={selectedSavedKey}
+            onPick={handleSelectSavedMeal}
+            onSaveEdit={saveEditedRecipe}
+            onDelete={handleDeleteSavedRecipe}
+            onClose={() => setSavedSheetOpen(false)}
+          />
         )}
 
         <input
@@ -1135,232 +894,13 @@ function MealsTab({ trip, participants, onTripUpdate }) {
           </ChoiceRow>
         )}
 
-        {/* Active Meal Ingredients Section */}
-        <div style={{
-          marginTop: 10,
-          padding: 10,
-          borderRadius: 10,
-          background: T.bg,
-          border: `1px solid ${T.border}`,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 6 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-              Meal Ingredients ({sortedCurrentIngredients.length})
-            </span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[
-                { id: 'category', label: 'Sort: By Aisle' },
-                { id: 'alpha', label: 'A–Z' },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setIngredientSortMode(opt.id)}
-                  style={{
-                    border: `1px solid ${ingredientSortMode === opt.id ? T.accent : T.border}`,
-                    background: ingredientSortMode === opt.id ? T.accentLight : T.card,
-                    color: ingredientSortMode === opt.id ? T.accent : T.textSub,
-                    borderRadius: 6,
-                    padding: '2px 6px',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    fontFamily: F,
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {sortedCurrentIngredients.length > 0 ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
-              {sortedCurrentIngredients.map((ing) => {
-                return (
-                  <span
-                    key={ing.toLowerCase()}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '3px 8px',
-                      borderRadius: 999,
-                      background: T.card,
-                      border: `1px solid ${T.accent}45`,
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      color: T.text,
-                    }}
-                  >
-                    {ing}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${ing}`}
-                      onClick={() => setIngredients(toggleIngredient(ingredients, ing))}
-                      style={{
-                        border: 'none',
-                        background: 'none',
-                        color: T.textSub,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        padding: 0,
-                        lineHeight: 1,
-                      }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
-              No ingredients added yet. Type below or tap from your sorted ingredient library.
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input
-              value={ingredientDraft}
-              onChange={(e) => setIngredientDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  addDraftIngredients();
-                }
-              }}
-              placeholder="Add ingredient(s), comma separated…"
-              style={{ ...inputStyle, height: 34, fontSize: 12 }}
-            />
-            <button
-              type="button"
-              onClick={addDraftIngredients}
-              style={{
-                border: `1px solid ${T.accent}`,
-                background: T.accentLight,
-                color: T.accent,
-                borderRadius: 9,
-                padding: '0 11px',
-                fontSize: 11.5,
-                fontWeight: 800,
-                cursor: 'pointer',
-                fontFamily: F,
-                flexShrink: 0,
-              }}
-            >
-              + Add
-            </button>
-          </div>
-
-          {savedIngredients.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <button
-                type="button"
-                aria-expanded={showSavedIngredients}
-                onClick={() => setShowSavedIngredients((open) => !open)}
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  padding: 0,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: T.accent,
-                  cursor: 'pointer',
-                  fontFamily: F,
-                }}
-              >
-                {showSavedIngredients ? 'Hide' : 'Show'} saved ingredients ({savedIngredients.length})
-              </button>
-              {showSavedIngredients && (
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 800, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-                  Pick from saved
-                </span>
-                {savedIngredients.length > 6 && (
-                  <input
-                    value={ingredientSearch}
-                    onChange={(e) => setIngredientSearch(e.target.value)}
-                    placeholder="Filter ingredients…"
-                    style={{ ...inputStyle, height: 26, fontSize: 11, maxWidth: 150, padding: '0 8px' }}
-                  />
-                )}
-              </div>
-
-              {/* Category Filter Bar */}
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
-                {[
-                  { id: 'all', label: 'All' },
-                  ...INGREDIENT_CATEGORIES.map((c) => ({ id: c.id, label: c.shortLabel })),
-                ].map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setIngredientCatFilter(cat.id)}
-                    style={{
-                      border: `1px solid ${ingredientCatFilter === cat.id ? T.accent : T.border}`,
-                      background: ingredientCatFilter === cat.id ? T.accent : T.card,
-                      color: ingredientCatFilter === cat.id ? 'white' : T.textSub,
-                      borderRadius: 999,
-                      padding: '2px 8px',
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      fontFamily: F,
-                    }}
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
-
-              {ingredientSortMode === 'category' && ingredientCatFilter === 'all' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {groupedSavedIngredients.map((group) => (
-                    <div key={group.id}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: T.textFaint, marginBottom: 4 }}>
-                        {group.label}
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                        {group.items.map((ingredient) => {
-                          const selected = currentIngredientNames.some((part) => part.toLowerCase() === ingredient.toLowerCase());
-                          return (
-                            <ChoiceChip
-                              key={ingredient.toLowerCase()}
-                              selected={selected}
-                              onClick={() => setIngredients(toggleIngredient(ingredients, ingredient))}
-                            >
-                              {ingredient}
-                            </ChoiceChip>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {filteredSavedIngredients.map((ingredient) => {
-                    const selected = currentIngredientNames.some((part) => part.toLowerCase() === ingredient.toLowerCase());
-                    return (
-                      <ChoiceChip
-                        key={ingredient.toLowerCase()}
-                        selected={selected}
-                        onClick={() => setIngredients(toggleIngredient(ingredients, ingredient))}
-                      >
-                        {ingredient}
-                      </ChoiceChip>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-              )}
-            </div>
-          )}
-        </div>
+        <IngredientField
+          selected={currentIngredientNames}
+          library={savedIngredients}
+          draft={ingredientDraft}
+          onDraftChange={setIngredientDraft}
+          onChange={(names) => setIngredients(names.join(', '))}
+        />
 
         <input
           value={notes}
@@ -1398,14 +938,14 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
-                    <span style={{ color: T.accent, fontSize: 10.5, fontWeight: 800 }}><SlotIcon slot={m.slot} />{SLOT_LABEL[m.slot]} · </span>
+                  <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>
+                    <span style={{ color: T.accent, fontSize: ts(10.5), fontWeight: 800 }}><SlotIcon slot={m.slot} />{SLOT_LABEL[m.slot]} · </span>
                     {m.name}
                     {mealEndDay(m) > mealStartDay(m) ? (
-                      <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textFaint }}> · {mealDaysLabel(m)}</span>
+                      <span style={{ fontSize: ts(10.5), fontWeight: 600, color: T.textFaint }}> · {mealDaysLabel(m)}</span>
                     ) : null}
                     {m.servings ? (
-                      <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textFaint }}> · {m.servings} servings</span>
+                      <span style={{ fontSize: ts(10.5), fontWeight: 600, color: T.textFaint }}> · {m.servings} servings</span>
                     ) : null}
                   </div>
                   {m.assignedToLabel && (
@@ -1435,7 +975,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                         padding: '2px 8px',
                         background: isPersonReady(m, currentUserId, trip) ? '#E2F4E2' : T.accent,
                         color: isPersonReady(m, currentUserId, trip) ? '#2A6A14' : 'white',
-                        fontSize: 10.5,
+                        fontSize: ts(10.5),
                         fontWeight: 800,
                         fontFamily: F,
                         cursor: 'pointer',
@@ -1507,7 +1047,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                           padding: '2px 8px',
                           background: T.accentLight,
                           color: T.accent,
-                          fontSize: 10.5,
+                          fontSize: ts(10.5),
                           fontWeight: 800,
                           fontFamily: F,
                           cursor: 'pointer',
@@ -1530,7 +1070,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                           padding: '2px 8px',
                           background: amCoCook ? '#E4EFF8' : T.bg,
                           color: amCoCook ? '#2A5C8E' : T.textSub,
-                          fontSize: 10.5,
+                          fontSize: ts(10.5),
                           fontWeight: 700,
                           fontFamily: F,
                           cursor: 'pointer',
@@ -1548,7 +1088,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                         padding: '2px 8px',
                         background: T.bg,
                         color: T.textSub,
-                        fontSize: 10.5,
+                        fontSize: ts(10.5),
                         fontWeight: 700,
                         fontFamily: F,
                         cursor: 'pointer',
@@ -1717,7 +1257,7 @@ function ShoppingTab({ trip, onTripUpdate }) {
           onClick={() => void toggle(item)}
         >
           <div style={{
-            fontSize: 13,
+            fontSize: ts(13),
             fontWeight: 600,
             color: done ? T.textFaint : T.text,
             textDecoration: done ? 'line-through' : 'none',
@@ -1725,11 +1265,11 @@ function ShoppingTab({ trip, onTripUpdate }) {
             {item.name}{item.qty ? ` · ${item.qty}` : ''}
           </div>
           {usedInMeals && usedInMeals.length > 0 ? (
-            <div style={{ fontSize: 10, color: T.textSub, marginTop: 1 }}>
+            <div style={{ fontSize: ts(10), color: T.textSub, marginTop: 1 }}>
               For: {usedInMeals.join(' · ')}
             </div>
           ) : (
-            item.source === 'meal' && <div style={{ fontSize: 9.5, color: T.textFaint }}>from meals</div>
+            item.source === 'meal' && <div style={{ fontSize: ts(9.5), color: T.textFaint }}>from meals</div>
           )}
         </div>
         <RowActions
@@ -1754,11 +1294,11 @@ function ShoppingTab({ trip, onTripUpdate }) {
           <div onClick={() => { if (!saving) void generate(); }}
                style={{ marginTop: 8, height: 36, borderRadius: 10, border: `1px dashed ${T.accent}80`, background: T.accentLight,
                         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                        fontSize: 11.5, fontWeight: 700, color: T.accent, gap: 6 }}>
+                        fontSize: ts(11.5), fontWeight: 700, color: T.accent, gap: 6 }}>
             <Ic d={ICONS.plus} size={14} color={T.accent} sw={2.2} /> Generate from meal ingredients
           </div>
         )}
-        {note && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 6 }}>{note}</div>}
+        {note && <div style={{ fontSize: ts(10.5), color: T.textSub, marginTop: 6 }}>{note}</div>}
       </Composer>
 
       {items.length === 0 && <Empty text="Build a shared shopping list. Generate from meals or add items by hand." />}
@@ -1787,7 +1327,7 @@ function ShoppingTab({ trip, onTripUpdate }) {
                     color: sortMode === opt.id ? T.accent : T.textSub,
                     borderRadius: 7,
                     padding: '2px 7px',
-                    fontSize: 10,
+                    fontSize: ts(10),
                     fontWeight: 700,
                     cursor: 'pointer',
                     fontFamily: F,
@@ -1802,7 +1342,7 @@ function ShoppingTab({ trip, onTripUpdate }) {
           {groupedToBuy.map((group) => (
             <div key={group.id} style={{ marginBottom: 12 }}>
               {groupedToBuy.length > 1 && (
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.textSub, marginBottom: 5 }}>
+                <div style={{ fontSize: ts(10.5), fontWeight: 800, color: T.textSub, marginBottom: 5 }}>
                   {group.icon} {group.label} ({group.items.length})
                 </div>
               )}
@@ -1829,8 +1369,8 @@ function ListProgress({ done, total, label = 'done' }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{done} of {total} {label}</span>
-        <span style={{ fontSize: 11, color: T.textFaint }}>{pct}%</span>
+        <span style={{ fontSize: ts(12), fontWeight: 700, color: T.text }}>{done} of {total} {label}</span>
+        <span style={{ fontSize: ts(11), color: T.textFaint }}>{pct}%</span>
       </div>
       <div style={{ height: 5, borderRadius: 99, background: T.border, overflow: 'hidden' }}>
         <div style={{
@@ -1898,7 +1438,7 @@ function Composer({ title, onCancel, scrollToken, children }) {
     <div ref={ref} style={{ background: T.card, borderRadius: 14, padding: '12px 14px', border: `1px solid ${T.border}`, marginBottom: 16, scrollMarginTop: 12 }}>
       {title && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{title}</div>
+          <div style={{ fontSize: ts(12), fontWeight: 800, color: T.text }}>{title}</div>
           {onCancel && (
             <button type="button" onClick={onCancel} style={ghostBtnStyle}>Cancel</button>
           )}
@@ -1910,7 +1450,7 @@ function Composer({ title, onCancel, scrollToken, children }) {
 }
 
 function SectionLabel({ children }) {
-  return <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 8 }}>{children}</div>;
+  return <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: .7, textTransform: 'uppercase', marginBottom: 8 }}>{children}</div>;
 }
 
 function CollapsibleSection({ title, count, defaultOpen = false, children }) {
@@ -1936,11 +1476,11 @@ function CollapsibleSection({ title, count, defaultOpen = false, children }) {
           fontFamily: F,
         }}
       >
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+        <span style={{ fontSize: ts(10.5), fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase' }}>
           {title}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint }}>{count}</span>
+          <span style={{ fontSize: ts(11), fontWeight: 700, color: T.textFaint }}>{count}</span>
           <span style={{
             display: 'flex',
             transform: open ? 'rotate(90deg)' : 'none',
@@ -1978,7 +1518,7 @@ function SaveButton({ onClick, busy = false, wide = false, label = 'Save' }) {
         justifyContent: 'center',
         cursor: busy ? 'wait' : 'pointer',
         color: 'white',
-        fontSize: 12,
+        fontSize: ts(12),
         fontWeight: 800,
         fontFamily: F,
         padding: wide ? 0 : '0 12px',
@@ -2016,7 +1556,7 @@ const ghostBtnStyle = {
   border: 'none',
   background: 'transparent',
   color: T.textSub,
-  fontSize: 11,
+  fontSize: ts(11),
   fontWeight: 700,
   fontFamily: F,
   cursor: 'pointer',
@@ -2038,17 +1578,17 @@ const iconActionBtnStyle = {
 };
 
 function Empty({ text }) {
-  return <div style={{ textAlign: 'center', padding: '18px 10px', color: T.textFaint, fontSize: 11.5 }}>{text}</div>;
+  return <div style={{ textAlign: 'center', padding: '18px 10px', color: T.textFaint, fontSize: ts(11.5) }}>{text}</div>;
 }
 
 const inputStyle = {
   flex: 1, width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '9px 11px',
-  fontSize: 12.5, fontFamily: F, color: T.text, background: T.bg, outline: 'none', boxSizing: 'border-box',
+  fontSize: ts(12.5), fontFamily: F, color: T.text, background: T.bg, outline: 'none', boxSizing: 'border-box',
 };
 
 const selectStyle = {
   flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '9px 8px',
-  fontSize: 11.5, fontFamily: F, color: T.text, background: T.bg, outline: 'none',
+  fontSize: ts(11.5), fontFamily: F, color: T.text, background: T.bg, outline: 'none',
 };
 
 const cardStyle = {

@@ -22,6 +22,7 @@ import {
 } from '../lib/offlineMaps';
 import { trailMapArt } from '../lib/locationArt';
 import { ArtImg } from './LocationMark';
+import { ts } from '../lib/textScale';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -333,7 +334,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
         </div>
         {readiness?.configured && (
           <span style={{
-            fontSize: 10,
+            fontSize: ts(10),
             fontWeight: 800,
             padding: '3px 8px',
             borderRadius: 999,
@@ -345,7 +346,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
           </span>
         )}
       </div>
-      <div style={{ fontSize: 11, color: T.textSub, marginBottom: 12, lineHeight: 1.45 }}>
+      <div style={{ fontSize: ts(11), color: T.textSub, marginBottom: 12, lineHeight: 1.45 }}>
         Select a map area for this trip. Everyone on the crew can then download that same map before they lose service.
       </div>
 
@@ -358,12 +359,12 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
           background: readiness.ready ? '#EBF5EB' : '#FFF4E5',
           border: `1.5px solid ${readiness.ready ? '#A8D8A8' : '#E8B87D'}`,
         }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: readiness.ready ? '#2A6A14' : '#8A4812' }}>
+          <div style={{ fontSize: ts(12), fontWeight: 800, color: readiness.ready ? '#2A6A14' : '#8A4812' }}>
             {readiness.ready
               ? `✓ Stored on this device: ${readiness.primaryLabel}`
               : `⚠️ Map not downloaded on this device yet (${readiness.totalCount - readiness.missingCount} of ${readiness.totalCount} ready)`}
           </div>
-          <div style={{ fontSize: 11, color: readiness.ready ? '#345E28' : '#7A4A1D', marginTop: 3, lineHeight: 1.4 }}>
+          <div style={{ fontSize: ts(11), color: readiness.ready ? '#345E28' : '#7A4A1D', marginTop: 3, lineHeight: 1.4 }}>
             {readiness.ready
               ? 'This phone has the trip map cached locally and will work without cell service.'
               : 'You will not have this map once you lose cell service unless you download it to this device now.'}
@@ -381,7 +382,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                 padding: '9px 12px',
                 background: T.accent,
                 color: 'white',
-                fontSize: 12,
+                fontSize: ts(12),
                 fontWeight: 800,
                 fontFamily: F,
                 cursor: downloadingAll ? 'wait' : 'pointer',
@@ -398,7 +399,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
           borderRadius: 11,
           background: '#FBF0E4',
           border: '1px solid #E8D4B8',
-          fontSize: 11.5,
+          fontSize: ts(11.5),
           color: '#8A5526',
           lineHeight: 1.45,
         }}>
@@ -409,7 +410,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
       {/* Section 1: Custom Trip Map Area (Framed on Map) */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: 10.5, fontWeight: 800, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+          <span style={{ fontSize: ts(10.5), fontWeight: 800, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase' }}>
             Trip Map Area
           </span>
           {trip?.id && (
@@ -425,7 +426,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                 color: T.accent,
                 borderRadius: 7,
                 padding: '3px 9px',
-                fontSize: 10.5,
+                fontSize: ts(10.5),
                 fontWeight: 800,
                 fontFamily: F,
                 cursor: 'pointer',
@@ -444,10 +445,10 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
             background: T.bg,
             marginBottom: 10,
           }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: T.text, marginBottom: 4 }}>
+            <div style={{ fontSize: ts(12), fontWeight: 800, color: T.text, marginBottom: 4 }}>
               Choose or Edit Trip Map Area
             </div>
-            <div style={{ fontSize: 11, color: T.textSub, marginBottom: 8, lineHeight: 1.4 }}>
+            <div style={{ fontSize: ts(11), color: T.textSub, marginBottom: 8, lineHeight: 1.4 }}>
               Search for your river, trailhead, or destination and frame the area on the map. Saving updates the trip map for everyone on the trip.
             </div>
 
@@ -463,7 +464,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                   borderRadius: 9,
                   border: `1px solid ${T.border}`,
                   padding: '0 10px',
-                  fontSize: 12,
+                  fontSize: ts(12),
                   fontFamily: F,
                   background: T.card,
                   color: T.text,
@@ -478,7 +479,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                   padding: '0 12px',
                   background: T.accent,
                   color: 'white',
-                  fontSize: 11.5,
+                  fontSize: ts(11.5),
                   fontWeight: 800,
                   fontFamily: F,
                   cursor: 'pointer',
@@ -502,14 +503,14 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                     onClick={() => pickPlace(f)}
                     style={{
                       padding: '8px 10px',
-                      fontSize: 11.5,
+                      fontSize: ts(11.5),
                       color: T.text,
                       cursor: 'pointer',
                       borderBottom: `1px solid ${T.border}`,
                     }}
                   >
                     <div style={{ fontWeight: 700 }}>{f.text}</div>
-                    <div style={{ fontSize: 10, color: T.textFaint }}>{f.place_name}</div>
+                    <div style={{ fontSize: ts(10), color: T.textFaint }}>{f.place_name}</div>
                   </div>
                 ))}
               </div>
@@ -525,7 +526,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                 borderRadius: 9,
                 border: `1px solid ${T.border}`,
                 padding: '0 10px',
-                fontSize: 11.5,
+                fontSize: ts(11.5),
                 fontFamily: F,
                 background: T.card,
                 color: T.text,
@@ -548,7 +549,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
               />
             )}
 
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.textSub, textTransform: 'uppercase', marginBottom: 5 }}>
+            <div style={{ fontSize: ts(10), fontWeight: 700, color: T.textSub, textTransform: 'uppercase', marginBottom: 5 }}>
               Offline Detail Level
             </div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
@@ -567,8 +568,8 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                     fontFamily: F,
                   }}
                 >
-                  <div style={{ fontSize: 10.5, fontWeight: 800, color: maxZoom === z.level ? T.accent : T.text }}>{z.label}</div>
-                  <div style={{ fontSize: 9.5, color: T.textFaint }}>~{z.estimateMb} MB</div>
+                  <div style={{ fontSize: ts(10.5), fontWeight: 800, color: maxZoom === z.level ? T.accent : T.text }}>{z.label}</div>
+                  <div style={{ fontSize: ts(9.5), color: T.textFaint }}>~{z.estimateMb} MB</div>
                 </button>
               ))}
             </div>
@@ -584,7 +585,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                   padding: '9px 12px',
                   background: T.accent,
                   color: 'white',
-                  fontSize: 11.5,
+                  fontSize: ts(11.5),
                   fontWeight: 800,
                   fontFamily: F,
                   cursor: 'pointer',
@@ -601,7 +602,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                   padding: '9px 12px',
                   background: T.card,
                   color: T.textSub,
-                  fontSize: 11.5,
+                  fontSize: ts(11.5),
                   fontWeight: 700,
                   fontFamily: F,
                   cursor: 'pointer',
@@ -622,15 +623,15 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.text }}>
+                <div style={{ fontSize: ts(12.5), fontWeight: 800, color: T.text }}>
                   {getTripMapAreaLabel(trip)}
                 </div>
-                <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2 }}>
+                <div style={{ fontSize: ts(10.5), color: T.textSub, marginTop: 2 }}>
                   Selected trip map area · {areaSizeLabel || 'Custom bounds'}
                 </div>
               </div>
               <div style={{
-                fontSize: 10,
+                fontSize: ts(10),
                 fontWeight: 800,
                 color: areaReady ? '#2A6A14' : areaDownloading ? '#2A5C8E' : '#9B5118',
                 flexShrink: 0,
@@ -668,7 +669,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                     padding: '8px 10px',
                     background: T.accent,
                     color: 'white',
-                    fontSize: 11,
+                    fontSize: ts(11),
                     fontWeight: 800,
                     fontFamily: F,
                     cursor: areaDownloading ? 'wait' : 'pointer',
@@ -688,7 +689,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                     padding: '7px 10px',
                     background: T.card,
                     color: T.textSub,
-                    fontSize: 10.5,
+                    fontSize: ts(10.5),
                     fontWeight: 700,
                     fontFamily: F,
                     cursor: 'pointer',
@@ -706,7 +707,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
               borderRadius: 10,
               padding: '10px 12px',
               background: T.bg,
-              fontSize: 11,
+              fontSize: ts(11),
               color: T.textSub,
             }}>
               No custom map area framed yet. Tap <strong>+ Choose map area</strong> above to frame any river, trail, or destination for your crew.
@@ -718,7 +719,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
       {/* Section 2: Prebuilt Regional Offline Map Packs */}
       {regions.length > 0 && (
         <div>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
+          <div style={{ fontSize: ts(10.5), fontWeight: 800, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
             Regional Offline Map Packs
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -741,14 +742,14 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.text }}>{region.name}</div>
-                      <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2 }}>{region.area}</div>
+                      <div style={{ fontSize: ts(12.5), fontWeight: 800, color: T.text }}>{region.name}</div>
+                      <div style={{ fontSize: ts(10.5), color: T.textSub, marginTop: 2 }}>{region.area}</div>
                       {sizeLabel && (
-                        <div style={{ fontSize: 10, color: T.textFaint, marginTop: 3 }}>{sizeLabel}</div>
+                        <div style={{ fontSize: ts(10), color: T.textFaint, marginTop: 3 }}>{sizeLabel}</div>
                       )}
                     </div>
                     <div style={{
-                      fontSize: 10,
+                      fontSize: ts(10),
                       fontWeight: 700,
                       color: isReady ? '#2E6D3A' : isDownloading ? '#2A5C8E' : st.state === 'error' ? '#8A1414' : T.textFaint,
                       flexShrink: 0,
@@ -792,10 +793,10 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                           <Ic d="M20 6L9 17l-5-5" size={12} color="white" sw={3} />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#2A6A14' }}>
+                          <div style={{ fontSize: ts(11.5), fontWeight: 800, color: '#2A6A14' }}>
                             {justConfirmed ? 'Download complete' : 'Stored on this device'}
                           </div>
-                          <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2, lineHeight: 1.4 }}>
+                          <div style={{ fontSize: ts(10.5), color: T.textSub, marginTop: 2, lineHeight: 1.4 }}>
                             {sizeLabel ? `${sizeLabel}` : 'Map pack verified'}
                             {verifiedLabel ? ` · ${verifiedLabel}` : ''}
                           </div>
@@ -812,7 +813,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                           borderRadius: 8,
                           background: T.card,
                           padding: '7px 10px',
-                          fontSize: 10.5,
+                          fontSize: ts(10.5),
                           fontWeight: 700,
                           fontFamily: F,
                           color: T.textSub,
@@ -838,7 +839,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                         border: 'none',
                         background: T.accent,
                         color: 'white',
-                        fontSize: 11,
+                        fontSize: ts(11),
                         fontWeight: 800,
                         fontFamily: F,
                         cursor: isDownloading ? 'wait' : 'pointer',
@@ -862,7 +863,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                         border: `1px solid ${onTrip ? T.accent : T.border}`,
                         background: onTrip ? T.accentLight : T.card,
                         color: onTrip ? T.accent : T.textSub,
-                        fontSize: 10.5,
+                        fontSize: ts(10.5),
                         fontWeight: 700,
                         fontFamily: F,
                         cursor: 'pointer',
@@ -873,7 +874,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
                   )}
 
                   {st.state === 'error' && (
-                    <div style={{ fontSize: 10, color: '#8A1414', marginTop: 6 }}>{st.error}</div>
+                    <div style={{ fontSize: ts(10), color: '#8A1414', marginTop: 6 }}>{st.error}</div>
                   )}
                 </div>
               );

@@ -205,13 +205,13 @@ function ImportPlacement({ placement, locations, onPlace, onItem }) {
       {places.map((place) => (
         <div key={place.incomingId} style={{ border: '1px solid #d5dee6', borderRadius: 10, padding: 10, marginBottom: 8 }}>
           <div style={{ fontWeight: 700, marginBottom: 4 }}>{place.name}</div>
-          <p style={{ margin: '0 0 6px', fontSize: 13 }}>
+          <p style={{ margin: '0 0 6px', fontSize: ts(13) }}>
             {place.nearestName
               ? `Nearest saved place is ${place.nearestName}${place.distanceMeters != null ? ` (${place.distanceMeters} m away)` : ''}. Their events will be added there unless you choose otherwise.`
               : 'No saved place is within 200 m, so this stays its own stop unless you add it to one.'}
           </p>
           {place.events?.length > 0 && (
-            <p style={{ margin: '0 0 8px', fontSize: 12, color: T.textSub }}>
+            <p style={{ margin: '0 0 8px', fontSize: ts(12), color: T.textSub }}>
               Events at this stop: {place.events.map((e) => e.name).join(', ')}
             </p>
           )}
@@ -226,7 +226,7 @@ function ImportPlacement({ placement, locations, onPlace, onItem }) {
             ))}
           </div>
           {place.action !== 'keep' && (
-            <label style={{ fontSize: 13 }}>
+            <label style={{ fontSize: ts(13) }}>
               Place{' '}
               <select value={place.targetId || ''} onChange={(e) => onPlace(place.incomingId, { targetId: e.target.value })}>
                 {locations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
@@ -240,7 +240,7 @@ function ImportPlacement({ placement, locations, onPlace, onItem }) {
         return (
           <div key={item.kind + item.id} style={{ border: '1px solid #d5dee6', borderRadius: 10, padding: 10, marginBottom: 8 }}>
             <div style={{ fontWeight: 700 }}>{item.name}</div>
-            <p style={{ margin: '4px 0 8px', fontSize: 13 }}>
+            <p style={{ margin: '4px 0 8px', fontSize: ts(13) }}>
               Happened {item.distanceMeters != null ? `${item.distanceMeters} m from ` : 'near '}
               <strong>{item.nearestName}</strong>. Add this event to {item.nearestName}?
             </p>
@@ -261,7 +261,7 @@ function ImportPlacement({ placement, locations, onPlace, onItem }) {
               </button>
             </div>
             {activeAction !== 'keep' && (
-              <label style={{ fontSize: 13 }}>
+              <label style={{ fontSize: ts(13) }}>
                 Location{' '}
                 <select value={item.targetId || ''} onChange={(e) => onItem(item.id, { action: 'add', targetId: e.target.value })}>
                   {locations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}

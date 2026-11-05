@@ -8,6 +8,7 @@ import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { getTripOfflineMapReadiness } from '../lib/offlineMaps';
 import { locationMapSymbol } from '../lib/locationArt';
+import { ts } from '../lib/textScale';
 
 export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
   const [mapStyle, setMapStyle] = useState('outdoors-v12');
@@ -77,10 +78,10 @@ export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
                         borderRadius: 14, padding: '9px 14px', boxShadow: '0 2px 14px rgba(0,0,0,.14)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: T.text, letterSpacing: -.3 }}>
+                <div style={{ fontSize: ts(15), fontWeight: 800, color: T.text, letterSpacing: -.3 }}>
                   {trip?.name || 'No active trip'}
                 </div>
-                <div style={{ fontSize: 11, color: T.textSub, marginTop: 1 }}>
+                <div style={{ fontSize: ts(11), color: T.textSub, marginTop: 1 }}>
                   {trip ? `${track.length} pts recorded` : 'Start a trip to begin tracking'}
                 </div>
               </div>
@@ -89,7 +90,7 @@ export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
                                background: T.accent, borderRadius: 10, padding: '4px 9px' }}>
                   <div style={{ width: 6, height: 6, borderRadius: 3, background: '#5DBE7E',
                                  animation: 'pulse 2s infinite' }} />
-                  <span style={{ fontSize: 10, fontWeight: 700, color: 'white', letterSpacing: .8 }}>LIVE</span>
+                  <span style={{ fontSize: ts(10), fontWeight: 700, color: 'white', letterSpacing: .8 }}>LIVE</span>
                 </div>
               )}
             </div>
@@ -115,7 +116,7 @@ export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
             background: offlineReadiness.ready ? 'rgba(235,245,235,0.96)' : 'rgba(251,240,228,0.96)',
             borderRadius: 10,
             padding: '7px 11px',
-            fontSize: 10.5,
+            fontSize: ts(10.5),
             fontWeight: 700,
             color: offlineReadiness.ready ? '#2A6A14' : '#8A5526',
             display: 'flex',
@@ -136,7 +137,7 @@ export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
         {(error || locateError) && (
           <div style={{ position: 'absolute', top: offlineReadiness?.configured ? 98 : 70, left: 12, right: 12, zIndex: 10,
                         background: '#FBF0E4', borderRadius: 10, padding: '8px 12px',
-                        fontSize: 11, color: T.amber, fontWeight: 600 }}>
+                        fontSize: ts(11), color: T.amber, fontWeight: 600 }}>
             GPS: {error || locateError}
           </div>
         )}
@@ -159,9 +160,9 @@ export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
               <div key={i} style={{ flex: 1, textAlign: 'center',
                                      borderRight: i < arr.length - 1 ? `1px solid ${T.border}` : 'none' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, color: T.text, letterSpacing: -.5, lineHeight: 1 }}>
-                  {s.val}<span style={{ fontSize: 10, fontWeight: 500, color: T.textSub }}>{s.unit}</span>
+                  {s.val}<span style={{ fontSize: ts(10), fontWeight: 500, color: T.textSub }}>{s.unit}</span>
                 </div>
-                <div style={{ fontSize: 9.5, color: T.textFaint, marginTop: 3, fontWeight: 500 }}>{s.label}</div>
+                <div style={{ fontSize: ts(9.5), color: T.textFaint, marginTop: 3, fontWeight: 500 }}>{s.label}</div>
               </div>
             ))}
           </div>

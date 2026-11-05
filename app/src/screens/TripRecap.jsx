@@ -235,7 +235,7 @@ export function TripRecap({ trip: tripProp, onBack, onTripUpdate, onForkedTrip, 
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
         <div className="screen-content-inner">
-        <p style={{fontSize:13}}>Report uses the shared timeline in {tripTimeZone(trip)}. Ask every participant to sync or send their final file before publishing.</p>
+        <p style={{fontSize:ts(13)}}>Report uses the shared timeline in {tripTimeZone(trip)}. Ask every participant to sync or send their final file before publishing.</p>
         {(trip._sync?.conflicts?.length > 0 || trip.syncState === 'pending' || trip._sync?.mediaPending > 0) && <p role="status">This report is a draft: some changes, attachments, or conflicts still need review in Sync &amp; offline sharing.</p>}
         {trip.recap?.manifestHash && trip.recap.manifestHash !== manifestContentHash(buildTripManifest(trip)) && <p role="status">The trip has changed since this report was generated. Regenerate the draft to include the latest contributions.</p>}
         {!!status && (
@@ -433,7 +433,7 @@ function TripStoryView({
     <div>
       {(mapEntries.length > 0 || track.length > 0) && (
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '10px 12px', marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ fontSize: ts(11), fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
             Route &amp; Anchored Locations ({locations.length})
           </div>
           <div style={{ borderRadius: 10, overflow: 'hidden', height: 200 }}>
@@ -452,7 +452,7 @@ function TripStoryView({
 
       {highlights.length > 0 && (
         <div style={{ background: '#FBF0E4', borderRadius: 12, border: '1px solid #E8C9A0', padding: '12px 14px', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: '#7A4A14', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: ts(11), fontWeight: 800, color: '#7A4A14', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
             <ArtImg src={starArt} size={16} />
             Crew Highlights ({highlights.length})
           </div>
@@ -460,11 +460,11 @@ function TripStoryView({
             {highlights.map((h) => (
               <div key={h.id} style={{ background: T.card, borderRadius: 10, padding: '10px 12px', border: '1px solid #E8C9A0' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 800, color: T.text }}>{h.title}</span>
-                  {h.place && <span style={{ fontSize: 11, color: T.textSub }}>· {h.place}</span>}
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#2A5C8E', marginLeft: 'auto' }}>{h.author}</span>
+                  <span style={{ fontSize: ts(13.5), fontWeight: 800, color: T.text }}>{h.title}</span>
+                  {h.place && <span style={{ fontSize: ts(11), color: T.textSub }}>· {h.place}</span>}
+                  <span style={{ fontSize: ts(11), fontWeight: 700, color: '#2A5C8E', marginLeft: 'auto' }}>{h.author}</span>
                 </div>
-                {h.notes && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: T.textSub, lineHeight: 1.5 }}>&ldquo;{h.notes}&rdquo;</p>}
+                {h.notes && <p style={{ margin: '4px 0 0', fontSize: ts(12.5), color: T.textSub, lineHeight: 1.5 }}>&ldquo;{h.notes}&rdquo;</p>}
               </div>
             ))}
           </div>
@@ -473,10 +473,10 @@ function TripStoryView({
 
       {trip.recap?.narrativeText && (
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '14px 15px', marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: T.accent, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 6 }}>
+          <div style={{ fontSize: ts(11), fontWeight: 800, color: T.accent, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 6 }}>
             The Story
           </div>
-          <div style={{ fontSize: 13.5, color: T.text, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+          <div style={{ fontSize: ts(13.5), color: T.text, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
             {trip.recap.narrativeText}
           </div>
         </div>
@@ -484,12 +484,12 @@ function TripStoryView({
 
       {chaptersByDay.length > 0 && (
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ fontSize: ts(11), fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
             Day-by-Day Perspectives
           </div>
           {chaptersByDay.map(([day, dayEntries]) => (
             <div key={day} style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#2A5C8E', marginBottom: 8 }}>
+              <div style={{ fontSize: ts(13), fontWeight: 800, color: '#2A5C8E', marginBottom: 8 }}>
                 {day === 'Trip' ? 'Trip Moments' : formatDayLabel(day)}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -498,12 +498,12 @@ function TripStoryView({
                   return (
                     <div key={en.id} style={{ borderLeft: `3px solid ${T.accent}`, paddingLeft: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.text }}>{en.title || en.type}</span>
-                        {en.locationName && <span style={{ fontSize: 11, color: T.textSub }}>@ {en.locationName}</span>}
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#2A5C8E', marginLeft: 'auto' }}>— {author}</span>
+                        <span style={{ fontSize: ts(12.5), fontWeight: 800, color: T.text }}>{en.title || en.type}</span>
+                        {en.locationName && <span style={{ fontSize: ts(11), color: T.textSub }}>@ {en.locationName}</span>}
+                        <span style={{ fontSize: ts(11), fontWeight: 700, color: '#2A5C8E', marginLeft: 'auto' }}>— {author}</span>
                       </div>
                       {en.notes && (
-                        <p style={{ margin: '4px 0 0', fontSize: 12.5, color: T.textSub, lineHeight: 1.5 }}>
+                        <p style={{ margin: '4px 0 0', fontSize: ts(12.5), color: T.textSub, lineHeight: 1.5 }}>
                           &ldquo;{en.notes}&rdquo;
                         </p>
                       )}
@@ -551,21 +551,21 @@ function CrewMemoriesWall({ trip, currentUserId, canContribute, memoryText, onMe
   const memories = Array.isArray(trip?.recap?.memories) ? trip.recap.memories : [];
   return (
     <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '13px 14px', marginTop: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
+      <div style={{ fontSize: ts(11), fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
         Crew Memories &amp; Reflections ({memories.length})
       </div>
       {memories.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.textFaint, marginBottom: canContribute ? 10 : 0 }}>
+        <div style={{ fontSize: ts(12.5), color: T.textFaint, marginBottom: canContribute ? 10 : 0 }}>
           What stood out most from this trip? Add your favorite memory or reflection for the crew.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: canContribute ? 10 : 0 }}>
           {memories.map((m) => (
             <div key={m.id || m.createdAt} style={{ background: T.bg, borderRadius: 10, padding: '9px 11px', border: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: '#2A5C8E' }}>
+              <div style={{ fontSize: ts(11.5), fontWeight: 800, color: '#2A5C8E' }}>
                 {m.authorName || resolveUserDisplayName(trip, m.authorId, currentUserId) || 'Crew'}
               </div>
-              <div style={{ fontSize: 13, color: T.text, marginTop: 3, lineHeight: 1.45 }}>&ldquo;{m.text}&rdquo;</div>
+              <div style={{ fontSize: ts(13), color: T.text, marginTop: 3, lineHeight: 1.45 }}>&ldquo;{m.text}&rdquo;</div>
             </div>
           ))}
         </div>
@@ -581,7 +581,7 @@ function CrewMemoriesWall({ trip, currentUserId, canContribute, memoryText, onMe
             placeholder="Share a favorite memory from the trip…"
             style={{
               flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 9,
-              padding: '8px 10px', fontSize: 13, fontFamily: F, background: T.bg, outline: 'none',
+              padding: '8px 10px', fontSize: ts(13), fontFamily: F, background: T.bg, outline: 'none',
             }}
           />
           <button
@@ -591,7 +591,7 @@ function CrewMemoriesWall({ trip, currentUserId, canContribute, memoryText, onMe
             style={{
               minHeight: 36, padding: '0 14px', borderRadius: 9, border: 'none',
               background: memoryText.trim() ? '#2A5C8E' : '#7A9BB8',
-              color: 'white', fontWeight: 800, fontSize: 12.5, cursor: memoryText.trim() ? 'pointer' : 'default', fontFamily: F,
+              color: 'white', fontWeight: 800, fontSize: ts(12.5), cursor: memoryText.trim() ? 'pointer' : 'default', fontFamily: F,
             }}
           >
             Add memory

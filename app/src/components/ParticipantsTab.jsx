@@ -342,7 +342,7 @@ export function ParticipantsTab({
 
 function SectionLabel({ children }) {
   return (
-    <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase' }}>
+    <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase' }}>
       {children}
     </div>
   );
@@ -425,6 +425,6 @@ const removeBtn = {
   background: 'transparent',
   color: T.textFaint,
   cursor: 'pointer',
-  fontSize: 14,
+  fontSize: ts(14),
   padding: '4px 6px',
 };

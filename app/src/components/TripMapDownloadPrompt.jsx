@@ -7,6 +7,7 @@ import {
 } from '../lib/offlineMaps';
 import { trailMapArt } from '../lib/locationArt';
 import { ArtImg } from './LocationMark';
+import { ts } from '../lib/textScale';
 
 /**
  * Prompts any crew member who joins or opens a trip to download the trip's
@@ -78,11 +79,11 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
         fontFamily: F,
       }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 800, color: '#8A4812' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: ts(11.5), fontWeight: 800, color: '#8A4812' }}>
             <ArtImg src={trailMapArt} size={22} />
             No offline map selected for this trip yet
           </div>
-          <div style={{ fontSize: 10.5, color: '#7A4A1D', marginTop: 1 }}>
+          <div style={{ fontSize: ts(10.5), color: '#7A4A1D', marginTop: 1 }}>
             Pick a map area now so everyone on the trip can download it before losing service.
           </div>
         </div>
@@ -95,7 +96,7 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
             color: T.accent,
             borderRadius: 8,
             padding: '6px 10px',
-            fontSize: 11,
+            fontSize: ts(11),
             fontWeight: 800,
             fontFamily: F,
             cursor: 'pointer',
@@ -125,7 +126,7 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
         gap: 8,
         fontFamily: F,
       }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#2A6A14', minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: ts(11), fontWeight: 700, color: '#2A6A14', minWidth: 0, flex: 1 }}>
           ✓ Offline map on this device: <strong>{readiness.primaryLabel}</strong>
           {sizeText ? ` (${sizeText})` : ''}
         </div>
@@ -137,7 +138,7 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
               border: 'none',
               background: 'transparent',
               color: '#2A6A14',
-              fontSize: 10.5,
+              fontSize: ts(10.5),
               fontWeight: 800,
               fontFamily: F,
               cursor: 'pointer',
@@ -175,10 +176,10 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#8A4812' }}>
+          <div style={{ fontSize: ts(12.5), fontWeight: 800, color: '#8A4812' }}>
             📡 Download Trip Map for Offline Use
           </div>
-          <div style={{ fontSize: 11, color: '#6E3B10', marginTop: 3, lineHeight: 1.45 }}>
+          <div style={{ fontSize: ts(11), color: '#6E3B10', marginTop: 3, lineHeight: 1.45 }}>
             This trip uses <strong>{missingNames}</strong> (~{estMb} MB). Download it to this device now while you have service so your map works when you go off-grid.
           </div>
         </div>
@@ -197,7 +198,7 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
       )}
 
       {error && (
-        <div style={{ fontSize: 10.5, color: T.red, marginTop: 6, fontWeight: 700 }}>
+        <div style={{ fontSize: ts(10.5), color: T.red, marginTop: 6, fontWeight: 700 }}>
           {error}
         </div>
       )}
@@ -215,7 +216,7 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
             padding: '9px 12px',
             background: T.accent,
             color: 'white',
-            fontSize: 12,
+            fontSize: ts(12),
             fontWeight: 800,
             fontFamily: F,
             cursor: downloading ? 'wait' : 'pointer',
@@ -233,7 +234,7 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
               padding: '9px 11px',
               background: T.card,
               color: '#7A4A1D',
-              fontSize: 11,
+              fontSize: ts(11),
               fontWeight: 700,
               fontFamily: F,
               cursor: 'pointer',

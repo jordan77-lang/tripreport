@@ -22,6 +22,7 @@ import { starArt } from '../lib/locationArt';
 import { ArtImg } from '../components/LocationMark';
 import { buildCustomEventDraft, pickEventWeatherFields, resolveObservedAtIso } from '../lib/eventWeather';
 import { EventTimeEditSection, EventWeatherEditSection, EventWeatherSummary } from '../components/EventWeatherPanel';
+import { ts } from '../lib/textScale';
 
 const ENTRY_COLORS = {
   campsite: '#B8702E', water: '#4A8BC4', wildlife: '#4A7A34',
@@ -335,7 +336,7 @@ export function EventPage({
             <div style={{ fontSize: 17, fontWeight: 800, color: T.text, letterSpacing: -0.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {event.name}
             </div>
-            <div style={{ fontSize: 11, color: T.textSub, marginTop: 1 }}>
+            <div style={{ fontSize: ts(11), color: T.textSub, marginTop: 1 }}>
               {location?.name || event.locationName || 'Unknown location'}
             </div>
           </div>
@@ -359,7 +360,7 @@ export function EventPage({
                   background: editingEvent ? T.bg : accentCol,
                   color: editingEvent ? T.textSub : 'white',
                   fontWeight: 800,
-                  fontSize: 13,
+                  fontSize: ts(13),
                   cursor: 'pointer',
                   fontFamily: F,
                 }}
@@ -369,7 +370,7 @@ export function EventPage({
             )}
             {canAddToEvent && (
               <div onClick={() => setContributeOpen((v) => !v)}
-                   style={{ background: accentCol, color: 'white', borderRadius: 9, padding: '6px 12px', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
+                   style={{ background: accentCol, color: 'white', borderRadius: 9, padding: '6px 12px', fontSize: ts(10.5), fontWeight: 700, cursor: 'pointer' }}>
                 + Add
               </div>
             )}
@@ -382,16 +383,16 @@ export function EventPage({
             <div onClick={onPrev || undefined}
                  style={{ flex: 1, height: 32, borderRadius: 9, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: onPrev ? 'pointer' : 'default', opacity: onPrev ? 1 : 0.3 }}>
               <Ic d="M15 18l-6-6 6-6" size={14} color={T.textSub} sw={2} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: T.textSub }}>Previous</span>
+              <span style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub }}>Previous</span>
             </div>
             {eventIndex != null && eventCount != null && (
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textFaint, whiteSpace: 'nowrap', padding: '0 4px' }}>
+              <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textFaint, whiteSpace: 'nowrap', padding: '0 4px' }}>
                 {eventIndex + 1} / {eventCount}
               </div>
             )}
             <div onClick={onNext || undefined}
                  style={{ flex: 1, height: 32, borderRadius: 9, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: onNext ? 'pointer' : 'default', opacity: onNext ? 1 : 0.3 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: T.textSub }}>Next</span>
+              <span style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub }}>Next</span>
               <Ic d="M9 18l6-6-6-6" size={14} color={T.textSub} sw={2} />
             </div>
           </div>
@@ -420,7 +421,7 @@ export function EventPage({
                   ))}
                 </div>
               )}
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.85)' }}>{photos[safePhotoIdx]?.caption}</div>
+              <div style={{ fontSize: ts(11), fontWeight: 600, color: 'rgba(255,255,255,.85)' }}>{photos[safePhotoIdx]?.caption}</div>
             </div>
             {photos.length > 1 && (
               <>
@@ -432,7 +433,7 @@ export function EventPage({
                      style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 30, height: 30, borderRadius: 15, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                   <Ic d="M9 18l6-6-6-6" size={15} color="white" sw={2} />
                 </div>
-                <div style={{ position: 'absolute', top: 8, right: 10, background: 'rgba(0,0,0,.45)', borderRadius: 8, padding: '2px 7px', fontSize: 10, fontWeight: 700, color: 'white' }}>
+                <div style={{ position: 'absolute', top: 8, right: 10, background: 'rgba(0,0,0,.45)', borderRadius: 8, padding: '2px 7px', fontSize: ts(10), fontWeight: 700, color: 'white' }}>
                   {safePhotoIdx + 1} / {photos.length}
                 </div>
               </>
@@ -445,15 +446,15 @@ export function EventPage({
           {/* ── Edit event form ── */}
           {editingEvent && canEditEvent && (
             <div ref={editPanelRef} style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: '13px 14px', marginBottom: 14 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Event</div>
+              <div style={{ fontSize: ts(11.5), fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Event</div>
               <input
                 value={eventDraft.name}
                 onChange={(e) => { setEventDraft((d) => ({ ...d, name: e.target.value })); if (e.target.value.trim()) setEditEventError(null); }}
                 placeholder="Event name (required)"
-                style={{ width: '100%', border: `1.5px solid ${editEventError && !eventDraft.name.trim() ? '#C0392B' : T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: editEventError && !eventDraft.name.trim() ? 4 : 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
+                style={{ width: '100%', border: `1.5px solid ${editEventError && !eventDraft.name.trim() ? '#C0392B' : T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: ts(12), fontFamily: F, marginBottom: editEventError && !eventDraft.name.trim() ? 4 : 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
               />
               {editEventError && (
-                <div style={{ fontSize: 11, color: '#C0392B', fontWeight: 600, marginBottom: 8, padding: '5px 9px', background: '#FFF0EE', borderRadius: 7, border: '1px solid #F5C6C0' }}>
+                <div style={{ fontSize: ts(11), color: '#C0392B', fontWeight: 600, marginBottom: 8, padding: '5px 9px', background: '#FFF0EE', borderRadius: 7, border: '1px solid #F5C6C0' }}>
                   {editEventError}
                 </div>
               )}
@@ -461,7 +462,7 @@ export function EventPage({
               <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 8 }}>
                 {eventTypeOptions(eventDraft.type).map(({ type: tp, label }) => (
                   <div key={tp} onClick={() => setEventDraft((d) => ({ ...d, type: tp }))}
-                       style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+                       style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 14, cursor: 'pointer', fontSize: ts(10.5), fontWeight: 700, whiteSpace: 'nowrap',
                                 background: eventDraft.type === tp ? accentCol : T.bg,
                                 color: eventDraft.type === tp ? 'white' : T.textSub,
                                 border: eventDraft.type === tp ? 'none' : `1px solid ${T.border}` }}>
@@ -469,11 +470,11 @@ export function EventPage({
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Location</div>
+              <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Location</div>
               <select
                 value={eventDraft.locationId || ''}
                 onChange={(e) => setEventDraft((d) => ({ ...d, locationId: e.target.value }))}
-                style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
+                style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: ts(12), fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg }}
               >
                 {(trip?.locations || []).length === 0 && <option value="">No saved place</option>}
                 {(trip?.locations || []).map((loc) => (
@@ -485,7 +486,7 @@ export function EventPage({
                 onChange={(e) => setEventDraft((d) => ({ ...d, notes: e.target.value }))}
                 placeholder="Event description"
                 rows={2}
-                style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg, resize: 'vertical' }}
+                style={{ width: '100%', border: `1.5px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontSize: ts(12), fontFamily: F, marginBottom: 8, boxSizing: 'border-box', outline: 'none', background: T.bg, resize: 'vertical' }}
               />
               {/* Time applies to every event — its entries inherit it. */}
               <EventTimeEditSection draft={eventDraft} setDraft={setEventDraft} />
@@ -497,7 +498,7 @@ export function EventPage({
                 />
               )}
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Expense crew (who shares costs for this event)</div>
+                <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Expense crew (who shares costs for this event)</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {participants.map((p) => {
                     const on = eventDraft.memberIds.includes(p.id);
@@ -512,7 +513,7 @@ export function EventPage({
                           padding: '5px 10px',
                           borderRadius: 14,
                           cursor: 'pointer',
-                          fontSize: 10.5,
+                          fontSize: ts(10.5),
                           fontWeight: 700,
                           background: on ? accentCol : T.bg,
                           color: on ? 'white' : T.textSub,
@@ -524,19 +525,19 @@ export function EventPage({
                     );
                   })}
                 </div>
-                <div style={{ fontSize: 10, color: T.textFaint, marginTop: 6 }}>
+                <div style={{ fontSize: ts(10), color: T.textFaint, marginTop: 6 }}>
                   e.g. everyone in your car for gas — expenses here default to this crew.
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <div onClick={() => coverRef.current?.click()}
-                     style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
+                     style={{ background: '#E4EFF8', border: '1px solid #3A72A840', borderRadius: 10, padding: '7px 10px', fontSize: ts(10.5), fontWeight: 700, color: '#2A5C8E', cursor: 'pointer' }}>
                   Set Cover Photo
                 </div>
                 <input ref={coverRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onCoverSelected(e.target.files)} />
                 {!!eventDraft.coverPhoto && (
                   <div onClick={() => setEventDraft((d) => ({ ...d, coverPhoto: null }))}
-                       style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '7px 10px', fontSize: 10.5, fontWeight: 700, color: T.textSub, cursor: 'pointer' }}>
+                       style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '7px 10px', fontSize: ts(10.5), fontWeight: 700, color: T.textSub, cursor: 'pointer' }}>
                     Remove Cover
                   </div>
                 )}
@@ -544,16 +545,16 @@ export function EventPage({
               <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <div onClick={() => { setEditingEvent(false); setEditEventError(null); }}
-                       style={{ flex: 1, height: 36, borderRadius: 10, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: T.textSub }}>
+                       style={{ flex: 1, height: 36, borderRadius: 10, border: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: ts(11), fontWeight: 700, color: T.textSub }}>
                     Cancel
                   </div>
                   <div onClick={() => void saveEventDetails()}
-                       style={{ flex: 1, height: 36, borderRadius: 10, background: accentCol, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'white' }}>
+                       style={{ flex: 1, height: 36, borderRadius: 10, background: accentCol, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: ts(11), fontWeight: 700, color: 'white' }}>
                     Save
                   </div>
                 </div>
                 {canDeleteEvent && (
-                  <button type="button" onClick={() => void handleDeleteEvent()} style={{ border: 'none', background: 'transparent', color: '#8A1414', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '2px 0', fontFamily: F }}>
+                  <button type="button" onClick={() => void handleDeleteEvent()} style={{ border: 'none', background: 'transparent', color: '#8A1414', fontSize: ts(11), fontWeight: 700, cursor: 'pointer', padding: '2px 0', fontFamily: F }}>
                     Delete event and its entries
                   </button>
                 )}
@@ -571,17 +572,17 @@ export function EventPage({
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ background: accentCol + '18', color: accentCol, borderRadius: 6, padding: '2px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'capitalize' }}>{event.type}</span>
-                    <span style={{ fontSize: 10.5, color: T.textFaint }}>{location?.name || event.locationName}</span>
+                    <span style={{ background: accentCol + '18', color: accentCol, borderRadius: 6, padding: '2px 8px', fontSize: ts(10.5), fontWeight: 700, textTransform: 'capitalize' }}>{event.type}</span>
+                    <span style={{ fontSize: ts(10.5), color: T.textFaint }}>{location?.name || event.locationName}</span>
                     <SyncChip state={event.syncState || 'pending'} compact />
                   </div>
                 </div>
               </div>
               {!!event.notes && (
-                <p style={{ margin: '0 0 8px', fontSize: 13, color: T.textSub, lineHeight: 1.6 }}>{event.notes}</p>
+                <p style={{ margin: '0 0 8px', fontSize: ts(13), color: T.textSub, lineHeight: 1.6 }}>{event.notes}</p>
               )}
               {(event.memberIds?.length > 0) && (
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 11, color: T.textFaint, marginBottom: event.taggedParticipantLabel ? 6 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: ts(11), color: T.textFaint, marginBottom: event.taggedParticipantLabel ? 6 : 0 }}>
                   <Ic d={ICONS.users} size={12} color={T.textFaint} sw={1.8} style={{ marginTop: 2, flexShrink: 0 }} />
                   <span>
                     Crew: {event.memberIds.map((id) => labelFor(participants, id)).join(', ')}
@@ -589,7 +590,7 @@ export function EventPage({
                 </div>
               )}
               {!!event.taggedParticipantLabel && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.textFaint }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: ts(11), color: T.textFaint }}>
                   <Ic d={ICONS.users} size={12} color={T.textFaint} sw={1.8} />
                   <span>{event.taggedParticipantLabel}</span>
                 </div>
@@ -602,8 +603,8 @@ export function EventPage({
                   {buildEntryTypeSummary(entries).map(({ type, count, icon }) => (
                     <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 5, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, padding: '4px 9px' }}>
                       <Ic d={icon} size={12} color={ENTRY_COLORS[type] || T.textSub} sw={1.8} />
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: T.text }}>{count}</span>
-                      <span style={{ fontSize: 10, color: T.textFaint, textTransform: 'capitalize' }}>{type}</span>
+                      <span style={{ fontSize: ts(10.5), fontWeight: 700, color: T.text }}>{count}</span>
+                      <span style={{ fontSize: ts(10), color: T.textFaint, textTransform: 'capitalize' }}>{type}</span>
                     </div>
                   ))}
                 </div>
@@ -645,8 +646,8 @@ export function EventPage({
           {contributeOpen && canAddToEvent && (
             <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase' }}>Add to this event</div>
-                <div onClick={() => setContributeOpen(false)} style={{ fontSize: 10.5, color: T.textFaint, cursor: 'pointer' }}>Close</div>
+                <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textSub, letterSpacing: 0.5, textTransform: 'uppercase' }}>Add to this event</div>
+                <div onClick={() => setContributeOpen(false)} style={{ fontSize: ts(10.5), color: T.textFaint, cursor: 'pointer' }}>Close</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {getContributeItems(event.type).map((item) => (
@@ -655,7 +656,7 @@ export function EventPage({
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: item.col + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <Ic d={item.icon} size={14} color={item.col} sw={1.8} />
                     </div>
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{item.label}</span>
+                    <span style={{ fontSize: ts(12.5), fontWeight: 600, color: T.text }}>{item.label}</span>
                     <Ic d="M9 18l6-6-6-6" size={14} color={T.textFaint} sw={1.8} style={{ marginLeft: 'auto' }} />
                   </div>
                 ))}
@@ -667,9 +668,9 @@ export function EventPage({
                     <Ic d={ICONS.plus} size={14} color={T.accent} sw={2} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>Expense</div>
+                    <div style={{ fontSize: ts(12.5), fontWeight: 600, color: T.text }}>Expense</div>
                     {eventCrewCount > 0 && (
-                      <div style={{ fontSize: 10, color: T.textFaint, marginTop: 1 }}>
+                      <div style={{ fontSize: ts(10), color: T.textFaint, marginTop: 1 }}>
                         Splits with this event&apos;s crew
                       </div>
                     )}
@@ -688,9 +689,9 @@ export function EventPage({
                   <Ic d={eventIcon} size={20} color={accentCol} sw={1.6} />
                 </div>
               </div>
-              <div style={{ fontSize: 13, color: T.textSub, fontWeight: 700, marginBottom: 4 }}>No entries yet</div>
+              <div style={{ fontSize: ts(13), color: T.textSub, fontWeight: 700, marginBottom: 4 }}>No entries yet</div>
               {canAddToEvent && (
-                <div style={{ fontSize: 11.5, color: T.textFaint }}>
+                <div style={{ fontSize: ts(11.5), color: T.textFaint }}>
                   Tap <span style={{ color: accentCol, fontWeight: 700 }}>+ Add</span> to capture photos, gauge readings, weather, and more
                 </div>
               )}
@@ -698,7 +699,7 @@ export function EventPage({
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                <div style={{ fontSize: ts(11), fontWeight: 700, color: T.textFaint, letterSpacing: 0.6, textTransform: 'uppercase' }}>
                   Crew Perspectives · {entries.length} {entries.length === 1 ? 'Entry' : 'Entries'}
                 </div>
               </div>
@@ -735,7 +736,7 @@ export function EventPage({
                 border: `1.5px dashed ${accentCol}80`,
                 background: T.card,
                 color: accentCol,
-                fontSize: 12.5,
+                fontSize: ts(12.5),
                 fontWeight: 800,
                 fontFamily: F,
                 cursor: 'pointer',
@@ -786,7 +787,7 @@ function ReactionAndHighlightBar({ item, currentUserId, canInteract, onReact, on
               borderRadius: 12,
               background: mine ? '#E4EFF8' : T.bg,
               color: mine ? '#2A5C8E' : T.textSub,
-              fontSize: 11,
+              fontSize: ts(11),
               fontWeight: 700,
               padding: '2px 7px',
               cursor: canInteract ? 'pointer' : 'default',
@@ -810,7 +811,7 @@ function ReactionAndHighlightBar({ item, currentUserId, canInteract, onReact, on
           borderRadius: 12,
           background: highlighted ? '#FBF0E4' : T.bg,
           color: highlighted ? '#7A4A14' : T.textSub,
-          fontSize: 10.5,
+          fontSize: ts(10.5),
           fontWeight: 800,
           padding: '2px 8px',
           cursor: canInteract ? 'pointer' : 'default',
@@ -844,20 +845,20 @@ function EntryCard({ entry: e, trip, currentUserId, canEdit, canInteract, onEdit
               width: 22, height: 22, borderRadius: 99,
               background: '#E4EFF8', color: '#2A5C8E',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 10.5, fontWeight: 800, flexShrink: 0,
+              fontSize: ts(10.5), fontWeight: 800, flexShrink: 0,
             }}
           >
             {(authorName || '?').charAt(0).toUpperCase()}
           </span>
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#2A5C8E' }}>{authorName}</span>
+          <span style={{ fontSize: ts(11.5), fontWeight: 800, color: '#2A5C8E' }}>{authorName}</span>
           {e.highlighted && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', borderRadius: 6, padding: '1px 6px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: ts(10), fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', borderRadius: 6, padding: '1px 6px' }}>
               <ArtImg src={starArt} size={12} />
               Highlight
             </span>
           )}
           {e.observedAt && (
-            <span style={{ fontSize: 9.5, color: T.textFaint, marginLeft: 'auto' }}>{fmtTime(e.observedAt)}</span>
+            <span style={{ fontSize: ts(9.5), color: T.textFaint, marginLeft: 'auto' }}>{fmtTime(e.observedAt)}</span>
           )}
         </div>
 
@@ -867,10 +868,10 @@ function EntryCard({ entry: e, trip, currentUserId, canEdit, canInteract, onEdit
             <Ic d={icon} size={14} color={col} sw={1.8} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text, lineHeight: 1.3 }}>
+            <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text, lineHeight: 1.3 }}>
               {e.title || entryTypeLabel(e)}
             </div>
-            <div style={{ fontSize: 10.5, color: col, fontWeight: 600, textTransform: 'capitalize', marginTop: 1 }}>
+            <div style={{ fontSize: ts(10.5), color: col, fontWeight: 600, textTransform: 'capitalize', marginTop: 1 }}>
               {entryTypeLabel(e)}
             </div>
           </div>
@@ -878,7 +879,7 @@ function EntryCard({ entry: e, trip, currentUserId, canEdit, canInteract, onEdit
 
         {/* Notes */}
         {e.notes && (
-          <p style={{ margin: '0 0 8px', fontSize: 12.5, color: T.textSub, lineHeight: 1.6 }}>{e.notes}</p>
+          <p style={{ margin: '0 0 8px', fontSize: ts(12.5), color: T.textSub, lineHeight: 1.6 }}>{e.notes}</p>
         )}
 
         {/* Specialised data */}
@@ -888,7 +889,7 @@ function EntryCard({ entry: e, trip, currentUserId, canEdit, canInteract, onEdit
         {e.lat != null && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}>
             <Ic d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a2 2 0 100-4 2 2 0 000 4z" size={12} color={T.textFaint} sw={1.6} />
-            <span style={{ fontSize: 10.5, color: T.textFaint }}>{e.lat.toFixed(5)}, {e.lng.toFixed(5)}</span>
+            <span style={{ fontSize: ts(10.5), color: T.textFaint }}>{e.lat.toFixed(5)}, {e.lng.toFixed(5)}</span>
           </div>
         )}
 
@@ -908,7 +909,7 @@ function EntryCard({ entry: e, trip, currentUserId, canEdit, canInteract, onEdit
         {/* Edit link */}
         {canEdit && (
           <div onClick={onEdit}
-               style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}>
+               style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: ts(10.5), color: '#2A5C8E', fontWeight: 700, cursor: 'pointer' }}>
             <Ic d={ICONS.note} size={11} color="#2A5C8E" sw={2} />
             Edit entry
           </div>
@@ -982,7 +983,7 @@ function DataChip({ iconD, color, bg, children }) {
       <div style={{ flexShrink: 0, marginTop: 1 }}>
         <Ic d={iconD} size={13} color={color} sw={1.8} />
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 8px', fontSize: 11.5, color, alignItems: 'center', lineHeight: 1.5 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 8px', fontSize: ts(11.5), color, alignItems: 'center', lineHeight: 1.5 }}>
         {valid}
       </div>
     </div>
@@ -1047,7 +1048,7 @@ function MediaRow({ entry: e }) {
               {f.caption && (
                 <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
                               background: 'linear-gradient(transparent, rgba(0,0,0,.6))', color: 'white',
-                              fontSize: 9, padding: '10px 4px 3px', overflow: 'hidden',
+                              fontSize: ts(9), padding: '10px 4px 3px', overflow: 'hidden',
                               textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {f.caption}
                 </div>
@@ -1057,7 +1058,7 @@ function MediaRow({ entry: e }) {
         </div>
       )}
       {sharedNote && photosWithData.length > 0 && (
-        <div style={{ fontSize: 11, color: T.textFaint, fontStyle: 'italic', marginBottom: 4 }}>{sharedNote}</div>
+        <div style={{ fontSize: ts(11), color: T.textFaint, fontStyle: 'italic', marginBottom: 4 }}>{sharedNote}</div>
       )}
       {(photosNoData.length > 0 || videoCount > 0 || voiceCount > 0) && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1074,24 +1075,24 @@ function MediaRow({ entry: e }) {
                style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: 8 }}
                onClick={(ev) => ev.stopPropagation()} />
           {caption && (
-            <div style={{ color: 'rgba(255,255,255,.7)', fontSize: 12, marginTop: 10, maxWidth: '80%', textAlign: 'center' }}>{caption}</div>
+            <div style={{ color: 'rgba(255,255,255,.7)', fontSize: ts(12), marginTop: 10, maxWidth: '80%', textAlign: 'center' }}>{caption}</div>
           )}
           <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'center' }}>
             {lightboxIdx > 0 && (
               <div onClick={(ev) => { ev.stopPropagation(); setLightboxIdx((i) => i - 1); }}
-                   style={{ background: 'rgba(255,255,255,.15)', borderRadius: 20, padding: '8px 16px', cursor: 'pointer', color: 'white', fontSize: 12, fontWeight: 700 }}>
+                   style={{ background: 'rgba(255,255,255,.15)', borderRadius: 20, padding: '8px 16px', cursor: 'pointer', color: 'white', fontSize: ts(12), fontWeight: 700 }}>
                 ← Prev
               </div>
             )}
-            <span style={{ color: 'rgba(255,255,255,.5)', fontSize: 11 }}>{lightboxIdx + 1} / {photosWithData.length}</span>
+            <span style={{ color: 'rgba(255,255,255,.5)', fontSize: ts(11) }}>{lightboxIdx + 1} / {photosWithData.length}</span>
             {lightboxIdx < photosWithData.length - 1 && (
               <div onClick={(ev) => { ev.stopPropagation(); setLightboxIdx((i) => i + 1); }}
-                   style={{ background: 'rgba(255,255,255,.15)', borderRadius: 20, padding: '8px 16px', cursor: 'pointer', color: 'white', fontSize: 12, fontWeight: 700 }}>
+                   style={{ background: 'rgba(255,255,255,.15)', borderRadius: 20, padding: '8px 16px', cursor: 'pointer', color: 'white', fontSize: ts(12), fontWeight: 700 }}>
                 Next →
               </div>
             )}
           </div>
-          <div style={{ marginTop: 10, color: 'rgba(255,255,255,.4)', fontSize: 11 }}>Tap anywhere to close</div>
+          <div style={{ marginTop: 10, color: 'rgba(255,255,255,.4)', fontSize: ts(11) }}>Tap anywhere to close</div>
         </div>
       )}
     </div>
@@ -1100,7 +1101,7 @@ function MediaRow({ entry: e }) {
 
 function MediaBadge({ iconD, count, label }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 7, padding: '4px 8px', fontSize: 10.5 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 7, padding: '4px 8px', fontSize: ts(10.5) }}>
       <Ic d={iconD} size={12} color={T.textSub} sw={1.8} />
       <span style={{ fontWeight: 700, color: T.text }}>{count}</span>
       {label && <span style={{ color: T.textFaint }}>{label}</span>}

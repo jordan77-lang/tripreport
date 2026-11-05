@@ -274,7 +274,7 @@ export function TripInvitePanel({
       )}
 
       {compact && (
-        <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>
+        <div style={{ fontSize: ts(10.5), fontWeight: 700, color: T.textSub, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>
           Invite to the trip
         </div>
       )}
@@ -474,7 +474,7 @@ export function TripInvitePanel({
           <div style={{ fontWeight: 700 }}>Invite sent to {success.to}</div>
           {success.sandboxLimited && (
             <div style={{ marginTop: 6, color: '#5A4A14', background: '#FBF0E4', padding: '8px 10px', borderRadius: 8 }}>
-              Resend is in test mode (unverified sending domain). Mail is only delivered to the email on your Resend account until you verify a domain in Resend. Use the join code below, or verify your domain and set <code style={{ fontSize: 11 }}>REPORT_EMAIL_FROM</code> to that address.
+              Resend is in test mode (unverified sending domain). Mail is only delivered to the email on your Resend account until you verify a domain in Resend. Use the join code below, or verify your domain and set <code style={{ fontSize: ts(11) }}>REPORT_EMAIL_FROM</code> to that address.
             </div>
           )}
           <div style={{ marginTop: 6, fontWeight: 500 }}>

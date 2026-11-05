@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { T, F } from '../tokens';
+import { ts } from '../lib/textScale';
 
 export function ProfileSetup() {
   const { upsertProfile, user } = useAuth();
@@ -25,12 +26,12 @@ export function ProfileSetup() {
     <div style={{ minHeight: '100%', background: T.bg, fontFamily: F, display: 'flex', flexDirection: 'column' }}>
       <div style={{ flex: 1, padding: '32px 20px 24px', maxWidth: 420, margin: '0 auto', width: '100%' }}>
         <div style={{ fontSize: 24, fontWeight: 900, color: T.text, marginBottom: 8 }}>What should we call you?</div>
-        <div style={{ fontSize: 13, color: T.textSub, marginBottom: 24, lineHeight: 1.5 }}>
+        <div style={{ fontSize: ts(13), color: T.textSub, marginBottom: 24, lineHeight: 1.5 }}>
           This name shows on journal entries, expenses, and trip invites for your crew.
         </div>
 
         <form onSubmit={handleSubmit}>
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Display name</label>
+          <label style={{ display: 'block', fontSize: ts(11), fontWeight: 700, color: T.textSub, marginBottom: 6 }}>Display name</label>
           <input
             type="text"
             required
@@ -45,13 +46,13 @@ export function ProfileSetup() {
               border: `1px solid ${T.border}`,
               borderRadius: 10,
               padding: '12px 13px',
-              fontSize: 14,
+              fontSize: ts(14),
               background: T.card,
             }}
           />
 
           {!!error && (
-            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: '#FBE4E4', color: '#8A1414', fontSize: 12, fontWeight: 600 }}>
+            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: '#FBE4E4', color: '#8A1414', fontSize: ts(12), fontWeight: 600 }}>
               {error}
             </div>
           )}
@@ -67,7 +68,7 @@ export function ProfileSetup() {
               padding: '14px 16px',
               background: T.accent,
               color: 'white',
-              fontSize: 14,
+              fontSize: ts(14),
               fontWeight: 800,
               cursor: busy ? 'wait' : 'pointer',
               opacity: busy || !displayName.trim() ? 0.7 : 1,
@@ -78,7 +79,7 @@ export function ProfileSetup() {
         </form>
 
         {user?.email && (
-          <div style={{ marginTop: 18, fontSize: 11, color: T.textFaint }}>
+          <div style={{ marginTop: 18, fontSize: ts(11), color: T.textFaint }}>
             Signed in as {user.email}
           </div>
         )}
