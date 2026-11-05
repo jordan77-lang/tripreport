@@ -18,6 +18,8 @@ import {
 import { createMediaObjectUrl, isLegacyMediaRef } from '../lib/mediaStore';
 import { buildTripParticipants, labelFor, resolveUserDisplayName } from '../lib/expenses';
 import { EVENT_CAPTURE_TYPES } from '../lib/eventTypes';
+import { starArt } from '../lib/locationArt';
+import { ArtImg } from '../components/LocationMark';
 import { buildCustomEventDraft, pickEventWeatherFields, resolveObservedAtIso } from '../lib/eventWeather';
 import { EventTimeEditSection, EventWeatherEditSection, EventWeatherSummary } from '../components/EventWeatherPanel';
 
@@ -799,8 +801,11 @@ function ReactionAndHighlightBar({ item, currentUserId, canInteract, onReact, on
         type="button"
         disabled={!canInteract}
         onClick={onToggleHighlight}
-        style={{
+          style={{
           marginLeft: 'auto',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
           border: `1px solid ${highlighted ? '#E8C9A0' : T.border}`,
           borderRadius: 12,
           background: highlighted ? '#FBF0E4' : T.bg,
@@ -812,7 +817,8 @@ function ReactionAndHighlightBar({ item, currentUserId, canInteract, onReact, on
           fontFamily: F,
         }}
       >
-        {highlighted ? '⭐ Highlighted' : '☆ Highlight'}
+        <ArtImg src={starArt} size={14} style={{ opacity: highlighted ? 1 : 0.4 }} />
+        {highlighted ? 'Highlighted' : 'Highlight'}
       </button>
     </div>
   );
@@ -845,8 +851,9 @@ function EntryCard({ entry: e, trip, currentUserId, canEdit, canInteract, onEdit
           </span>
           <span style={{ fontSize: 11.5, fontWeight: 800, color: '#2A5C8E' }}>{authorName}</span>
           {e.highlighted && (
-            <span style={{ fontSize: 10, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', borderRadius: 6, padding: '1px 6px' }}>
-              ⭐ Highlight
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', borderRadius: 6, padding: '1px 6px' }}>
+              <ArtImg src={starArt} size={12} />
+              Highlight
             </span>
           )}
           {e.observedAt && (

@@ -10,14 +10,36 @@ export function normalizeParticipantName(name) {
   return (name || '').trim().toLowerCase();
 }
 
-/** Prefer joined/account entries over roster-only duplicates (same person, two rows). */
+function aliasIdsOf(collaborator) {
+  return Array.isArray(collaborator?.aliasIds) ? collaborator.aliasIds.filter(Boolean) : [];
+}
+
+function withAliases(collaborator, ids) {
+  const own = new Set([collaborator.id, collaborator.userId].filter(Boolean));
+  const next = [...new Set([...aliasIdsOf(collaborator), ...ids.filter((id) => id && !own.has(id))])];
+  if (next.length === aliasIdsOf(collaborator).length) return collaborator;
+  return { ...collaborator, aliasIds: next };
+}
+
+/**
+ * Prefer joined/account entries over roster-only duplicates (same person, two rows).
+ * A dropped roster row's id is kept in the surviving row's aliasIds so meals and
+ * gear assigned to the roster name before that person joined still reach them.
+ */
 export function dedupeCollaborators(collaborators, { memberProfiles = {} } = {}) {
-  const profileNames = new Set(
-    Object.values(memberProfiles).map(normalizeParticipantName).filter(Boolean),
-  );
+  const profileUidsByName = new Map();
+  for (const [uid, name] of Object.entries(memberProfiles || {})) {
+    const key = normalizeParticipantName(name);
+    if (!key) continue;
+    if (!profileUidsByName.has(key)) profileUidsByName.set(key, []);
+    profileUidsByName.get(key).push(uid);
+  }
   const seenUids = new Set();
-  const seenNames = new Set();
   const out = [];
+  const indexOfUid = (uid) => out.findIndex((x) => x.userId === uid);
+  const absorb = (index, from) => {
+    out[index] = withAliases(out[index], [from.id, from.userId, ...aliasIdsOf(from)]);
+  };
 
   const list = [...(collaborators || [])].sort((a, b) => {
     const score = (c) => (isJoinedMember(c) ? 2 : 0) + (c.userId ? 1 : 0);
@@ -29,41 +51,77 @@ export function dedupeCollaborators(collaborators, { memberProfiles = {} } = {})
     const nameKey = normalizeParticipantName(c.handle || c.name);
 
     if (uid) {
-      if (seenUids.has(uid)) continue;
+      if (seenUids.has(uid)) {
+        absorb(indexOfUid(uid), c);
+        continue;
+      }
       seenUids.add(uid);
-      if (nameKey) seenNames.add(nameKey);
       out.push(c);
       continue;
     }
 
     if (!nameKey) continue;
-    if (seenNames.has(nameKey) || profileNames.has(nameKey)) continue;
-    if (out.some((x) => !x.userId && normalizeParticipantName(x.handle || x.name) === nameKey)) continue;
 
-    seenNames.add(nameKey);
+    // Same name as an account holder: link only when exactly one account matches.
+    const accountMatches = new Set([
+      ...out.filter((x) => x.userId && normalizeParticipantName(x.handle || x.name) === nameKey).map((x) => x.userId),
+      ...(profileUidsByName.get(nameKey) || []),
+    ]);
+    if (accountMatches.size === 1) {
+      const [targetUid] = accountMatches;
+      let index = indexOfUid(targetUid);
+      if (index < 0) {
+        out.push({
+          id: targetUid,
+          userId: targetUid,
+          handle: memberProfiles[targetUid] || c.handle || c.name,
+          name: memberProfiles[targetUid] || c.name || c.handle,
+          role: 'contributor',
+        });
+        seenUids.add(targetUid);
+        index = out.length - 1;
+      }
+      absorb(index, c);
+      continue;
+    }
+    if (accountMatches.size > 1) {
+      // Ambiguous: keep the roster row so its assignments are not orphaned.
+      out.push(c);
+      continue;
+    }
+
+    const rosterIndex = out.findIndex((x) => !x.userId && normalizeParticipantName(x.handle || x.name) === nameKey);
+    if (rosterIndex >= 0) {
+      absorb(rosterIndex, c);
+      continue;
+    }
     out.push(c);
   }
 
   return out;
 }
 
+/** Map a saved assignee id (roster id, alias, or account id) to the id used for that person now. */
+export function canonicalParticipantId(trip, rawId) {
+  if (!rawId) return rawId;
+  if (trip?.ownerId === rawId) return rawId;
+  const merged = dedupeCollaborators(trip?.collaborators || [], { memberProfiles: trip?.memberProfiles || {} });
+  const holder = merged.find((c) => c.userId === rawId || c.id === rawId || aliasIdsOf(c).includes(rawId));
+  return holder ? (holder.userId || holder.id) : rawId;
+}
+
 export function mergeCollaboratorsFromMembers(trip, memberRows = []) {
   const ownerId = trip?.ownerId || null;
   const memberIds = new Set((memberRows || []).map((row) => row.user_id).filter(Boolean));
-  const memberNameKeys = new Set(
-    (memberRows || [])
-      .map((row) => normalizeParticipantName(row.profiles?.display_name))
-      .filter(Boolean),
-  );
 
+  // Roster rows whose name matches a member are kept here; dedupeCollaborators
+  // folds them into that member (as an alias) instead of discarding them.
   const manual = (trip?.collaborators || []).filter((c) => {
     if (isJoinedMember(c)) return false;
     if (c?.userId && memberIds.has(c.userId)) return false;
     const id = c?.id || c?.handle;
     if (!id) return false;
     if (UUID_RE.test(String(id)) && memberIds.has(id)) return false;
-    const nameKey = normalizeParticipantName(c.handle || c.name);
-    if (nameKey && memberNameKeys.has(nameKey)) return false;
     return true;
   });
 
@@ -76,6 +134,7 @@ export function mergeCollaboratorsFromMembers(trip, memberRows = []) {
       return {
         ...(existing?.craft ? { craft: existing.craft } : {}),
         ...(existing?.tripNickname ? { tripNickname: existing.tripNickname } : {}),
+        ...(aliasIdsOf(existing).length ? { aliasIds: aliasIdsOf(existing) } : {}),
         id: row.user_id,
         userId: row.user_id,
         handle: row.profiles?.display_name || existing?.handle || 'Participant',
@@ -86,12 +145,17 @@ export function mergeCollaboratorsFromMembers(trip, memberRows = []) {
     });
 
   const ownerMetaEntry = ownerId
-    ? (trip?.collaborators || []).find((c) => (c.userId === ownerId || c.id === ownerId) && (c.craft || c.tripNickname))
+    ? (trip?.collaborators || []).find((c) => (c.userId === ownerId || c.id === ownerId)
+      && (c.craft || c.tripNickname || aliasIdsOf(c).length))
     : null;
 
   const nextProfiles = memberProfilesFromRows(memberRows);
-  const merged = dedupeCollaborators([...manual, ...fromCloud], { memberProfiles: nextProfiles });
-  return ownerMetaEntry ? [ownerMetaEntry, ...merged.filter((c) => c.id !== ownerMetaEntry.id && c.userId !== ownerId)] : merged;
+  const merged = dedupeCollaborators(
+    [...(ownerMetaEntry ? [ownerMetaEntry] : []), ...manual, ...fromCloud],
+    { memberProfiles: nextProfiles },
+  );
+  const ownerEntry = merged.find((c) => c.userId === ownerId || c.id === ownerId);
+  return ownerEntry ? [ownerEntry, ...merged.filter((c) => c !== ownerEntry)] : merged;
 }
 
 export function memberProfilesFromRows(memberRows = []) {
@@ -128,7 +192,24 @@ export function resolveUserDisplayName(trip, userId, currentUserId) {
     return getSignedInDisplayName() || 'Me';
   }
 
+  const canonical = canonicalParticipantId(trip, userId);
+  if (canonical && canonical !== userId) {
+    return resolveUserDisplayName(trip, canonical, currentUserId);
+  }
+
   return 'Participant';
+}
+
+/**
+ * Current display name for an assignee. Saved labels (assignedToLabel) are a
+ * snapshot from assignment time, so they are only a fallback for unknown ids;
+ * otherwise renaming someone would never show up on their meals and gear.
+ */
+export function participantDisplayName(trip, userId, currentUserId, fallbackLabel = null) {
+  if (!userId) return fallbackLabel || null;
+  const name = resolveUserDisplayName(trip, userId, currentUserId);
+  if (name === 'Participant' || name === 'Unknown') return fallbackLabel || name;
+  return name;
 }
 
 export function formatOwnerParticipantLabel(trip, ownerId, currentUserId) {

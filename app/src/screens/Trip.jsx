@@ -21,6 +21,8 @@ import { TripOverflowMenu, tripMenuIcon } from '../components/TripOverflowMenu';
 import { TripEditPanel } from '../components/TripEditPanel';
 import { LocationSaveForm } from '../components/LocationSaveForm';
 import { defaultLocationKind, locationTypeLabel } from '../lib/locationTypes';
+import { commentArt, locationMapSymbol } from '../lib/locationArt';
+import { ArtImg, LocationMark } from '../components/LocationMark';
 import { buildTripDraft, formatTripDate, formatTripDateRange } from '../lib/tripEdit';
 import { ts } from '../lib/textScale';
 import { deleteTripCompletely, pushTripToCloud } from '../lib/tripCloud';
@@ -28,7 +30,7 @@ import { supabaseConfigured } from '../lib/supabase';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants, computeBalances, money, resolveUserDisplayName } from '../lib/expenses';
 
-export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap, onOpenLocation, onOpenEvent }) {
+export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRecap, onOpenLocation, onOpenEvent, justJoined = false }) {
   const currentUserId = getCurrentUserId();
   const signedInUserId = getSignedInUserId();
   const canEditTrip = Boolean(trip && isTripMember(trip, signedInUserId || currentUserId));
@@ -327,7 +329,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       type: l.type,
       title: l.visitStatus === 'planned' ? `${l.name} (Planned)` : l.name,
       col: selectedLocationId === l.id ? '#2A5C8E' : (l.visitStatus === 'planned' ? '#B8702E' : '#3A72A8'),
-      symbol: l.icon || locationSymbol(l.type),
+      symbol: locationMapSymbol(l),
     }));
 
   if (addingLocation && locationSource === 'current' && currentPos?.lat && currentPos?.lng) {
@@ -338,7 +340,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       type: 'draft',
       title: `Draft: ${locationDraft.name || 'New Location'}`,
       col: '#B8702E',
-      symbol: locationDraft.icon || '📍',
+      symbol: locationMapSymbol(locationDraft),
     });
   }
 
@@ -451,7 +453,9 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
         <div className="screen-content-inner">
         <OwnerDeletedTripBanner trip={trip} onTripUpdate={onTripUpdate} onTripDeleted={onTripDeleted} />
-        <TripMapDownloadPrompt trip={trip} onOpenMaps={() => onNav?.('plan', { tab: 'maps' })} />
+        {justJoined && (
+          <TripMapDownloadPrompt trip={trip} onOpenMaps={() => onNav?.('plan', { tab: 'maps' })} />
+        )}
         {/* Always reachable from the ⋮ menu; shown inline only when there are conflicts to review. */}
         {trip?._sync?.conflicts?.length > 0 && (
           <button type="button" onClick={() => setShowSync(v=>!v)} aria-expanded={showSync}
@@ -551,11 +555,11 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
               <div style={{ padding: '10px 11px', display: 'flex', alignItems: 'center', gap: 10 }}>
               <button type="button" onClick={() => { setSelectedLocationId(loc.id); onOpenLocation?.(loc.id); }}
                    style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', padding: 0, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontFamily: F, textAlign: 'left' }}>
-              <div style={{ width: 36, height: 36, borderRadius: 9, background: isPlanned ? '#FBF0E4' : T.bg, border: `1px solid ${isPlanned ? '#E8C9A0' : T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+              <div style={{ width: loc.coverPhoto ? 36 : 40, height: loc.coverPhoto ? 36 : 40, borderRadius: loc.coverPhoto ? 9 : 0, background: loc.coverPhoto ? (isPlanned ? '#FBF0E4' : T.bg) : 'transparent', border: loc.coverPhoto ? `1px solid ${isPlanned ? '#E8C9A0' : T.border}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
                 {loc.coverPhoto ? (
                   <MediaThumb media={loc.coverPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <span style={{ fontSize: 16 }}>{loc.icon || '📍'}</span>
+                  <LocationMark location={loc} size={40} />
                 )}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -569,11 +573,18 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: ts(11), color: T.textFaint }}>
-                  {locationTypeLabel(loc.type)}
-                  {' · '}{locationEventCount.get(loc.id) || 0} events
-                  {' · '}{locationEntryCount.get(loc.id) || 0} entries
-                  {commentsCount > 0 ? ` · 💬 ${commentsCount}` : ''}
+                <div style={{ fontSize: ts(11), color: T.textFaint, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                  <span>
+                    {locationTypeLabel(loc.type)}
+                    {' · '}{locationEventCount.get(loc.id) || 0} events
+                    {' · '}{locationEntryCount.get(loc.id) || 0} entries
+                  </span>
+                  {commentsCount > 0 && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <ArtImg src={commentArt} size={14} />
+                      {commentsCount}
+                    </span>
+                  )}
                 </div>
               </div>
               {contributors.length > 0 && (
@@ -760,7 +771,7 @@ export function Trip({ trip, onNav, onFab, onTripUpdate, onTripDeleted, onOpenRe
             selectedEntryId={selectedLocationId}
             showHoverPopup
             onReady={handleMapReady}
-            pin={addingLocation && locationSource === 'map' && locationPin ? { ...locationPin, symbol: locationDraft.icon || '📍' } : null}
+            pin={addingLocation && locationSource === 'map' && locationPin ? { ...locationPin, symbol: locationMapSymbol(locationDraft) } : null}
             onPinChange={(pos) => setLocationPin(pos)}
             onEntrySelect={(entry) => {
               if (entry.id === '__draft_location__') return;
@@ -1044,17 +1055,6 @@ function formatShortWhen(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return 'Time not set';
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
-function locationSymbol(type) {
-  const map = {
-    'put-in': '🟢',
-    'take-out': '🔴',
-    camp: '⛺',
-    hazard: '⚠',
-    'point-of-interest': '📍',
-  };
-  return map[type] || '📍';
 }
 
 function toDatetimeLocal(date) {

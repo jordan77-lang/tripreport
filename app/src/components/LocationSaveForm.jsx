@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { T, F } from '../tokens';
 import { ts } from '../lib/textScale';
 import { LOCATION_TYPES, canonicalLocationType } from '../lib/locationTypes';
+import { compassArt } from '../lib/locationArt';
+import { ArtImg, LocationMark } from './LocationMark';
 import { EmojiPicker } from './EmojiPicker';
 import { MediaThumb } from './MediaThumb';
 import { PlaceSearch } from './PlaceSearch';
@@ -101,6 +103,9 @@ export function LocationSaveForm({
             // Follow the type's icon unless someone picked a custom one.
             onClick={() => set({ type: tp.id, icon: !draft.icon || LOCATION_TYPES.some((t) => t.icon === draft.icon) ? tp.icon : draft.icon })}
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
               padding: '6px 10px',
               borderRadius: 14,
               cursor: 'pointer',
@@ -112,7 +117,8 @@ export function LocationSaveForm({
               border: canonicalLocationType(draft.type) === tp.id ? 'none' : `1px solid ${T.border}`,
             }}
           >
-            {tp.icon} {tp.label}
+            <LocationMark type={tp.id} size={28} />
+            {tp.label}
           </button>
         ))}
       </div>
@@ -130,8 +136,9 @@ export function LocationSaveForm({
             key={opt.id}
             type="button"
             onClick={() => onLocationSourceChange(opt.id)}
-            style={chipStyle(locationSource === opt.id)}
+            style={{ ...chipStyle(locationSource === opt.id), display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
+            {opt.id === 'current' && <ArtImg src={compassArt} size={16} />}
             {opt.label}
           </button>
         ))}
@@ -177,9 +184,10 @@ export function LocationSaveForm({
         <button
           type="button"
           onClick={() => set({ visitStatus: 'planned' })}
-          style={chipStyle(draft.visitStatus === 'planned')}
+          style={{ ...chipStyle(draft.visitStatus === 'planned'), display: 'inline-flex', alignItems: 'center', gap: 4 }}
         >
-          🧭 Planned / Wish-list
+          <ArtImg src={compassArt} size={16} />
+          Planned / Wish-list
         </button>
       </div>
 

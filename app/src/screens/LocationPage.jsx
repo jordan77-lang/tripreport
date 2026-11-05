@@ -14,6 +14,8 @@ import { LocationSaveForm } from '../components/LocationSaveForm';
 import { collectTripPhotos } from '../lib/tripPhotos';
 import { EVENT_CAPTURE_TYPES, EVENT_COLORS } from '../lib/eventTypes';
 import { locationTypeLabel } from '../lib/locationTypes';
+import { commentArt, locationMapSymbol, starArt } from '../lib/locationArt';
+import { ArtImg, LocationMark } from '../components/LocationMark';
 import { resolveUserDisplayName } from '../lib/tripParticipants';
 import { EntryForm } from './EntryForm';
 
@@ -195,7 +197,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
     type: location.type,
     title: location.name,
     col: '#2A5C8E',
-    symbol: location.icon || '📍',
+    symbol: locationMapSymbol(location),
   }];
 
   return (
@@ -209,7 +211,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: -0.4, display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                <span>{location.icon || '📍'}</span>
+                <LocationMark location={location} size={26} />
                 <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{location.name}</span>
                 {location.visitStatus === 'planned' && (
                   <span style={{ fontSize: 10, fontWeight: 800, color: '#7A4A14', background: '#FBF0E4', border: '1px solid #E8C9A0', borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>
@@ -367,7 +369,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                     style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: F }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{ev.name}</span>
-                      {ev.highlighted && <span title="Trip highlight" style={{ fontSize: 13 }}>⭐</span>}
+                      {ev.highlighted && <span title="Trip highlight" aria-label="Trip highlight"><ArtImg src={starArt} size={16} /></span>}
                     </div>
                     <div style={{ fontSize: 12, color: EVENT_COLORS[ev.type] || T.accent, fontWeight: 700, marginTop: 2 }}>{typeLabel} · {who}</div>
                     <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>{formatEventWhen(ev)}</div>
@@ -408,7 +410,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
                   <div key={entry.id} style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{entry.title || entry.type}</span>
-                      {entry.highlighted && <span title="Trip highlight" style={{ fontSize: 12 }}>⭐</span>}
+                      {entry.highlighted && <span title="Trip highlight" aria-label="Trip highlight"><ArtImg src={starArt} size={14} /></span>}
                     </div>
                     <div style={{ fontSize: 12, color: '#2A5C8E', marginTop: 2 }}>
                       {resolveUserDisplayName(trip, entry.authorId, currentUserId) || 'Crew member'}
@@ -438,7 +440,8 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
 
         <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: '12px 13px', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: T.textSub, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+              <ArtImg src={commentArt} size={16} />
               Crew chatter &amp; scouting notes ({(location.comments || []).length})
             </span>
           </div>
@@ -504,7 +507,7 @@ export function LocationPage({ trip, location, onBack, onNav, onFab, onTripUpdat
               showHoverPopup
               interactive
               zoom={12}
-              pin={editingLocation && locationSource === 'map' && locationPin ? { ...locationPin, symbol: locationDraft.icon || '📍' } : null}
+              pin={editingLocation && locationSource === 'map' && locationPin ? { ...locationPin, symbol: locationMapSymbol(locationDraft) } : null}
               onPinChange={(pos) => setLocationPin(pos)}
               onMapClick={(pos) => {
                 if (editingLocation && locationSource === 'map') setLocationPin(pos);

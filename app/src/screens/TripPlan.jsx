@@ -13,7 +13,7 @@ import {
   getCurrentUserId,
   isTripOwner,
   isTripMember,
-  addGearItem, updateGearItem, removeGearItem, claimGearItem, getGearAssigneeIds,
+  addGearItem, updateGearItem, removeGearItem, claimGearItem, getGearAssigneeIds, confirmMyGearReady, confirmAllGearReady, confirmMyMealReady,
   addMeal, updateMeal, removeMeal, claimMeal, getTrips,
   addShoppingItem, updateShoppingItem, removeShoppingItem,
   generateShoppingList,
@@ -25,9 +25,10 @@ import {
 import { ParticipantsTab } from '../components/ParticipantsTab';
 import { TripExpenses } from '../components/TripExpenses';
 import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
-import { TripMapDownloadPrompt } from '../components/TripMapDownloadPrompt';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants, resolveUserDisplayName } from '../lib/expenses';
+import { isGearFullyReady, isPersonReady } from '../lib/tripDashboard';
+import { canonicalParticipantId, participantDisplayName } from '../lib/tripParticipants';
 import { supabaseConfigured } from '../lib/supabase';
 import { getSignedInUserId } from '../lib/authUser';
 import {
@@ -64,9 +65,8 @@ const GEAR_CATEGORIES = ['group', 'shelter', 'cooking', 'safety', 'personal'];
 const GEAR_NEED_LABEL = 'To bring';
 const GEAR_READY_LABEL = 'Ready';
 
-function isGearComplete(item) {
-  const s = item?.status;
-  return s === 'have' || s === 'claimed' || s === 'packed';
+function isGearComplete(item, trip) {
+  return isGearFullyReady(item, trip);
 }
 
 function normalizeGearCategory(category) {
@@ -183,10 +183,7 @@ export function TripPlan({
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
         <div className="screen-content-inner">
-        {tab !== 'maps' && (
-          <TripMapDownloadPrompt trip={trip} onOpenMaps={() => selectTab('maps')} />
-        )}
-        {tab === 'mine' && <MyResponsibilities trip={trip} onOpenPlan={selectTab} />}
+        {tab === 'mine' && <MyResponsibilities trip={trip} onOpenPlan={selectTab} onTripUpdate={onTripUpdate} />}
         {tab === 'details' && canEditTrip && (
           <TripEditPanel
             trip={trip}
@@ -238,6 +235,8 @@ function GearTab({ trip, participants, onTripUpdate }) {
   const [saving, setSaving] = useState(false);
   const gear = trip.gearItems || [];
   const currentUserId = getCurrentUserId();
+  // Assignee ids as they are now (a roster id becomes the account it merged into).
+  const assigneesOf = (item) => Array.from(new Set(getGearAssigneeIds(item).map((id) => canonicalParticipantId(trip, id))));
 
   function resolvePersonLabel(uid) {
     const found = participants.find((p) => p.id === uid);
@@ -256,7 +255,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
     setEditingId(item.id);
     setName(item.name || '');
     setCategory(normalizeGearCategory(item.category));
-    setAssignedToIds(getGearAssigneeIds(item));
+    setAssignedToIds(assigneesOf(item));
   }
 
   function toggleFormAssignee(personId) {
@@ -305,10 +304,18 @@ function GearTab({ trip, participants, onTripUpdate }) {
     onTripUpdate?.();
   }
 
-  async function toggleGearComplete(item) {
-    const next = isGearComplete(item) ? 'needed' : 'have';
+  async function toggleMyGear(item) {
+    const next = !isPersonReady(item, currentUserId, trip);
     await savePlanningToCloud(trip.id, () => {
-      updateGearItem(trip.id, item.id, { status: next });
+      confirmMyGearReady(trip.id, item.id, next);
+    });
+    onTripUpdate?.();
+  }
+
+  async function toggleAllGear(item) {
+    const next = !isGearFullyReady(item, trip);
+    await savePlanningToCloud(trip.id, () => {
+      confirmAllGearReady(trip.id, item.id, next);
     });
     onTripUpdate?.();
   }
@@ -331,13 +338,13 @@ function GearTab({ trip, participants, onTripUpdate }) {
       setItemAssignees(item, []);
       return;
     }
-    const current = getGearAssigneeIds(item);
+    const current = assigneesOf(item);
     if (current.includes(personId)) return;
     setItemAssignees(item, [...current, personId]);
   }
 
   function removeItemAssignee(item, personId) {
-    const current = getGearAssigneeIds(item);
+    const current = assigneesOf(item);
     setItemAssignees(item, current.filter((id) => id !== personId));
   }
 
@@ -346,10 +353,10 @@ function GearTab({ trip, participants, onTripUpdate }) {
     const need = [];
     const done = [];
     for (const item of visible) {
-      (isGearComplete(item) ? done : need).push(item);
+      (isGearComplete(item, trip) ? done : need).push(item);
     }
     return { toBring: need, ready: done };
-  }, [gear, editingId]);
+  }, [gear, editingId, trip]);
 
   const groupedNeed = useMemo(
     () => groupBy(toBring, (g) => normalizeGearCategory(g.category)),
@@ -358,13 +365,12 @@ function GearTab({ trip, participants, onTripUpdate }) {
   const gearReady = ready.length;
 
   function renderGearItem(item) {
-    const done = isGearComplete(item);
-    const itemAssigneeIds = getGearAssigneeIds(item);
+    const done = isGearComplete(item, trip);
+    const itemAssigneeIds = assigneesOf(item);
     const availableParticipants = participants.filter((p) => !itemAssigneeIds.includes(p.id));
-    const amAssigned = Boolean(currentUserId && itemAssigneeIds.includes(currentUserId));
-    const assignedDisplayLabel = itemAssigneeIds.length > 0
-      ? itemAssigneeIds.map((uid) => resolvePersonLabel(uid)).filter(Boolean).join(', ')
-      : item.assignedToLabel;
+    const amAssigned = Boolean(currentUserId && itemAssigneeIds.includes(canonicalParticipantId(trip, currentUserId)));
+    const myReady = amAssigned && isPersonReady(item, currentUserId, trip);
+    const shared = itemAssigneeIds.length > 1;
 
     return (
       <div
@@ -375,15 +381,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
           opacity: done ? 0.72 : 1,
         }}
       >
-        <CompletionCheck
-          checked={done}
-          label={done ? `Move ${item.name} back to ${GEAR_NEED_LABEL}` : `Mark ${item.name} as ${GEAR_READY_LABEL.toLowerCase()}`}
-          onToggle={() => void toggleGearComplete(item)}
-        />
-        <div
-          style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-          onClick={() => void toggleGearComplete(item)}
-        >
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 13,
             fontWeight: 700,
@@ -392,38 +390,35 @@ function GearTab({ trip, participants, onTripUpdate }) {
           }}>
             {item.name}
           </div>
-          {!done ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
-              {itemAssigneeIds.map((uid) => (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
+            {itemAssigneeIds.map((uid) => {
+              const personReady = isPersonReady(item, uid, trip);
+              return (
                 <span
                   key={uid}
-                  onClick={(e) => e.stopPropagation()}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 4,
                     fontSize: 10.5,
                     fontWeight: 700,
-                    color: T.accent,
-                    background: T.accentLight,
-                    border: `1px solid ${T.accent}40`,
+                    color: personReady ? '#2A6A14' : T.accent,
+                    background: personReady ? '#EBF5EB' : T.accentLight,
+                    border: `1px solid ${personReady ? '#B8DFB8' : `${T.accent}40`}`,
                     borderRadius: 999,
                     padding: '2px 7px',
                     fontFamily: F,
                   }}
                 >
-                  {resolvePersonLabel(uid)}
+                  {resolvePersonLabel(uid)}{personReady ? ' · ready' : ' · not yet'}
                   <button
                     type="button"
                     aria-label={`Remove ${resolvePersonLabel(uid)} from ${item.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeItemAssignee(item, uid);
-                    }}
+                    onClick={() => removeItemAssignee(item, uid)}
                     style={{
                       border: 'none',
                       background: 'none',
-                      color: T.accent,
+                      color: 'inherit',
                       fontSize: 11,
                       fontWeight: 800,
                       padding: 0,
@@ -434,63 +429,95 @@ function GearTab({ trip, participants, onTripUpdate }) {
                     ×
                   </button>
                 </span>
-              ))}
-              {(availableParticipants.length > 0 || itemAssigneeIds.length > 0) && (
-                <select
-                  value=""
-                  onChange={(e) => addItemAssignee(item, e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    fontSize: 10.5,
-                    color: T.textSub,
-                    border: `1px solid ${T.border}`,
-                    borderRadius: 7,
-                    padding: '2px 5px',
-                    background: T.bg,
-                    fontFamily: F,
-                  }}
-                >
-                  <option value="">{itemAssigneeIds.length === 0 ? 'Who brings it?' : '+ Add person'}</option>
-                  {availableParticipants.map((p) => (
-                    <option key={p.id} value={p.id}>{p.label}</option>
-                  ))}
-                  {itemAssigneeIds.length > 0 && (
-                    <option value="__clear__">Clear all</option>
-                  )}
-                </select>
-              )}
-              {!amAssigned && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void savePlanningToCloud(trip.id, () => {
-                      claimGearItem(trip.id, item.id, { asCoBringer: itemAssigneeIds.length > 0 });
-                    }).then(() => onTripUpdate?.());
-                  }}
-                  style={{
-                    border: `1px solid ${T.accent}50`,
-                    borderRadius: 7,
-                    padding: '2px 7px',
-                    background: T.accentLight,
-                    color: T.accent,
-                    fontSize: 10.5,
-                    fontWeight: 800,
-                    fontFamily: F,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {itemAssigneeIds.length === 0 ? "I'll bring this" : "+ I'll bring some too"}
-                </button>
-              )}
-            </div>
-          ) : (
-            assignedDisplayLabel && (
-              <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>
-                {assignedDisplayLabel}
-              </div>
-            )
-          )}
+              );
+            })}
+            {(availableParticipants.length > 0 || itemAssigneeIds.length > 0) && (
+              <select
+                value=""
+                onChange={(e) => addItemAssignee(item, e.target.value)}
+                style={{
+                  fontSize: 10.5,
+                  color: T.textSub,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 7,
+                  padding: '2px 5px',
+                  background: T.bg,
+                  fontFamily: F,
+                }}
+              >
+                <option value="">{itemAssigneeIds.length === 0 ? 'Who brings it?' : '+ Add person'}</option>
+                {availableParticipants.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+                {itemAssigneeIds.length > 0 && (
+                  <option value="__clear__">Clear all</option>
+                )}
+              </select>
+            )}
+            {!amAssigned && (
+              <button
+                type="button"
+                onClick={() => {
+                  void savePlanningToCloud(trip.id, () => {
+                    claimGearItem(trip.id, item.id, { asCoBringer: itemAssigneeIds.length > 0 });
+                  }).then(() => onTripUpdate?.());
+                }}
+                style={{
+                  border: `1px solid ${T.accent}50`,
+                  borderRadius: 7,
+                  padding: '2px 7px',
+                  background: T.accentLight,
+                  color: T.accent,
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  fontFamily: F,
+                  cursor: 'pointer',
+                }}
+              >
+                {itemAssigneeIds.length === 0 ? "I'll bring this" : "+ I'll bring some too"}
+              </button>
+            )}
+            {amAssigned && (
+              <button
+                type="button"
+                aria-pressed={myReady}
+                onClick={() => void toggleMyGear(item)}
+                style={{
+                  border: `1px solid ${myReady ? '#8ED08E' : T.accent}`,
+                  borderRadius: 7,
+                  padding: '2px 8px',
+                  background: myReady ? '#E2F4E2' : T.accent,
+                  color: myReady ? '#2A6A14' : 'white',
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  fontFamily: F,
+                  cursor: 'pointer',
+                }}
+              >
+                {shared ? (myReady ? 'Undo my share' : 'My share') : (myReady ? 'Undo my ready' : 'I have this')}
+              </button>
+            )}
+            {amAssigned && shared && (
+              <button
+                type="button"
+                aria-pressed={done}
+                onClick={() => void toggleAllGear(item)}
+                style={{
+                  border: `1px solid ${done ? '#8ED08E' : T.border}`,
+                  borderRadius: 7,
+                  padding: '2px 8px',
+                  background: done ? '#E2F4E2' : T.bg,
+                  color: done ? '#2A6A14' : T.text,
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  fontFamily: F,
+                  cursor: 'pointer',
+                }}
+              >
+                {done ? 'Undo all' : 'All of it'}
+              </button>
+            )}
+          </div>
         </div>
         <RowActions
           itemName={item.name}
@@ -535,7 +562,7 @@ function GearTab({ trip, participants, onTripUpdate }) {
         </div>
       </Composer>
 
-      {gear.length === 0 && <Empty text="No gear yet. Add items to your list, then check them off as you pack or obtain each one." />}
+      {gear.length === 0 && <Empty text="No gear yet. Assign who brings each item. Each person confirms only their own share." />}
 
       {gear.length > 0 && (
         <ListProgress done={gearReady} total={gear.length} label="ready" />
@@ -622,6 +649,11 @@ function parseIngredientString(raw) {
 }
 
 function MealsTab({ trip, participants, onTripUpdate }) {
+  const [expandedMealIngredients, setExpandedMealIngredients] = useState({});
+
+  function toggleMealIngredients(mealId) {
+    setExpandedMealIngredients((prev) => ({ ...prev, [mealId]: !prev[mealId] }));
+  }
   const [name, setName] = useState('');
   const [dayIndex, setDayIndex] = useState(1);
   const [endDayIndex, setEndDayIndex] = useState('');
@@ -635,6 +667,7 @@ function MealsTab({ trip, participants, onTripUpdate }) {
   const [ingredientSortMode, setIngredientSortMode] = useState('category'); // 'category' | 'alpha'
   const [ingredientCatFilter, setIngredientCatFilter] = useState('all');
   const [ingredientSearch, setIngredientSearch] = useState('');
+  const [showSavedIngredients, setShowSavedIngredients] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [managingSaved, setManagingSaved] = useState(false);
   const [editingSavedKey, setEditingSavedKey] = useState(null);
@@ -724,8 +757,8 @@ function MealsTab({ trip, participants, onTripUpdate }) {
     setDayIndex(mealStartDay(meal));
     setEndDayIndex(mealEndDay(meal) > mealStartDay(meal) ? mealEndDay(meal) : '');
     setSlot(meal.slot || 'dinner');
-    setAssignedTo(meal.assignedTo || '');
-    setCoCookIds(Array.isArray(meal.coCooks) ? meal.coCooks : []);
+    setAssignedTo(canonicalParticipantId(trip, meal.assignedTo) || '');
+    setCoCookIds(Array.isArray(meal.coCooks) ? meal.coCooks.map((id) => canonicalParticipantId(trip, id)) : []);
     setServings(meal.servings ? String(meal.servings) : '');
     setNotes(meal.notes || '');
     setIngredients((meal.ingredients || []).map((i) => i.name).join(', '));
@@ -1222,10 +1255,29 @@ function MealsTab({ trip, participants, onTripUpdate }) {
           </div>
 
           {savedIngredients.length > 0 && (
-            <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+            <div style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                aria-expanded={showSavedIngredients}
+                onClick={() => setShowSavedIngredients((open) => !open)}
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  padding: 0,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: T.accent,
+                  cursor: 'pointer',
+                  fontFamily: F,
+                }}
+              >
+                {showSavedIngredients ? 'Hide' : 'Show'} saved ingredients ({savedIngredients.length})
+              </button>
+              {showSavedIngredients && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                 <span style={{ fontSize: 10, fontWeight: 800, color: T.textSub, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-                  Saved Ingredients ({filteredSavedIngredients.length})
+                  Pick from saved
                 </span>
                 {savedIngredients.length > 6 && (
                   <input
@@ -1305,6 +1357,8 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                 </div>
               )}
             </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -1327,9 +1381,10 @@ function MealsTab({ trip, participants, onTripUpdate }) {
           <SectionLabel>{mealDayOptionLabel(trip, Number(day))}</SectionLabel>
           {dayMeals.sort((a, b) => mealSlotOrder(a.slot) - mealSlotOrder(b.slot)).map((m) => {
             const currentUserId = getCurrentUserId();
-            const coCooks = Array.isArray(m.coCooks) ? m.coCooks : [];
+            const coCooks = Array.isArray(m.coCooks) ? m.coCooks.map((id) => canonicalParticipantId(trip, id)) : [];
+            const leadCookId = canonicalParticipantId(trip, m.assignedTo);
             const amCoCook = coCooks.includes(currentUserId);
-            const amLeadCook = m.assignedTo === currentUserId;
+            const amLeadCook = leadCookId === currentUserId;
             const isEditing = editingId === m.id;
             const sortedMealIngs = sortIngredients(m.ingredients || [], 'category');
             return (
@@ -1353,36 +1408,87 @@ function MealsTab({ trip, participants, onTripUpdate }) {
                       <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textFaint }}> · {m.servings} servings</span>
                     ) : null}
                   </div>
-                  {m.assignedToLabel && <div style={{ fontSize: 10.5, color: T.textSub, marginTop: 2 }}>Cook: {m.assignedToLabel}</div>}
-                  {coCooks.length > 0 && (
-                    <div style={{ fontSize: 10.5, color: '#2A5C8E', marginTop: 2 }}>
-                      Co-cook{coCooks.length === 1 ? '' : 's'}: {coCooks.map((uid) => resolveUserDisplayName(trip, uid, currentUserId)).join(', ')}
+                  {m.assignedToLabel && (
+                    <div style={{ fontSize: ts(11.5), color: T.textSub, marginTop: 2 }}>
+                      Cook: {participantDisplayName(trip, m.assignedTo, currentUserId, m.assignedToLabel)}{isPersonReady(m, leadCookId, trip) ? ' (ready)' : ''}
                     </div>
                   )}
+                  {coCooks.length > 0 && (
+                    <div style={{ fontSize: ts(11.5), color: '#2A5C8E', marginTop: 2 }}>
+                      Co-cook{coCooks.length === 1 ? '' : 's'}: {coCooks.map((uid) => `${resolveUserDisplayName(trip, uid, currentUserId)}${isPersonReady(m, uid, trip) ? ' (ready)' : ''}`).join(', ')}
+                    </div>
+                  )}
+                  {(amLeadCook || amCoCook) && (
+                    <button
+                      type="button"
+                      aria-pressed={isPersonReady(m, currentUserId, trip)}
+                      onClick={() => {
+                        const next = !isPersonReady(m, currentUserId, trip);
+                        void savePlanningToCloud(trip.id, () => {
+                          confirmMyMealReady(trip.id, m.id, next);
+                        }).then(() => onTripUpdate?.());
+                      }}
+                      style={{
+                        marginTop: 6,
+                        border: `1px solid ${isPersonReady(m, currentUserId, trip) ? '#8ED08E' : T.accent}`,
+                        borderRadius: 7,
+                        padding: '2px 8px',
+                        background: isPersonReady(m, currentUserId, trip) ? '#E2F4E2' : T.accent,
+                        color: isPersonReady(m, currentUserId, trip) ? '#2A6A14' : 'white',
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        fontFamily: F,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {isPersonReady(m, currentUserId, trip) ? 'Undo my ready' : 'I have the food'}
+                    </button>
+                  )}
                   {sortedMealIngs.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
-                      {sortedMealIngs.map((i) => {
-                        return (
-                          <span
-                            key={i.name}
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 600,
-                              color: T.textSub,
-                              background: T.bg,
-                              border: `1px solid ${T.border}`,
-                              borderRadius: 999,
-                              padding: '1px 6px',
-                            }}
-                          >
-                            {i.name}
-                          </span>
-                        );
-                      })}
+                    <div style={{ marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleMealIngredients(m.id)}
+                        style={{
+                          border: 'none',
+                          background: 'none',
+                          padding: 0,
+                          fontSize: ts(11),
+                          fontWeight: 700,
+                          color: T.accent,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontFamily: F,
+                        }}
+                      >
+                        <span>{expandedMealIngredients[m.id] ? '▾ Hide' : '▸ Show'} ingredients ({sortedMealIngs.length})</span>
+                      </button>
+                      {expandedMealIngredients[m.id] && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                          {sortedMealIngs.map((i) => (
+                            <span
+                              key={i.name}
+                              style={{
+                                fontSize: ts(10.5),
+                                fontWeight: 600,
+                                color: T.textSub,
+                                background: T.bg,
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 999,
+                                padding: '2px 7px',
+                              }}
+                            >
+                              {i.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   {m.notes && (
-                    <div style={{ fontSize: 10.5, color: T.textSub, fontStyle: 'italic', marginTop: 4 }}>
+                    <div style={{ fontSize: ts(11), color: T.textSub, fontStyle: 'italic', marginTop: 4 }}>
                       {m.notes}
                     </div>
                   )}

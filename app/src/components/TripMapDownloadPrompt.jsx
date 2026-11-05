@@ -5,6 +5,8 @@ import {
   getTripOfflineMapReadiness,
   preloadAllTripMaps,
 } from '../lib/offlineMaps';
+import { trailMapArt } from '../lib/locationArt';
+import { ArtImg } from './LocationMark';
 
 /**
  * Prompts any crew member who joins or opens a trip to download the trip's
@@ -76,8 +78,9 @@ export function TripMapDownloadPrompt({ trip, onOpenMaps }) {
         fontFamily: F,
       }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#8A4812' }}>
-            🗺️ No offline map selected for this trip yet
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 800, color: '#8A4812' }}>
+            <ArtImg src={trailMapArt} size={22} />
+            No offline map selected for this trip yet
           </div>
           <div style={{ fontSize: 10.5, color: '#7A4A1D', marginTop: 1 }}>
             Pick a map area now so everyone on the trip can download it before losing service.

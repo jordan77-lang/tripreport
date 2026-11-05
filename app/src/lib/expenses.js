@@ -1,4 +1,5 @@
-export { buildTripParticipants, isJoinedMember, resolveUserDisplayName, formatOwnerParticipantLabel } from './tripParticipants';
+export { buildTripParticipants, isJoinedMember, resolveUserDisplayName, formatOwnerParticipantLabel, canonicalParticipantId, participantDisplayName } from './tripParticipants';
+import { dedupeCollaborators } from './tripParticipants';
 
 const ANON_USER_KEY = 'tr_user_id';
 
@@ -7,17 +8,26 @@ export function roundMoney(value) {
   return Math.round(n * 100) / 100;
 }
 
-/** Map legacy / alternate ids (anon owner, collaborator id vs userId) to current participant ids. */
+/** Map legacy / alternate ids (anon owner, collaborator id vs userId, merged roster ids) to current participant ids. */
 export function buildParticipantAliasMap(trip, participants) {
   const map = new Map();
   for (const p of participants) {
     map.set(p.id, p.id);
   }
-  for (const c of trip?.collaborators || []) {
+  // Dedupe first so a roster row that was folded into a joined member maps to them
+  // even before the merged collaborator list has been saved.
+  const collaborators = [
+    ...dedupeCollaborators(trip?.collaborators || [], { memberProfiles: trip?.memberProfiles || {} }),
+    ...(trip?.collaborators || []),
+  ];
+  for (const c of collaborators) {
     const pid = participants.find((p) => p.id === c.userId || p.id === c.id)?.id;
     if (!pid) continue;
-    if (c.id) map.set(c.id, pid);
-    if (c.userId && c.userId !== c.id) map.set(c.userId, pid);
+    if (c.id && !map.has(c.id)) map.set(c.id, pid);
+    if (c.userId && c.userId !== c.id && !map.has(c.userId)) map.set(c.userId, pid);
+    for (const alias of Array.isArray(c.aliasIds) ? c.aliasIds : []) {
+      if (alias && !map.has(alias)) map.set(alias, pid);
+    }
   }
   if (trip?.ownerId && map.has(trip.ownerId)) {
     try {

@@ -9,6 +9,8 @@ import { EntryForm } from './EntryForm';
 import { addEntry, addLocation, getCurrentUserId, isTripMember, isTripOpen } from '../lib/storage';
 import { createPhotoMediaFromFile } from '../lib/media';
 import { defaultLocationKind } from '../lib/locationTypes';
+import { locationMapSymbol } from '../lib/locationArt';
+import { LocationMark } from '../components/LocationMark';
 import { T, F } from '../tokens';
 import { ts } from '../lib/textScale';
 
@@ -78,7 +80,7 @@ export function QuickCapture({ trip, initialType = null, locationId = null, even
         {(trip.locations || []).length > 0 && <div style={{ marginTop: 24 }}><h2 style={{ fontSize: ts(17), marginBottom: 12 }}>Or open a saved location</h2>
           {trip.locations.map(place => <button key={place.id} type="button" onClick={() => setSelectedLocationId(place.id)}
             style={{ width: '100%', minHeight: 64, display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, padding: '14px 16px', background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, fontFamily: F, textAlign: 'left', color: T.text, cursor: 'pointer' }}>
-            <span aria-hidden="true" style={{ fontSize: 24 }}>{place.icon || '📍'}</span><span style={{ flex: 1, fontSize: ts(15), fontWeight: 800 }}>{place.name}</span><span aria-hidden="true">→</span>
+            <LocationMark location={place} size={28} /><span style={{ flex: 1, fontSize: ts(15), fontWeight: 800 }}>{place.name}</span><span aria-hidden="true">→</span>
           </button>)}
         </div>}
       </> : <>
@@ -215,7 +217,7 @@ function LogLocation({ trip, onCancel, onSaved }) {
     lng: loc.lng,
     lat: loc.lat,
     title: loc.name,
-    symbol: loc.icon || '📍',
+    symbol: locationMapSymbol(loc),
     col: '#3A72A8',
   })), [savedPlaces]);
   const mapCenter = savedPlaces[0] ? { lng: savedPlaces[0].lng, lat: savedPlaces[0].lat } : undefined;
@@ -236,7 +238,7 @@ function LogLocation({ trip, onCancel, onSaved }) {
             center={mapCenter}
             zoom={13}
             interactive
-            pin={source === 'map' && pin ? { ...pin, symbol: draft.icon || '📍' } : null}
+            pin={source === 'map' && pin ? { ...pin, symbol: locationMapSymbol(draft) } : null}
             onPinChange={onMapClick}
             onMapClick={onMapClick}
             onEntrySelect={onPlaceTap}

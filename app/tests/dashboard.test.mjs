@@ -144,6 +144,21 @@ test('multiple people can be assigned to bring the same gear item (like firewood
     'With Jordan, Alex · To bring',
   );
 
+  const halfReady = {
+    ...trip,
+    gearItems: [{ ...trip.gearItems[0], readyBy: ['leader'] }],
+  };
+  assert.equal(getMyResponsibilities(halfReady, 'leader').gearToBring.length, 0);
+  assert.deepEqual(ids(getMyResponsibilities(halfReady, 'u2').gearToBring), ['firewood']);
+  assert.equal(
+    gearResponsibilityLabel(halfReady.gearItems[0], halfReady, 'u2'),
+    'With Jordan ready, Alex · To bring',
+  );
+  assert.equal(
+    gearResponsibilityLabel(halfReady.gearItems[0], halfReady, 'leader'),
+    'With Sam, Alex · You ready',
+  );
+
   const feed = buildCrewActivityFeed(trip, 'leader', 5);
   assert.match(feed[0].text, /Jordan, Sam, Alex are bringing Firewood/);
 });

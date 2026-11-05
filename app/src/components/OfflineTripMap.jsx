@@ -5,7 +5,7 @@ import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { buildOfflineMapStyle } from '../lib/offlineMapStyle';
 import { getCachedTileBuffer } from '../lib/offlineMaps';
-import { syncPinMarker } from './mapPin';
+import { applyMapSymbol, syncPinMarker } from './mapPin';
 
 let protocolInstalled = false;
 
@@ -208,10 +208,12 @@ export function OfflineTripMap({
       .map((e) => {
         const isSelected = selectedEntryId != null && String(selectedEntryId) === String(e.id);
         const el = document.createElement('div');
-        el.style.cssText = `width:${isSelected ? 44 : 36}px;height:${isSelected ? 44 : 36}px;border-radius:50%;background:${e.col || '#2C5F3E'};
-          border:${isSelected ? 4 : 3}px solid white;box-shadow:0 2px 9px rgba(0,0,0,.3);cursor:pointer;
-          display:flex;align-items:center;justify-content:center;font-size:${isSelected ? 18 : 15}px;color:white;font-weight:700;`;
-        el.textContent = e.symbol || '';
+        applyMapSymbol(el, e.symbol || '', {
+          size: isSelected ? 44 : 36,
+          ring: isSelected ? 4 : 3,
+          color: e.col || '#2C5F3E',
+          fontSize: isSelected ? 18 : 15,
+        });
         if (onEntrySelect) {
           el.addEventListener('click', (ev) => {
             ev.stopPropagation();

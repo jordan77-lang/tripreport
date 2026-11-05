@@ -10,6 +10,9 @@ import { Ic } from './Ic';
 import { ICONS } from '../tokens';
 import crewIcon from '../assets/crew.png';
 import backpackIcon from '../assets/gear.png';
+import countdownIcon from '../assets/backpack.png';
+import summitIcon from '../assets/summit.png';
+import expenseIcon from '../assets/expense.png';
 
 
 export function TripDashboard({ trip, onOpen, onRecap, onTripUpdate, onTripDeleted, now }) {
@@ -22,8 +25,9 @@ export function TripDashboard({ trip, onOpen, onRecap, onTripUpdate, onTripDelet
   return <section className={`trip-dashboard stage-${stage.id}`} aria-labelledby="selected-trip-title">
     <div className="trip-dashboard-hero">
       {trip.coverPhoto && <MediaThumb media={trip.coverPhoto} alt="" className="trip-dashboard-cover" />}
+      <button type="button" className="trip-dashboard-cover-hit" aria-label={`Open ${trip.name}`} onClick={() => onOpen('trip')} />
       <div className="trip-dashboard-hero-content">
-        <div className="trip-dashboard-topline"><span className="dashboard-stage"><Ic d={stage.id === 'completed' ? ICONS.journal : ICONS.compass} size={15} color="currentColor" />{stage.label}</span><SyncChip state={trip.syncState || 'pending'} compact /></div>
+        <div className="trip-dashboard-topline"><span className="dashboard-stage">{stage.id === 'active' ? <Ic d={ICONS.compass} size={15} color="currentColor" /> : <img src={stage.id === 'completed' ? summitIcon : countdownIcon} alt="" aria-hidden="true" width={18} height={18} style={{ objectFit: 'contain' }} />}{stage.label}</span><SyncChip state={trip.syncState || 'pending'} compact /></div>
         <button className="trip-dashboard-title" type="button" onClick={() => onOpen('trip')}><h2 id="selected-trip-title">{trip.name}</h2><span aria-hidden="true">↗</span></button>
         <p className="trip-dashboard-meta">{[trip.location, formatTripDateRange(trip.startDate, trip.endDate)].filter(Boolean).join(' · ')}</p>
         <p className="trip-dashboard-crew">{crewCount} crew member{crewCount === 1 ? '' : 's'} · {(trip.locations || []).length} locations{tasks.plannedLocations > 0 ? ` (${tasks.plannedLocations} planned)` : ''} · {(trip.entries || []).length} entries</p>
@@ -46,7 +50,7 @@ export function TripDashboard({ trip, onOpen, onRecap, onTripUpdate, onTripDelet
         </>}
       </div>
       <div className="dashboard-shortcuts">
-        {stage.id === 'completed' ? <button type="button" onClick={() => onOpen('plan', { tab: 'expenses' })}><Ic d={ICONS.expense} size={19} color="currentColor" /><span>Review expenses</span><span aria-hidden="true">→</span></button> : <>
+        {stage.id === 'completed' ? <button type="button" onClick={() => onOpen('plan', { tab: 'expenses' })}><img src={expenseIcon} alt="" aria-hidden="true" width={26} height={26} style={{ flexShrink: 0, objectFit: 'contain' }} /><span>Review expenses</span><span aria-hidden="true">→</span></button> : <>
           <button type="button" onClick={() => onOpen('plan', { tab: 'mine' })}><img src={backpackIcon} alt="" aria-hidden="true" width={26} height={26} style={{ flexShrink: 0, objectFit: 'contain' }} /><span>{tasks.gearToBring.length} gear to bring · {tasks.meals.length} meal{tasks.meals.length === 1 ? '' : 's'} assigned</span><span aria-hidden="true">→</span></button>
           {stage.id === 'planning' && <button type="button" onClick={() => onOpen('plan', { tab: 'participants' })}><img src={crewIcon} alt="" aria-hidden="true" width={26} height={26} style={{ flexShrink: 0, objectFit: 'contain' }} /><span>View crew</span><span aria-hidden="true">→</span></button>}
           <button type="button" onClick={() => onOpen('plan', { tab: 'maps' })}><Ic d={ICONS.map} size={19} color="currentColor" /><span>Check offline maps before you go</span><span aria-hidden="true">→</span></button>

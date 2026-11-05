@@ -6,17 +6,28 @@ import * as engine from '../src/lib/tripSync.js';
 import * as refs from '../src/lib/mediaRefs.js';
 const base=()=>engine.materialize(engine.ensureSync({id:'t',ownerId:'owner',name:'River',entries:[],locations:[],events:[]}));
 const change=(t,text,id)=>{const e=structuredClone(t);e.entries.push({id,notes:text});return engine.captureChanges(e,t);};
-async function fixture({duringRequest,fail=false,mediaFail=false}={}) {
- let local=change(base(),'phone A','a'),server=change(base(),'phone B','b'),calls=0;
+async function fixture({duringRequest,fail=false,mediaFail=false,locals=null,cloudRows=null}={}) {
+ let local=locals?null:change(base(),'phone A','a'),server=change(base(),'phone B','b'),calls=0;
+ let tripList=locals?locals.map(t=>({...t})):null;
  const context=vm.createContext({console,Date,localStorage:{getItem:()=>null}});
+ const defaultRow=()=>({
+  id:'t',owner_id:'owner',updated_at:'2026-01-01T00:00:00Z',created_at:'2026-01-01T00:00:00Z',
+  payload:{_sync:{version:2,ops:server._sync.ops}},
+ });
  const supabase={
   auth:{getSession:async()=>({data:{session:{access_token:'test'}}}),getUser:async()=>({data:{user:{id:'owner'}}})},
   from:table=>{
     if(table==='profiles')return {upsert:async()=>({})};
-    return {select:()=>({eq:()=>({maybeSingle:async()=>({data:{
-      id:'t',owner_id:'owner',updated_at:'2026-01-01T00:00:00Z',created_at:'2026-01-01T00:00:00Z',
-      payload:{_sync:{version:2,ops:server._sync.ops}},
-    }})})})};
+    return {select:()=>({
+      order:async()=>({data:cloudRows||[{id:'t',updated_at:'2026-01-02T00:00:00Z'}],error:null}),
+      eq:(_col,id)=>({maybeSingle:async()=>{
+        if(cloudRows){
+          const row=cloudRows.find(r=>r.id===id);
+          return {data:row?{...defaultRow(),...row,id}:null,error:null};
+        }
+        return {data:defaultRow(),error:null};
+      }}),
+    })};
   },
   rpc:async(name,args)=>{
     calls++;assert.equal(name,'sync_trip_changes');
@@ -29,7 +40,27 @@ async function fixture({duringRequest,fail=false,mediaFail=false}={}) {
  const mocks={
   './supabase':{requireSupabase:()=>supabase,supabaseConfigured:true},
   './authUser':{getSignedInUserId:()=> 'owner',getSignedInDisplayName:()=> 'Owner'},
-  './storage':{saveTrip:t=>(local=engine.materialize(t)),getTrip:()=>local,getTrips:()=>local?[local]:[],getCurrentUserId:()=> 'owner',claimAnonymousTripsForUser:()=>{},isTripOwner:(t,u)=>t?.ownerId===u,isTripMember:()=>true,deleteLocalTrip:()=>{local=null;}},
+  './storage':{
+    saveTrip:t=>{
+      const next=engine.materialize(t);
+      local=next;
+      if(tripList){
+        const idx=tripList.findIndex(item=>item.id===next.id);
+        if(idx>=0)tripList[idx]=next;else tripList.unshift(next);
+      }
+      return next;
+    },
+    getTrip:id=>{
+      const list=tripList||(local?[local]:[]);
+      return id?list.find(item=>item.id===id)||null:local;
+    },
+    getTrips:()=>tripList?tripList.slice():(local?[local]:[]),
+    getCurrentUserId:()=> 'owner',claimAnonymousTripsForUser:()=>{},isTripOwner:(t,u)=>t?.ownerId===u,isTripMember:()=>!locals,
+    deleteLocalTrip:id=>{
+      if(tripList)tripList=tripList.filter(item=>item.id!==id);
+      if(!id||local?.id===id)local=null;
+    },
+  },
   './mediaSync':{syncTripMedia:async()=>{if(mediaFail)throw new Error('Attachment offline');}},
   './mediaRefs':refs,
   './tripSync':engine,
@@ -45,7 +76,7 @@ async function fixture({duringRequest,fail=false,mediaFail=false}={}) {
    },
  });
  await mod.link(name=>modules.get(name));await mod.evaluate();
- return {cloud:mod.namespace,local:()=>local,server:()=>server,calls:()=>calls};
+ return {cloud:mod.namespace,local:()=>local,trips:()=>tripList?tripList.slice():(local?[local]:[]),server:()=>server,calls:()=>calls};
 }
 test('cloud sync combines both phones and includes an edit made during the request',async()=>{
  const f=await fixture({duringRequest:t=>change(t,'late edit','late')});
@@ -94,4 +125,18 @@ test('owner-deleted cloud trip removes owner secondary copy and prompts collabor
  const ownerOutcome=await f.cloud.handleCloudDeletedTrip(f.local(),'owner');
  assert.equal(ownerOutcome.action,'deleted-owner-copy');
  assert.equal(f.local(),null);
+});
+test('a cloud trip deleted on the server is removed from this browser',async()=>{
+ const f=await fixture({
+  locals:[
+    {id:'gone',ownerId:'owner',name:'Old trip',syncState:'synced',entries:[],locations:[],events:[]},
+    {id:'keep',ownerId:'owner',name:'Not uploaded yet',syncState:'pending',entries:[],locations:[],events:[]},
+  ],
+  cloudRows:[],
+ });
+ assert.equal(f.cloud.hasTripSyncedToCloud({id:'gone',ownerId:'owner',syncState:'synced'},'owner'),true);
+ assert.equal(f.cloud.hasTripSyncedToCloud({id:'keep',ownerId:'owner',syncState:'pending'},'owner'),false);
+ const result=await f.cloud.syncUserTripsWithCloud();
+ assert.equal(result.reconciled,1);
+ assert.deepEqual(f.trips().map(t=>t.id),['keep']);
 });

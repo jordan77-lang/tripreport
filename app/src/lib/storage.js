@@ -8,6 +8,7 @@ const CONTACTS_KEY = 'tr_contacts';
 import { getSignedInUserId, getSignedInDisplayName, setPreferredDisplayName } from './authUser';
 import { defaultEventName } from './eventTypes';
 import { captureChanges, materialize } from './tripSync';
+import { canonicalParticipantId } from './tripParticipants';
 
 export function getContacts() {
   try {
@@ -1074,10 +1075,21 @@ export function updateGearItem(tripId, id, patch) {
     normalized.assignedToIds = normalized.assignedTo ? [normalized.assignedTo] : [];
   }
   if (normalized.assignedToIds !== undefined) {
-    const existing = (getTrip(tripId)?.gearItems || []).find((g) => g.id === id);
+    const trip = getTrip(tripId);
+    const existing = (trip?.gearItems || []).find((g) => g.id === id);
     const before = [...getGearAssigneeIds(existing)].sort().join('|');
     const after = [...normalized.assignedToIds].sort().join('|');
     if (before !== after) normalized.assignedBy = normalized.assignedToIds.length ? getCurrentUserId() : null;
+    if (normalized.readyBy === undefined) {
+      const allowed = canonicalIdList(trip, normalized.assignedToIds);
+      normalized.readyBy = startingReadyIds(trip, existing, canonicalIdList(trip, getGearAssigneeIds(existing)))
+        .filter((personId) => allowed.includes(personId));
+      if (normalized.status === undefined) {
+        normalized.status = allowed.length > 0 && allowed.every((personId) => normalized.readyBy.includes(personId))
+          ? 'have'
+          : 'needed';
+      }
+    }
   }
   return updatePlanningItem(tripId, 'gearItems', id, normalized);
 }
@@ -1111,6 +1123,84 @@ export function claimGearItem(tripId, gearId, { userId = null, label = null, asC
   });
 }
 
+function canonicalIdList(trip, ids) {
+  const seen = new Set();
+  const out = [];
+  for (const id of ids || []) {
+    const trimmed = typeof id === 'string' ? id.trim() : '';
+    if (!trimmed) continue;
+    const canonical = canonicalParticipantId(trip, trimmed) || trimmed;
+    if (!seen.has(canonical)) {
+      seen.add(canonical);
+      out.push(canonical);
+    }
+  }
+  return out;
+}
+
+function startingReadyIds(trip, item, assignees) {
+  if (!item) return [];
+  if (Array.isArray(item.readyBy)) {
+    return canonicalIdList(trip, item.readyBy).filter((id) => assignees.includes(id));
+  }
+  if (['have', 'claimed', 'packed'].includes(item.status)) return assignees.slice();
+  return [];
+}
+
+function confirmMyShare(tripId, collection, itemId, ready) {
+  const trip = getTrip(tripId);
+  if (!trip || !itemId) return null;
+  const item = (trip[collection] || []).find((row) => row.id === itemId);
+  if (!item) return null;
+  const uid = canonicalParticipantId(trip, getCurrentUserId()) || getCurrentUserId();
+  const assignees = collection === 'gearItems'
+    ? canonicalIdList(trip, getGearAssigneeIds(item))
+    : canonicalIdList(trip, [item.assignedTo, ...(Array.isArray(item.coCooks) ? item.coCooks : [])]);
+  if (!assignees.includes(uid)) return null;
+  const canonicalReady = Array.isArray(item.readyBy)
+    ? canonicalIdList(trip, item.readyBy)
+    : null;
+  const current = startingReadyIds(
+    trip,
+    canonicalReady ? { ...item, readyBy: canonicalReady } : item,
+    assignees,
+  );
+  const readyBy = ready
+    ? (current.includes(uid) ? current : [...current, uid])
+    : current.filter((id) => id !== uid);
+  const fully = assignees.length > 0 && assignees.every((id) => readyBy.includes(id));
+  if (collection === 'gearItems') {
+    return updateGearItem(tripId, itemId, { readyBy, status: fully ? 'have' : 'needed' });
+  }
+  return updateMeal(tripId, itemId, { readyBy });
+}
+
+/** Confirm or undo only the signed-in person's share of a gear item. */
+export function confirmMyGearReady(tripId, gearId, ready = true) {
+  return confirmMyShare(tripId, 'gearItems', gearId, ready);
+}
+
+/** Mark every assignee on a shared gear item ready, or clear all of those confirmations. */
+export function confirmAllGearReady(tripId, gearId, ready = true) {
+  const trip = getTrip(tripId);
+  if (!trip || !gearId) return null;
+  const item = (trip.gearItems || []).find((row) => row.id === gearId);
+  if (!item) return null;
+  const uid = canonicalParticipantId(trip, getCurrentUserId()) || getCurrentUserId();
+  const assignees = canonicalIdList(trip, getGearAssigneeIds(item));
+  if (!assignees.includes(uid)) return null;
+  if (assignees.length < 2) return confirmMyGearReady(tripId, gearId, ready);
+  return updateGearItem(tripId, gearId, {
+    readyBy: ready ? assignees.slice() : [],
+    status: ready ? 'have' : 'needed',
+  });
+}
+
+/** Confirm or undo only the signed-in person's share of a meal. */
+export function confirmMyMealReady(tripId, mealId, ready = true) {
+  return confirmMyShare(tripId, 'meals', mealId, ready);
+}
+
 export function addMeal(tripId, meal) {
   return mutateTrip(tripId, (trip, now) => {
     const full = {
@@ -1139,12 +1229,19 @@ export function addMeal(tripId, meal) {
 
 export function updateMeal(tripId, id, patch) {
   const next = { ...patch };
+  const existing = (getTrip(tripId)?.meals || []).find((m) => m.id === id);
   if ('assignedTo' in patch) {
-    const existing = (getTrip(tripId)?.meals || []).find((m) => m.id === id);
     const before = existing?.assignedTo || null;
     const after = patch.assignedTo || null;
     // Remember who made the assignment, but not when an unrelated edit resends the same cook.
     if (before !== after) next.assignedBy = after ? getCurrentUserId() : null;
+  }
+  if (existing && next.readyBy === undefined && ('assignedTo' in next || 'coCooks' in next)) {
+    const trip = getTrip(tripId);
+    const merged = { ...existing, ...next };
+    const allowed = canonicalIdList(trip, [merged.assignedTo, ...(Array.isArray(merged.coCooks) ? merged.coCooks : [])]);
+    next.readyBy = startingReadyIds(trip, existing, canonicalIdList(trip, [existing.assignedTo, ...(Array.isArray(existing.coCooks) ? existing.coCooks : [])]))
+      .filter((personId) => allowed.includes(personId));
   }
   return updatePlanningItem(tripId, 'meals', id, next);
 }

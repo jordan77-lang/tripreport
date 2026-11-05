@@ -73,6 +73,8 @@ const runningSyncs = new Map();
 
 export function hasTripSyncedToCloud(trip, userId = null) {
   if (!trip) return false;
+  // Saved from the server, including older copies that never stored a sync time.
+  if (trip.syncState === 'synced') return true;
   if (trip._sync?.lastCloudSync) return true;
   if (Array.isArray(trip._sync?.acked) && trip._sync.acked.length > 0) return true;
   if (userId && trip.ownerId && trip.ownerId !== userId) return true;

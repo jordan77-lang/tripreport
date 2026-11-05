@@ -8,6 +8,7 @@ import { pushTripToCloud } from '../lib/tripCloud';
 import { supabaseConfigured } from '../lib/supabase';
 import { T, F } from '../tokens';
 import { ts } from '../lib/textScale';
+import syncIcon from '../assets/sync.png';
 
 export function TripSyncPanel({trip,onTripUpdate}) {
   const [prepared,setPrepared]=useState(null),[preview,setPreview]=useState(null);
@@ -68,7 +69,10 @@ export function TripSyncPanel({trip,onTripUpdate}) {
   return <section aria-label="Trip sync and offline exchange" style={cardStyle}>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
       <div>
-        <h3 style={titleStyle}>Sync &amp; offline sharing</h3>
+        <h3 style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <img src={syncIcon} alt="" aria-hidden="true" width={28} height={28} style={{ objectFit: 'contain' }} />
+          Sync &amp; offline sharing
+        </h3>
         <p style={statusStyle}>{statusLine}</p>
         {synced._sync.lastCloudSync && <p style={quietStyle}>Last sync {formatSyncTime(synced._sync.lastCloudSync)}</p>}
       </div>

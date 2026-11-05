@@ -7,6 +7,7 @@ import { duplicateLocations } from '../lib/tripTimeline';
 import { Ic } from '../components/Ic';
 import { T, F, ICONS } from '../tokens';
 import { getTripOfflineMapReadiness } from '../lib/offlineMaps';
+import { locationMapSymbol } from '../lib/locationArt';
 
 export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
   const [mapStyle, setMapStyle] = useState('outdoors-v12');
@@ -26,7 +27,7 @@ export function Navigator({ trip, onNav, onFab, gps, onTripUpdate }) {
   const track = trip?.track ?? [];
   const locations = (trip?.locations ?? [])
     .filter(l => l.lng && l.lat)
-    .map(l => ({ ...l, title: l.name, col: '#3A72A8', symbol: l.icon || locationSymbol(l.type) }));
+    .map(l => ({ ...l, title: l.name, col: '#3A72A8', symbol: locationMapSymbol(l) }));
   const legacyEntries = locations.length
     ? []
     : (trip?.entries ?? [])
@@ -182,22 +183,3 @@ function entryColor(type) {
   return map[type] || '#2C5F3E';
 }
 
-function locationSymbol(type) {
-  const map = {
-    'put-in': '🟢',
-    'take-out': '🔴',
-    scout: '👀',
-    'rapid-scout': '👀',
-    hike: '🥾',
-    'hiking-location': '🥾',
-    camp: '⛺',
-    campsite: '⛺',
-    interest: '🏛',
-    'point-of-interest': '📍',
-    shopping: '🛒',
-    hotel: '🏨',
-    meeting: '🗒',
-    hazard: '⚠',
-  };
-  return map[type] || '📍';
-}

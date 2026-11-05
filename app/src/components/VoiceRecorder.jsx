@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { T } from '../tokens';
+import { microphoneArt } from '../lib/locationArt';
+import { ArtImg } from './LocationMark';
 
 export function VoiceRecorder({ disabled, onRecorded, onRecordingChange }) {
   const [recording, setRecording] = useState(false);
@@ -70,12 +72,15 @@ export function VoiceRecorder({ disabled, onRecorded, onRecordingChange }) {
   }
 
   return <div style={{ marginBottom: 12 }}>
-    <button type="button" disabled={starting || (disabled && !recording)}
-      onClick={() => recording ? session.current?.recorder.stop() : void start()}
-      style={{ minHeight: 48, padding: '10px 16px', borderRadius: 10, border: 'none',
-        background: recording ? '#A52A2A' : T.accent, color: 'white', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
-      {starting ? 'Opening microphone…' : recording ? 'Stop recording' : 'Record voice'}
-    </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <ArtImg src={microphoneArt} size={40} />
+      <button type="button" disabled={starting || (disabled && !recording)}
+        onClick={() => recording ? session.current?.recorder.stop() : void start()}
+        style={{ minHeight: 48, padding: '10px 16px', borderRadius: 10, border: 'none',
+          background: recording ? '#A52A2A' : T.accent, color: 'white', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
+        {starting ? 'Opening microphone…' : recording ? 'Stop recording' : 'Record voice'}
+      </button>
+    </div>
     <p role="status" style={{ fontSize: 13, color: T.textSub, marginTop: 6 }}>
       {recording ? 'Recording… stops automatically after 5 minutes.' : 'Record up to 5 minutes, or add an audio file below.'}
     </p>

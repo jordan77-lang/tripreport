@@ -15,6 +15,8 @@ import { ts } from '../lib/textScale';
 import { addMeal, getTrips } from '../lib/storage';
 import { MEAL_SLOTS as MEAL_SLOT_IDS, SLOT_LABEL, mealDaysLabel, mealSlotOrder } from '../lib/mealSlots';
 import { listSavedMeals, publishSavedMeal, refreshSharedMeals, rememberMeal, savedMealByName } from '../lib/mealLibrary';
+import { locationMapSymbol, microphoneArt } from '../lib/locationArt';
+import { ArtImg } from '../components/LocationMark';
 
 /**
  * Entry capture inside an event.
@@ -128,7 +130,7 @@ export function EntryForm({
       lng: loc.lng,
       lat: loc.lat,
       title: loc.name,
-      symbol: loc.icon || '📍',
+      symbol: locationMapSymbol(loc),
       col: loc.id === selectedLocationId ? '#2A5C8E' : '#3A72A8',
     })), [locations, selectedLocationId]);
 
@@ -421,7 +423,10 @@ export function EntryForm({
           <input id="custom-event-name" value={customTitle} onChange={event => setCustomTitle(event.target.value)} placeholder="What happened here?" style={inputStyle(T)} />
           <div aria-label="Custom entry format" style={{ display: 'flex', gap: 10, marginTop: 10 }}>
             <button className="dashboard-button secondary" type="button" aria-pressed={mediaMode !== 'voice'} onClick={() => setMediaMode('photo')} disabled={recording}>Note</button>
-            <button className="dashboard-button secondary" type="button" aria-pressed={mediaMode === 'voice'} onClick={() => setMediaMode('voice')} disabled={recording}>Voice recording</button>
+            <button className="dashboard-button secondary" type="button" aria-pressed={mediaMode === 'voice'} onClick={() => setMediaMode('voice')} disabled={recording} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <ArtImg src={microphoneArt} size={18} />
+              Voice recording
+            </button>
           </div>
         </div>}
 

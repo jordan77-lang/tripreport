@@ -20,6 +20,8 @@ import {
   verifyRegionDownload,
   verifyTripMapAreaDownload,
 } from '../lib/offlineMaps';
+import { trailMapArt } from '../lib/locationArt';
+import { ArtImg } from './LocationMark';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -325,7 +327,8 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
       marginBottom: 12,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-        <div style={{ fontSize: compact ? 12.5 : 14, fontWeight: 800, color: T.text }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: compact ? 12.5 : 14, fontWeight: 800, color: T.text }}>
+          <ArtImg src={trailMapArt} size={compact ? 22 : 28} />
           Trip Maps & Offline Storage
         </div>
         {readiness?.configured && (
@@ -343,7 +346,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
         )}
       </div>
       <div style={{ fontSize: 11, color: T.textSub, marginBottom: 12, lineHeight: 1.45 }}>
-        Select a map for this trip so everyone in your crew is prompted to download the same map to their device before heading into no-service areas.
+        Select a map area for this trip. Everyone on the crew can then download that same map before they lose service.
       </div>
 
       {/* Clear Device Readiness Banner */}
@@ -399,7 +402,7 @@ export function OfflineMapsPanel({ trip, onTripUpdate, compact = false }) {
           color: '#8A5526',
           lineHeight: 1.45,
         }}>
-          <strong>No map selected for this trip yet.</strong> Choose a custom Trip Map Area or select a regional pack below so your crew gets prompted to download it.
+          <strong>No map selected for this trip yet.</strong> Choose a map area so your crew can download it.
         </div>
       )}
 

@@ -15,6 +15,8 @@ import { buildTripManifest, manifestContentHash } from '../lib/tripManifest';
 import { collectTripPhotos, listTripDays, preparePhotosForApi } from '../lib/tripPhotos';
 import { narrativeFromReportResult } from '../lib/recapSettings';
 import { weaveChronologicalPhotoPlaceholders, ensurePhotoPlaceholders, hasPhotoPlaceholders } from '../lib/recapNarrative';
+import { locationMapSymbol, starArt } from '../lib/locationArt';
+import { ArtImg } from '../components/LocationMark';
 import { generateTripReport, emailTripReport } from '../lib/recapApi';
 import { RECAP_EMAIL_ENABLED } from '../lib/recapSettings';
 import { downloadTripReportDocx, encodeDocxForEmailTransport, buildTripReportDocx } from '../lib/recapDocx';
@@ -373,7 +375,7 @@ function TripStoryView({
       lng: l.lng,
       lat: l.lat,
       title: l.name,
-      symbol: l.icon || '📍',
+      symbol: locationMapSymbol(l),
       col: '#2A5C8E',
     })),
     [locations],
@@ -450,8 +452,9 @@ function TripStoryView({
 
       {highlights.length > 0 && (
         <div style={{ background: '#FBF0E4', borderRadius: 12, border: '1px solid #E8C9A0', padding: '12px 14px', marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: '#7A4A14', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
-            ⭐ Crew Highlights ({highlights.length})
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: '#7A4A14', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8 }}>
+            <ArtImg src={starArt} size={16} />
+            Crew Highlights ({highlights.length})
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {highlights.map((h) => (

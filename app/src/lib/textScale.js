@@ -27,7 +27,8 @@ export function textScaleOptions() {
   ];
 }
 
-/** Scale a base pixel font size for readability (default bases assume 14px body). */
-export function ts(px) {
-  return Math.round(px * getTextScale());
+/** Scale a base pixel font size for readability with a minimum floor to avoid tiny text on phone screens. */
+export function ts(px, minFloor = 11) {
+  const scaled = Math.round(px * getTextScale());
+  return Math.max(minFloor, scaled);
 }

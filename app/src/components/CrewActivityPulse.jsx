@@ -3,9 +3,16 @@ import { buildCrewActivityFeed } from '../lib/tripDashboard';
 import gearIcon from '../assets/gear.png';
 import skilletIcon from '../assets/skillet.png';
 import placeIcon from '../assets/place.png';
+import { commentArt, starArt } from '../lib/locationArt';
 
 // Custom artwork that replaces an activity emoji.
-const ACTIVITY_ICONS = { '🎒': gearIcon, '🍳': skilletIcon, '📍': placeIcon };
+const ACTIVITY_ICONS = {
+  '🎒': gearIcon,
+  '🍳': skilletIcon,
+  '📍': placeIcon,
+  '💬': commentArt,
+  '⭐': starArt,
+};
 
 export function CrewActivityPulse({ trip, onOpen, limit = 4, style }) {
   const items = buildCrewActivityFeed(trip, getCurrentUserId(), limit);

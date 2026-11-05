@@ -9,6 +9,7 @@ import { AudioAttachment } from '../components/AudioAttachment';
 import { MediaThumb } from '../components/MediaThumb';
 import { resolveUserDisplayName } from '../lib/tripParticipants';
 import { locationTypeLabel } from '../lib/locationTypes';
+import { LocationMark } from '../components/LocationMark';
 import { ts } from '../lib/textScale';
 import { EntryForm } from './EntryForm';
 
@@ -165,7 +166,10 @@ export function FieldJournal({ trip, onNav, onFab, onTripUpdate, onOpenLocation,
               <div key={place.id} style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 10, overflow: 'hidden' }}>
                 <button type="button" onClick={() => onOpenLocation?.(place.location.id)}
                   style={{ width: '100%', border: 'none', background: 'transparent', padding: '12px 13px', textAlign: 'left', cursor: onOpenLocation ? 'pointer' : 'default', fontFamily: F }}>
-                  <div style={{ fontSize: ts(15), fontWeight: 800, color: T.text }}>{place.location.icon || '📍'} {place.location.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: ts(15), fontWeight: 800, color: T.text }}>
+                    <LocationMark location={place.location} size={22} />
+                    <span>{place.location.name}</span>
+                  </div>
                   <div style={{ fontSize: ts(12), color: T.textSub, marginTop: 2 }}>{locationTypeLabel(place.location.type)}</div>
                 </button>
                 {(place.events.length > 0 || place.loose.length > 0) && (

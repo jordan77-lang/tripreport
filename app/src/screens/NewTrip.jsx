@@ -490,9 +490,10 @@ export function NewTrip({ onDone, onBack }) {
                 ))}
               </div>
               <div style={{ fontSize: 10, color: T.textFaint, marginTop: 6 }}>
-                Tiles load on demand when online. For no-service areas, add an offline map pack below.
+                Tiles load on demand when online. Frame this area, then download it from Plan → Maps before you lose service.
               </div>
 
+              {listMapRegions().length > 0 && (
               <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, color: T.textSub, letterSpacing: .6, textTransform: 'uppercase', marginBottom: 6 }}>
                   Offline map packs (optional)
@@ -538,6 +539,7 @@ export function NewTrip({ onDone, onBack }) {
                   );
                 })}
               </div>
+              )}
             </div>
           </div>
         )}

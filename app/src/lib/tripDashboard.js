@@ -1,9 +1,62 @@
-import { buildParticipantAliasMap, buildTripParticipants, computeBalances, resolveUserDisplayName, roundMoney } from './expenses';
+import { buildParticipantAliasMap, buildTripParticipants, canonicalParticipantId, computeBalances, participantDisplayName, resolveUserDisplayName, roundMoney } from './expenses';
 import { tripDayKey, tripTimeZone } from './tripTimeline';
 import { mealDaysLabel, mealEndDay, mealSlotLabel, mealSlotOrder, mealStartDay } from './mealSlots';
 
 export function isGearReady(item) {
-  return ['have', 'claimed', 'packed'].includes(item.status);
+  return ['have', 'claimed', 'packed'].includes(item?.status);
+}
+
+function uniqueIds(ids) {
+  const seen = new Set();
+  const out = [];
+  for (const id of ids || []) {
+    const trimmed = typeof id === 'string' ? id.trim() : '';
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+function asCanonical(trip, id) {
+  return trip ? (canonicalParticipantId(trip, id) || id) : id;
+}
+
+export function gearAssigneeIds(item, trip = null) {
+  return uniqueIds(getGearAssigneeIds(item).map((id) => asCanonical(trip, id)));
+}
+
+export function mealCookIds(meal, trip = null) {
+  const raw = [meal?.assignedTo, ...(Array.isArray(meal?.coCooks) ? meal.coCooks : [])];
+  return uniqueIds(raw.map((id) => asCanonical(trip, id)));
+}
+
+/** People who have confirmed their own share. A legacy packed item counts every assignee. */
+export function confirmedReadyIds(item, trip = null) {
+  if (Array.isArray(item?.readyBy)) {
+    return uniqueIds(item.readyBy.map((id) => asCanonical(trip, id)));
+  }
+  if (isGearReady(item)) return gearAssigneeIds(item, trip);
+  return [];
+}
+
+export function isPersonReady(item, userId, trip = null) {
+  if (!item || !userId) return false;
+  const uid = asCanonical(trip, userId);
+  return confirmedReadyIds(item, trip).some((id) => asCanonical(trip, id) === uid);
+}
+
+export function isGearFullyReady(item, trip = null) {
+  const assignees = gearAssigneeIds(item, trip);
+  if (!assignees.length) return isGearReady(item) && !Array.isArray(item?.readyBy);
+  return assignees.every((id) => isPersonReady(item, id, trip));
+}
+
+export function isMealFullyReady(meal, trip = null) {
+  const cooks = mealCookIds(meal, trip);
+  if (!cooks.length) return false;
+  return cooks.every((id) => isPersonReady(meal, id, trip));
 }
 
 export function getGearAssigneeIds(item) {
@@ -45,7 +98,8 @@ export function getMyResponsibilities(trip, userId) {
   const balances = computeBalances(trip?.expenses || [], participants, { trip });
   return {
     gear, meals, shopping,
-    gearToBring: gear.filter(item => !isGearReady(item)),
+    gearToBring: gear.filter(item => !isPersonReady(item, userId, trip)),
+    mealsToPrep: meals.filter(item => !isPersonReady(item, userId, trip)),
     shoppingToBuy: shopping.filter(item => !item.checked),
     balance: participantId ? roundMoney(balances[participantId] || 0) : 0,
     hasExpenses: (trip?.expenses || []).length > 0,
@@ -96,7 +150,7 @@ export function buildCrewActivityFeed(trip, currentUserId = null, limit = 5) {
   for (const meal of trip.meals || []) {
     if (!meal.assignedTo) continue;
     const at = Number(meal.updatedAt || meal.createdAt) || 0;
-    const cook = meal.assignedToLabel || who(meal.assignedTo);
+    const cook = participantDisplayName(trip, meal.assignedTo, currentUserId, meal.assignedToLabel) || 'Crew';
     const coCount = Array.isArray(meal.coCooks) ? meal.coCooks.length : 0;
     const coText = coCount ? ` + ${coCount} co-cook${coCount === 1 ? '' : 's'}` : '';
     const assigner = meal.assignedBy && meal.assignedBy !== meal.assignedTo ? who(meal.assignedBy, null) : null;
@@ -117,12 +171,19 @@ export function buildCrewActivityFeed(trip, currentUserId = null, limit = 5) {
     const assigneeIds = getGearAssigneeIds(gear);
     if (assigneeIds.length === 0) continue;
     const at = Number(gear.updatedAt || gear.createdAt) || 0;
-    const names = assigneeIds.map((uid) => who(uid));
-    const holder = gear.assignedToLabel
-      || (names.length === 1 ? names[0] : names.join(', '));
+    const names = assigneeIds.map((uid) => participantDisplayName(trip, uid, currentUserId, null)).filter((n) => n && n !== 'Participant' && n !== 'Unknown');
+    const holder = (names.length === assigneeIds.length ? names.join(', ') : null)
+      || gear.assignedToLabel
+      || names.join(', ')
+      || 'Crew';
     const verb = assigneeIds.length > 1 ? 'are bringing' : 'is bringing';
     const assigner = gear.assignedBy && !assigneeIds.includes(gear.assignedBy) ? who(gear.assignedBy, null) : null;
-    const readyText = isGearReady(gear) ? ' (Ready)' : '';
+    const readyIds = assigneeIds.filter((id) => isPersonReady(gear, id, trip));
+    const readyText = assigneeIds.length && readyIds.length === assigneeIds.length
+      ? ' (Ready)'
+      : readyIds.length
+        ? ` (${readyIds.map((id) => participantDisplayName(trip, id, currentUserId, null)).filter(Boolean).join(', ')} ready)`
+        : '';
     items.push({
       id: `gear-${gear.id}`,
       at,
@@ -187,13 +248,19 @@ export function mealResponsibilityLabel(meal, startDate) {
 }
 
 export function gearResponsibilityLabel(gear, trip = null, currentUserId = null) {
-  const statusText = isGearReady(gear) ? 'Ready' : 'To bring';
-  const assigneeIds = getGearAssigneeIds(gear);
-  if (assigneeIds.length <= 1 || !trip) return statusText;
-  const others = assigneeIds
-    .filter((uid) => uid !== currentUserId)
-    .map((uid) => resolveUserDisplayName(trip, uid, currentUserId))
-    .filter((name) => name && name !== 'Unknown');
+  const assignees = trip ? gearAssigneeIds(gear, trip) : getGearAssigneeIds(gear);
+  const myId = trip && currentUserId ? asCanonical(trip, currentUserId) : currentUserId;
+  const mineReady = myId ? isPersonReady(gear, myId, trip) : false;
+  const statusText = mineReady ? 'You ready' : 'To bring';
+  if (assignees.length <= 1 || !trip) return mineReady ? 'Ready' : 'To bring';
+  const others = assignees
+    .filter((uid) => uid !== myId)
+    .map((uid) => {
+      const name = resolveUserDisplayName(trip, uid, currentUserId);
+      if (!name || name === 'Unknown') return null;
+      return isPersonReady(gear, uid, trip) ? `${name} ready` : name;
+    })
+    .filter(Boolean);
   if (others.length === 0) return statusText;
   return `With ${others.join(', ')} · ${statusText}`;
 }

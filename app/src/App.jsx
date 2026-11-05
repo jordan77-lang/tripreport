@@ -18,7 +18,6 @@ import { getSignedInUserId } from './lib/authUser';
 import { Settings } from './screens/Settings';
 import { useGPS } from './hooks/useGPS';
 import { useAppNavigation } from './hooks/useAppNavigation';
-import { useOfflineMapPreload } from './hooks/useOfflineMapPreload';
 import { useTripMediaSync } from './hooks/useTripMediaSync';
 import { useCloudTripSync } from './hooks/useCloudTripSync';
 import { fetchGauge, fetchNearbyGaugesByGps, findNearbyKnownGauges } from './lib/usgs';
@@ -55,10 +54,6 @@ export default function App() {
     setTrip(getActiveTrip());
     setAllTrips(getTrips());
   }, []);
-
-  useOfflineMapPreload({
-    enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
-  });
 
   useTripMediaSync({
     enabled: auth.configured && auth.isSignedIn && !auth.needsProfile,
@@ -290,7 +285,7 @@ export default function App() {
     case 'home':    return <Home {...common} allTrips={allTrips} onSelectTrip={onSelectTrip} onTripUpdate={refreshTrip} onTripDeleted={onTripDeleted} onJoinTrip={() => nav.push('join')} onOpenSettings={() => nav.push('settings')} onOpenRecap={onOpenRecap} auth={auth} />;
     case 'settings': return <Settings onBack={nav.back} onProfileUpdated={refreshTrip} auth={auth} />;
     case 'recap':   return <TripRecap trip={trip} onBack={nav.back} onTripUpdate={refreshTrip} onForkedTrip={(forkedId) => onSelectTrip(forkedId)} initialTab={params.tab || 'report'} auth={auth} />;
-    case 'trip':    return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
+    case 'trip':    return <Trip {...tripPages} justJoined={Boolean(params.justJoined)} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
     case 'map':     return trip?.status === 'completed' ? <Trip {...tripPages} onTripDeleted={onTripDeleted} /> : <Navigator {...common} onTripUpdate={refreshTrip} gps={recordingTrip?.id===trip?.id?gps:null} />;
     case 'log':     return <Trip {...tripPages} onTripDeleted={onTripDeleted} onOpenRecap={onOpenRecap} />;
     case 'plan':    return <TripPlan {...common} onTripUpdate={refreshTrip} onBack={nav.back} initialTab={params.tab || null} newTripInviteCode={newTripInviteCode} onDismissInvite={() => setNewTripInviteCode(null)} />;
@@ -345,7 +340,7 @@ export default function App() {
         onJoined={(tripId) => {
           setActiveTrip(tripId);
           refreshTrip();
-          nav.reset('trip', { tripId });
+          nav.reset('trip', { tripId, justJoined: true });
         }}
       />;
     default:        return <Home {...common} />;

@@ -23,7 +23,8 @@ export const OFFLINE_MAP_REGIONS = [
 ];
 
 export function listMapRegions() {
-  return [...OFFLINE_MAP_REGIONS].sort((a, b) => a.sortOrder - b.sortOrder);
+  // No built-in map is offered. A trip uses the area its creator or a member selects.
+  return [];
 }
 
 export function getMapRegion(id) {
