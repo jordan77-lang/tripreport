@@ -1,3 +1,5 @@
+import { normalizeMealSlot } from './mealSlots.js';
+
 const LIBRARY_KEY = 'tr_meal_library';
 const INGREDIENTS_KEY = 'tr_ingredient_library';
 const DELETED_MEALS_KEY = 'tr_deleted_saved_meals';
@@ -108,7 +110,7 @@ export function cleanIngredients(list) {
   const seen = new Set();
   const out = [];
   for (const item of list || []) {
-    const name = String(item?.name || item || '').trim();
+    const name = String(typeof item === 'string' ? item : item?.name || '').trim();
     const key = ingredientKey(name);
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -167,7 +169,7 @@ export function applySharedMeal(meal) {
   rememberIngredientNames(ingredients.map((item) => item.name));
   return rememberMeal({
     name,
-    slot: meal?.slot || existing?.slot || 'dinner',
+    slot: normalizeMealSlot(meal?.slot || existing?.slot || 'dinner'),
     ingredients,
   });
 }
@@ -191,7 +193,7 @@ export async function publishSavedMeal(meal) {
   const ingredients = cleanIngredients(meal?.ingredients);
   const { data, error } = await client.rpc('upsert_saved_meal', {
     p_name: String(meal?.name || '').trim(),
-    p_slot: meal?.slot || 'dinner',
+    p_slot: normalizeMealSlot(meal?.slot || 'dinner'),
     p_ingredients: ingredients,
   });
   if (error || !data) return null;
@@ -254,7 +256,7 @@ export function rememberMeal(meal, { keepIngredientsIfEmpty = false } = {}) {
     id: previous?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `meal-${Date.now()}`),
     name,
     nameKey: key,
-    slot: meal?.slot || previous?.slot || 'dinner',
+    slot: normalizeMealSlot(meal?.slot || previous?.slot || 'dinner'),
     ingredients,
     updatedAt: Date.now(),
   };
@@ -287,7 +289,7 @@ export function updateSavedMeal(originalNameOrKey, patch = {}) {
 
   return rememberMeal({
     name: nextName,
-    slot: patch.slot || existing?.slot || 'dinner',
+    slot: normalizeMealSlot(patch.slot || existing?.slot || 'dinner'),
     ingredients: patch.ingredients !== undefined ? patch.ingredients : (existing?.ingredients || []),
   });
 }
@@ -317,6 +319,7 @@ function mealsFromTrips(trips) {
   const byKey = new Map();
   for (const trip of trips || []) {
     for (const meal of trip?.meals || []) {
+      if ((meal.kind && meal.kind !== 'dish') || meal.menuPending) continue;
       const name = String(meal?.name || '').trim();
       const key = mealNameKey(name);
       if (!key || key === 'untitled meal') continue;
@@ -324,14 +327,14 @@ function mealsFromTrips(trips) {
       const updatedAt = meal.updatedAt || meal.createdAt || 0;
       const existing = byKey.get(key);
       if (!existing) {
-        byKey.set(key, { name, nameKey: key, slot: meal.slot || 'dinner', ingredients, updatedAt });
+        byKey.set(key, { name, nameKey: key, slot: normalizeMealSlot(meal.slot || 'dinner'), ingredients, updatedAt });
         continue;
       }
       const newer = updatedAt >= (existing.updatedAt || 0);
       byKey.set(key, {
         name: newer ? name : existing.name,
         nameKey: key,
-        slot: newer && meal.slot ? meal.slot : existing.slot,
+        slot: normalizeMealSlot(newer && meal.slot ? meal.slot : existing.slot),
         ingredients: ingredients.length && (newer || !existing.ingredients.length) ? ingredients : existing.ingredients,
         updatedAt: Math.max(updatedAt, existing.updatedAt || 0),
       });
@@ -353,6 +356,7 @@ export function listSavedMeals(trips = []) {
       byKey.set(key, {
         ...meal,
         name: String(meal.name || '').trim(),
+        slot: normalizeMealSlot(meal.slot || 'dinner'),
         nameKey: key,
         ingredients: ingredients.length ? ingredients : (existing?.ingredients || []),
       });

@@ -20,6 +20,7 @@ Follow these steps to enable accounts, trip sync, and invite codes before the Ju
 7. Run `008_trip_audio_storage.sql` to allow voice clips to sync to crew devices. Voice clips can be saved and played locally before this migration is applied.
 8. Run `009_trip_change_history.sql` before using cloud sync.
 9. Run `010_saved_meals.sql` so saved meals and ingredients are shared with every signed-in user.
+10. Run `011_meal_slots_dessert_happy_hour.sql` to allow happy hour and dessert in the shared recipe catalog.
 
 The migration files are **idempotent** (safe to run more than once). If a previous run failed halfway, run the full file again instead of starting over.
 

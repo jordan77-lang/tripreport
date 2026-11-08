@@ -2,6 +2,14 @@ import { getSignedInUserId } from './authUser';
 import { supabaseConfigured } from './supabase';
 import { flushTripCloudSync, getCloudSyncStatus } from './tripAutoSync';
 
+/** Local failure is synchronous; successful edits can render before any cloud request finishes. */
+export function savePlanningLocally(tripId, saveLocal, { onSaved, onSynced, onError } = {}) {
+  const result = saveLocal();
+  onSaved?.(result);
+  void savePlanningToCloud(tripId, () => {}).then(onSynced).catch(error => onError?.(error));
+  return result;
+}
+
 /** Save locally (caller), then push to Supabase immediately so crew sees updates. */
 export async function savePlanningToCloud(tripId, saveLocal) {
   saveLocal();

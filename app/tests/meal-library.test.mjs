@@ -10,6 +10,7 @@ globalThis.localStorage = {
 
 const {
   rememberMeal,
+  cleanIngredients,
   listSavedMeals,
   listSavedIngredients,
   savedMealByName,
@@ -20,6 +21,34 @@ const {
   updateSavedMeal,
   removeSavedMeal,
 } = await import('../src/lib/mealLibrary.js');
+
+test('empty ingredient drafts and nameless objects never become shopping ingredients', () => {
+  assert.deepEqual(cleanIngredients([{name:'',qty:''},{},null,' ',{name:'Beans',qty:'2 cans'}]),[{name:'Beans',qty:'2 cans'}]);
+});
+
+test('older snack recipes appear in happy hour with the original dish name and ingredients', () => {
+  store.clear();
+  store.set('tr_meal_library',JSON.stringify([{id:'legacy',name:'Cheese board',nameKey:'cheese board',slot:'snack',ingredients:[{name:'Cheddar',qty:'1 block'}]}]));
+  const saved=savedMealByName('Cheese board');
+  assert.equal(saved.slot,'happy-hour');
+  assert.equal(saved.name,'Cheese board');
+  assert.equal(saved.ingredients[0].qty,'1 block');
+  assert.equal(rememberMeal({name:'Olives',slot:'snack'}).slot,'happy-hour');
+});
+
+test('meal period choices and unnamed claims never become saved recipes', () => {
+  store.clear();
+  const meals = listSavedMeals([{ meals: [
+    { kind: 'meal-period', name: 'Meal plan', dayIndex: 1, slot: 'breakfast', mode: 'on-your-own' },
+    { menuPending: true, name: 'Menu to be decided', dayIndex: 1, slot: 'dinner' },
+    { kind: 'meal-team', name: 'Camp cooks', cookIds: ['member'] },
+    { kind: 'meal-comment', name: 'Meal discussion', text: 'Bring tortillas' },
+    { kind: 'meal-reminder', name: 'Meal reminder', userId: 'member' },
+    { kind: 'meal-window', name: 'Shared meal times' },
+    { name: 'Brownies', slot: 'dessert' },
+  ] }]);
+  assert.deepEqual(meals.map(m => m.name), ['Brownies']);
+});
 
 test('a saved meal keeps its ingredients for the next trip', () => {
   store.clear();

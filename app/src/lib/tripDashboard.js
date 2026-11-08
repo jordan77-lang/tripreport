@@ -1,6 +1,7 @@
 import { buildParticipantAliasMap, buildTripParticipants, canonicalParticipantId, computeBalances, participantDisplayName, resolveUserDisplayName, roundMoney } from './expenses';
 import { tripDayKey, tripTimeZone } from './tripTimeline';
 import { mealDaysLabel, mealEndDay, mealSlotLabel, mealSlotOrder, mealStartDay } from './mealSlots';
+import { activeMealDays, buildMealSchedule, mealItems } from './mealPlanning';
 
 export function isGearReady(item) {
   return ['have', 'claimed', 'packed'].includes(item?.status);
@@ -90,7 +91,7 @@ export function getMyResponsibilities(trip, userId) {
     || (trip?.collaborators || []).find(p => p.id === userId && p.userId)?.userId;
   const mine = id => Boolean(userId && id && (id === userId || (participantId && aliases.get(id) === participantId)));
   const gear = (trip?.gearItems || []).filter(item => getGearAssigneeIds(item).some(mine));
-  const meals = (trip?.meals || []).filter(item => mine(item.assignedTo) || (Array.isArray(item.coCooks) && item.coCooks.some(mine)))
+  const meals = mealItems(trip).filter(item => activeMealDays(trip, item).length && (mine(item.assignedTo) || (Array.isArray(item.coCooks) && item.coCooks.some(mine))))
     .slice().sort((a, b) => (a.dayIndex || 1) - (b.dayIndex || 1)
       || mealSlotOrder(a.slot) - mealSlotOrder(b.slot));
   // Shopping has no assignee field. Keep authorship explicit in the UI.
@@ -104,7 +105,7 @@ export function getMyResponsibilities(trip, userId) {
     balance: participantId ? roundMoney(balances[participantId] || 0) : 0,
     hasExpenses: (trip?.expenses || []).length > 0,
     unassignedGear: (trip?.gearItems || []).filter(item => getGearAssigneeIds(item).length === 0 && !isGearReady(item)).length,
-    unassignedMeals: (trip?.meals || []).filter(item => !item.assignedTo).length,
+    unassignedMeals: buildMealSchedule(trip).filter(period => period.status === 'open').length,
     plannedLocations: (trip?.locations || []).filter(loc => loc.visitStatus === 'planned').length,
   };
 }
@@ -147,7 +148,8 @@ export function buildCrewActivityFeed(trip, currentUserId = null, limit = 5) {
     }
   }
 
-  for (const meal of trip.meals || []) {
+  for (const meal of mealItems(trip)) {
+    if (!activeMealDays(trip, meal).length) continue;
     if (!meal.assignedTo) continue;
     const at = Number(meal.updatedAt || meal.createdAt) || 0;
     const cook = participantDisplayName(trip, meal.assignedTo, currentUserId, meal.assignedToLabel) || 'Crew';

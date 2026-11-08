@@ -13,7 +13,8 @@ import { EntryLocationPicker } from '../components/EntryLocationPicker';
 import { VIDEO_ENABLED, VIDEO_DISABLED_HINT, disabledMediaStyle, mediaCaptureLabel } from '../lib/featureFlags';
 import { ts } from '../lib/textScale';
 import { addMeal, getTrips } from '../lib/storage';
-import { MEAL_SLOTS as MEAL_SLOT_IDS, SLOT_LABEL, mealDaysLabel, mealSlotOrder } from '../lib/mealSlots';
+import { MEAL_SLOTS as MEAL_SLOT_IDS, SLOT_LABEL, mealDaysLabel, mealSlotOrder, normalizeMealSlot } from '../lib/mealSlots';
+import { activeMealDays, mealItems } from '../lib/mealPlanning';
 import { listSavedMeals, publishSavedMeal, refreshSharedMeals, rememberMeal, savedMealByName } from '../lib/mealLibrary';
 import { locationMapSymbol, microphoneArt } from '../lib/locationArt';
 import { ArtImg } from '../components/LocationMark';
@@ -94,7 +95,7 @@ export function EntryForm({
   const [addingNewMeal, setAddingNewMeal] = useState(() => {
     if (initialEntry?.mealId) return false;
     if (type === 'food' && initialEntry) return true;
-    return type === 'food' && !(trip?.meals || []).length;
+    return type === 'food' && !mealItems(trip).filter(m => activeMealDays(trip, m).length).length;
   });
   const [newMealName, setNewMealName] = useState(
     initialEntry?.mealId ? '' : (initialEntry?.title && initialEntry.title !== 'Meal' ? initialEntry.title : ''),
@@ -259,7 +260,7 @@ export function EntryForm({
 
   function resolveMeal() {
     if (type !== 'food') return { ok: true, meal: null };
-    const planned = trip?.meals || [];
+    const planned = mealItems(trip).filter(m => activeMealDays(trip, m).length);
     if (!addingNewMeal && selectedMealId) {
       const meal = planned.find((item) => item.id === selectedMealId);
       if (!meal) return { ok: false, error: 'That planned meal is no longer on this trip.' };
@@ -432,7 +433,7 @@ export function EntryForm({
 
         {type === 'food' && (
           <MealChoice
-            meals={trip?.meals || []}
+            meals={mealItems(trip).filter(m => activeMealDays(trip, m).length)}
             selectedMealId={selectedMealId}
             addingNewMeal={addingNewMeal}
             newMealName={newMealName}
@@ -823,8 +824,9 @@ function slotForNow(date = new Date()) {
   const hour = date.getHours();
   if (hour < 10) return 'breakfast';
   if (hour < 15) return 'lunch';
+  if (hour < 17) return 'happy-hour';
   if (hour < 21) return 'dinner';
-  return 'snack';
+  return 'dessert';
 }
 
 function tripDayIndex(trip, date = new Date()) {
@@ -893,7 +895,7 @@ function SavedMealChoices({ name, onPick }) {
 }
 
 function mealSlotLabel(slot) {
-  return MEAL_SLOTS.find((item) => item.id === slot)?.label || 'Meal';
+  return MEAL_SLOTS.find((item) => item.id === normalizeMealSlot(slot))?.label || 'Meal';
 }
 
 function MealChoice({

@@ -1,47 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav } from '../components/BottomNav';
 import { MyResponsibilities } from '../components/MyResponsibilities';
-import { IngredientField, SavedMealSheet, SavedMealTrigger } from '../components/MealPickers';
+import { MealPlanningTab as MealsTab } from '../components/MealPlanningTab';
+import { MealShoppingReview } from '../components/MealShoppingReview';
 import { Ic } from '../components/Ic';
-import { SlotIcon } from '../components/SlotIcon';
 import { SyncChip } from '../components/SyncChip';
 import { TripEditPanel } from '../components/TripEditPanel';
 import { T, F, ICONS } from '../tokens';
 import { ts } from '../lib/textScale';
 import { buildTripDraft, formatTripDateRange } from '../lib/tripEdit';
-import { savePlanningToCloud } from '../lib/planningSave';
+import { savePlanningLocally, savePlanningToCloud } from '../lib/planningSave';
 import {
   getCurrentUserId,
   isTripOwner,
   isTripMember,
-  addGearItem, updateGearItem, removeGearItem, claimGearItem, getGearAssigneeIds, confirmMyGearReady, confirmAllGearReady, confirmMyMealReady,
-  addMeal, updateMeal, removeMeal, claimMeal, getTrips,
+  addGearItem, updateGearItem, removeGearItem, claimGearItem, getGearAssigneeIds, confirmMyGearReady, confirmAllGearReady,
   addShoppingItem, updateShoppingItem, removeShoppingItem,
-  generateShoppingList,
 } from '../lib/storage';
-import {
-  MEAL_SLOTS, SLOT_LABEL, mealDayOptionLabel, tripDayCount,
-  mealDaysLabel, mealEndDay, mealStartDay, mealSlotOrder,
-} from '../lib/mealSlots';
+import { SLOT_LABEL, mealDaysLabel } from '../lib/mealSlots';
 import { ParticipantsTab } from '../components/ParticipantsTab';
 import { TripExpenses } from '../components/TripExpenses';
 import { OfflineMapsPanel } from '../components/OfflineMapsPanel';
 import { useTripMembersSync } from '../hooks/useTripMembersSync';
 import { buildTripParticipants, resolveUserDisplayName } from '../lib/expenses';
 import { isGearFullyReady, isPersonReady } from '../lib/tripDashboard';
-import { canonicalParticipantId, participantDisplayName } from '../lib/tripParticipants';
+import { canonicalParticipantId } from '../lib/tripParticipants';
+import { activeMealDays, mealItems, mealShoppingChanges } from '../lib/mealPlanning';
 import { supabaseConfigured } from '../lib/supabase';
 import { getSignedInUserId } from '../lib/authUser';
 import {
   groupIngredientsByCategory,
-  listSavedIngredients,
-  listSavedMeals,
-  publishSavedMeal,
-  refreshSharedMeals,
-  rememberMeal,
-  removeSavedMeal,
   sortIngredients,
-  updateSavedMeal,
 } from '../lib/mealLibrary';
 
 const TABS = [
@@ -208,7 +197,7 @@ export function TripPlan({
           <GearTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />
         )}
         {tab === 'meals' && (
-          <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} />
+          <MealsTab trip={trip} participants={participants} onTripUpdate={onTripUpdate} onOpenShopping={() => selectTab('shopping')} />
         )}
         {tab === 'shopping' && (
           <ShoppingTab trip={trip} onTripUpdate={onTripUpdate} />
@@ -625,493 +614,6 @@ function ChoiceChip({ selected, onClick, children }) {
   );
 }
 
-function parseIngredientString(raw) {
-  const seen = new Set();
-  const out = [];
-  for (const part of String(raw || '').split(',')) {
-    const trimmed = part.trim();
-    const key = trimmed.toLowerCase();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(trimmed);
-  }
-  return out;
-}
-
-function MealsTab({ trip, participants, onTripUpdate }) {
-  const [expandedMealIngredients, setExpandedMealIngredients] = useState({});
-
-  function toggleMealIngredients(mealId) {
-    setExpandedMealIngredients((prev) => ({ ...prev, [mealId]: !prev[mealId] }));
-  }
-  const [name, setName] = useState('');
-  const [dayIndex, setDayIndex] = useState(1);
-  const [endDayIndex, setEndDayIndex] = useState('');
-  const [slot, setSlot] = useState('dinner');
-  const [assignedTo, setAssignedTo] = useState('');
-  const [coCookIds, setCoCookIds] = useState([]);
-  const [servings, setServings] = useState('');
-  const [notes, setNotes] = useState('');
-  const [ingredients, setIngredients] = useState('');
-  const [ingredientDraft, setIngredientDraft] = useState('');
-  const [editingId, setEditingId] = useState(null);
-  const [savedSheetOpen, setSavedSheetOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [sharedTick, setSharedTick] = useState(0);
-
-  const meals = trip.meals || [];
-  // Trip length, extended so meals planned beyond it (e.g. after a date change) stay editable.
-  const dayNumbers = useMemo(() => {
-    const last = Math.max(tripDayCount(trip), ...meals.map((m) => mealEndDay(m)), Number(dayIndex) || 1);
-    return Array.from({ length: last }, (_, i) => i + 1);
-  }, [trip, meals, dayIndex]);
-  const savedMeals = useMemo(() => {
-    const others = getTrips().filter((item) => item.id !== trip.id);
-    return listSavedMeals([...others, { meals }]);
-  }, [meals, trip.id, sharedTick]);
-
-  const savedIngredients = useMemo(() => {
-    const others = getTrips().filter((item) => item.id !== trip.id);
-    return listSavedIngredients([...others, { meals }]);
-  }, [meals, trip.id, sharedTick]);
-
-  const currentIngredientNames = useMemo(
-    () => parseIngredientString(ingredients),
-    [ingredients],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    refreshSharedMeals().then(() => {
-      if (!cancelled) setSharedTick((tick) => tick + 1);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  function resetForm() {
-    setEditingId(null);
-    setName('');
-    setDayIndex(1);
-    setEndDayIndex('');
-    setSlot('dinner');
-    setAssignedTo('');
-    setCoCookIds([]);
-    setServings('');
-    setNotes('');
-    setIngredients('');
-    setIngredientDraft('');
-  }
-
-  function startEdit(meal) {
-    setEditingId(meal.id);
-    setName(meal.name || '');
-    setDayIndex(mealStartDay(meal));
-    setEndDayIndex(mealEndDay(meal) > mealStartDay(meal) ? mealEndDay(meal) : '');
-    setSlot(meal.slot || 'dinner');
-    setAssignedTo(canonicalParticipantId(trip, meal.assignedTo) || '');
-    setCoCookIds(Array.isArray(meal.coCooks) ? meal.coCooks.map((id) => canonicalParticipantId(trip, id)) : []);
-    setServings(meal.servings ? String(meal.servings) : '');
-    setNotes(meal.notes || '');
-    setIngredients((meal.ingredients || []).map((i) => i.name).join(', '));
-    setIngredientDraft('');
-  }
-
-  function handleSelectSavedMeal(picked) {
-    if (!picked) return;
-    setName(picked.name);
-    if (picked.slot) setSlot(picked.slot);
-    setIngredients((picked.ingredients || []).map((item) => item.name).join(', '));
-    setSavedSheetOpen(false);
-  }
-
-  function saveEditedRecipe(savedKey, { name: nextName, slot: nextSlot, ingredients: names }) {
-    const updated = updateSavedMeal(savedKey, {
-      name: nextName,
-      slot: nextSlot,
-      ingredients: names.map((n) => ({ name: n, qty: '' })),
-    });
-    if (updated) {
-      void publishSavedMeal(updated).then(() => setSharedTick((t) => t + 1));
-    }
-    setSharedTick((t) => t + 1);
-  }
-
-  function handleDeleteSavedRecipe(savedMeal) {
-    if (!confirmRemoveItem(savedMeal.name, 'saved meals library')) return;
-    removeSavedMeal(savedMeal.nameKey);
-    setSharedTick((t) => t + 1);
-  }
-
-  async function save() {
-    const pendingDraft = ingredientDraft.trim();
-    const combinedIngredients = pendingDraft
-      ? (ingredients.trim() ? `${ingredients}, ${pendingDraft}` : pendingDraft)
-      : ingredients;
-    if (!name.trim() || saving) return;
-    setSaving(true);
-    try {
-      const who = participants.find((p) => p.id === assignedTo);
-      const startDay = Number(dayIndex) || 1;
-      const endDay = Number(endDayIndex) || startDay;
-      const cleanCoCooks = coCookIds.filter((id) => id && id !== assignedTo);
-      const ingList = sortIngredients(parseIngredientString(combinedIngredients), 'category')
-        .map((n) => ({ name: n, qty: '' }));
-      const parsedServings = Number(servings);
-      const payload = {
-        name: name.trim(),
-        dayIndex: startDay,
-        endDayIndex: endDay > startDay ? endDay : null,
-        slot,
-        assignedTo: assignedTo || null,
-        assignedToLabel: who?.label || null,
-        coCooks: cleanCoCooks,
-        servings: Number.isFinite(parsedServings) && parsedServings > 0 ? parsedServings : null,
-        notes: notes.trim(),
-        ingredients: ingList,
-      };
-      await savePlanningToCloud(trip.id, () => {
-        if (editingId) {
-          updateMeal(trip.id, editingId, payload);
-        } else {
-          addMeal(trip.id, payload);
-        }
-      });
-      rememberMeal(payload);
-      void publishSavedMeal(payload).then(() => setSharedTick((tick) => tick + 1));
-      resetForm();
-      onTripUpdate?.();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function removeItem(meal) {
-    if (!confirmRemoveItem(meal.name, 'meal plan')) return;
-    await savePlanningToCloud(trip.id, () => {
-      removeMeal(trip.id, meal.id);
-    });
-    if (editingId === meal.id) resetForm();
-    onTripUpdate?.();
-  }
-
-  const byDay = useMemo(() => {
-    const map = {};
-    for (const m of meals) {
-      for (let d = mealStartDay(m); d <= mealEndDay(m); d += 1) {
-        (map[d] ||= []).push(m);
-      }
-    }
-    return Object.entries(map).sort((a, b) => Number(a[0]) - Number(b[0]));
-  }, [meals]);
-
-  const selectedSavedKey = savedMeals.find((m) => m.nameKey === name.trim().toLowerCase())?.nameKey || '';
-
-  return (
-    <div>
-      <Composer title={editingId ? `Edit meal · ${name || 'Meal'}` : 'Add meal'} onCancel={editingId ? resetForm : null} scrollToken={editingId}>
-        {savedMeals.length > 0 && (
-          <div style={{ marginBottom: 10 }}>
-            <SavedMealTrigger
-              count={savedMeals.length}
-              currentName={selectedSavedKey ? name.trim() : ''}
-              onOpen={() => setSavedSheetOpen(true)}
-            />
-          </div>
-        )}
-        {savedSheetOpen && (
-          <SavedMealSheet
-            savedMeals={savedMeals}
-            selectedKey={selectedSavedKey}
-            onPick={handleSelectSavedMeal}
-            onSaveEdit={saveEditedRecipe}
-            onDelete={handleDeleteSavedRecipe}
-            onClose={() => setSavedSheetOpen(false)}
-          />
-        )}
-
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Meal name (chili, fajitas, oatmeal…)"
-          style={inputStyle}
-        />
-
-        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <select
-            value={dayIndex}
-            onChange={(e) => {
-              setDayIndex(e.target.value);
-              if (Number(endDayIndex) <= Number(e.target.value)) setEndDayIndex('');
-            }}
-            style={selectStyle}
-          >
-            {dayNumbers.map((d) => <option key={d} value={d}>{mealDayOptionLabel(trip, d)}</option>)}
-          </select>
-          <select
-            aria-label="Last day"
-            value={endDayIndex}
-            onChange={(e) => setEndDayIndex(e.target.value)}
-            style={selectStyle}
-          >
-            <option value="">Single day</option>
-            {dayNumbers.filter((d) => d > Number(dayIndex)).map((d) => <option key={d} value={d}>Through {mealDayOptionLabel(trip, d)}</option>)}
-          </select>
-          <select value={slot} onChange={(e) => setSlot(e.target.value)} style={selectStyle}>
-            {MEAL_SLOTS.map((s) => <option key={s} value={s}>{SLOT_LABEL[s]}</option>)}
-          </select>
-          <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={selectStyle}>
-            <option value="">Lead cook?</option>
-            {participants.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-          <input
-            type="number"
-            min="1"
-            value={servings}
-            onChange={(e) => setServings(e.target.value)}
-            placeholder="Servings"
-            style={{ ...inputStyle, flex: '0 0 84px' }}
-          />
-        </div>
-
-        {participants.length > 1 && (
-          <ChoiceRow label="Co-cooks (optional)">
-            {participants
-              .filter((p) => p.id !== assignedTo)
-              .map((p) => {
-                const selected = coCookIds.includes(p.id);
-                return (
-                  <ChoiceChip
-                    key={p.id}
-                    selected={selected}
-                    onClick={() => setCoCookIds((prev) => (
-                      prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id]
-                    ))}
-                  >
-                    {p.label}
-                  </ChoiceChip>
-                );
-              })}
-          </ChoiceRow>
-        )}
-
-        <IngredientField
-          selected={currentIngredientNames}
-          library={savedIngredients}
-          draft={ingredientDraft}
-          onDraftChange={setIngredientDraft}
-          onChange={(names) => setIngredients(names.join(', '))}
-        />
-
-        <input
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Prep notes or dietary info (optional)"
-          style={{ ...inputStyle, marginTop: 8 }}
-        />
-
-        <div style={{ marginTop: 8 }}>
-          <SaveButton onClick={() => void save()} busy={saving} wide label={editingId ? 'Update meal' : 'Save'} />
-        </div>
-      </Composer>
-
-      {meals.length === 0 && <Empty text="Plan meals by day. Ingredients flow into the shopping list." />}
-
-      {byDay.map(([day, dayMeals]) => (
-        <div key={day} style={{ marginBottom: 14 }}>
-          <SectionLabel>{mealDayOptionLabel(trip, Number(day))}</SectionLabel>
-          {dayMeals.sort((a, b) => mealSlotOrder(a.slot) - mealSlotOrder(b.slot)).map((m) => {
-            const currentUserId = getCurrentUserId();
-            const coCooks = Array.isArray(m.coCooks) ? m.coCooks.map((id) => canonicalParticipantId(trip, id)) : [];
-            const leadCookId = canonicalParticipantId(trip, m.assignedTo);
-            const amCoCook = coCooks.includes(currentUserId);
-            const amLeadCook = leadCookId === currentUserId;
-            const isEditing = editingId === m.id;
-            const sortedMealIngs = sortIngredients(m.ingredients || [], 'category');
-            return (
-              <div
-                key={m.id}
-                style={{
-                  ...cardStyle,
-                  alignItems: 'flex-start',
-                  borderColor: isEditing ? T.accent : T.border,
-                  background: isEditing ? T.accentLight : T.card,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: ts(13), fontWeight: 700, color: T.text }}>
-                    <span style={{ color: T.accent, fontSize: ts(10.5), fontWeight: 800 }}><SlotIcon slot={m.slot} />{SLOT_LABEL[m.slot]} · </span>
-                    {m.name}
-                    {mealEndDay(m) > mealStartDay(m) ? (
-                      <span style={{ fontSize: ts(10.5), fontWeight: 600, color: T.textFaint }}> · {mealDaysLabel(m)}</span>
-                    ) : null}
-                    {m.servings ? (
-                      <span style={{ fontSize: ts(10.5), fontWeight: 600, color: T.textFaint }}> · {m.servings} servings</span>
-                    ) : null}
-                  </div>
-                  {m.assignedToLabel && (
-                    <div style={{ fontSize: ts(11.5), color: T.textSub, marginTop: 2 }}>
-                      Cook: {participantDisplayName(trip, m.assignedTo, currentUserId, m.assignedToLabel)}{isPersonReady(m, leadCookId, trip) ? ' (ready)' : ''}
-                    </div>
-                  )}
-                  {coCooks.length > 0 && (
-                    <div style={{ fontSize: ts(11.5), color: '#2A5C8E', marginTop: 2 }}>
-                      Co-cook{coCooks.length === 1 ? '' : 's'}: {coCooks.map((uid) => `${resolveUserDisplayName(trip, uid, currentUserId)}${isPersonReady(m, uid, trip) ? ' (ready)' : ''}`).join(', ')}
-                    </div>
-                  )}
-                  {(amLeadCook || amCoCook) && (
-                    <button
-                      type="button"
-                      aria-pressed={isPersonReady(m, currentUserId, trip)}
-                      onClick={() => {
-                        const next = !isPersonReady(m, currentUserId, trip);
-                        void savePlanningToCloud(trip.id, () => {
-                          confirmMyMealReady(trip.id, m.id, next);
-                        }).then(() => onTripUpdate?.());
-                      }}
-                      style={{
-                        marginTop: 6,
-                        border: `1px solid ${isPersonReady(m, currentUserId, trip) ? '#8ED08E' : T.accent}`,
-                        borderRadius: 7,
-                        padding: '2px 8px',
-                        background: isPersonReady(m, currentUserId, trip) ? '#E2F4E2' : T.accent,
-                        color: isPersonReady(m, currentUserId, trip) ? '#2A6A14' : 'white',
-                        fontSize: ts(10.5),
-                        fontWeight: 800,
-                        fontFamily: F,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {isPersonReady(m, currentUserId, trip) ? 'Undo my ready' : 'I have the food'}
-                    </button>
-                  )}
-                  {sortedMealIngs.length > 0 && (
-                    <div style={{ marginTop: 6 }}>
-                      <button
-                        type="button"
-                        onClick={() => toggleMealIngredients(m.id)}
-                        style={{
-                          border: 'none',
-                          background: 'none',
-                          padding: 0,
-                          fontSize: ts(11),
-                          fontWeight: 700,
-                          color: T.accent,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          fontFamily: F,
-                        }}
-                      >
-                        <span>{expandedMealIngredients[m.id] ? '▾ Hide' : '▸ Show'} ingredients ({sortedMealIngs.length})</span>
-                      </button>
-                      {expandedMealIngredients[m.id] && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                          {sortedMealIngs.map((i) => (
-                            <span
-                              key={i.name}
-                              style={{
-                                fontSize: ts(10.5),
-                                fontWeight: 600,
-                                color: T.textSub,
-                                background: T.bg,
-                                border: `1px solid ${T.border}`,
-                                borderRadius: 999,
-                                padding: '2px 7px',
-                              }}
-                            >
-                              {i.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {m.notes && (
-                    <div style={{ fontSize: ts(11), color: T.textSub, fontStyle: 'italic', marginTop: 4 }}>
-                      {m.notes}
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                    {!m.assignedTo && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void savePlanningToCloud(trip.id, () => {
-                            claimMeal(trip.id, m.id, { asCoCook: false });
-                          }).then(() => onTripUpdate?.());
-                        }}
-                        style={{
-                          border: `1px solid ${T.accent}50`,
-                          borderRadius: 7,
-                          padding: '2px 8px',
-                          background: T.accentLight,
-                          color: T.accent,
-                          fontSize: ts(10.5),
-                          fontWeight: 800,
-                          fontFamily: F,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        I'll cook this
-                      </button>
-                    )}
-                    {m.assignedTo && !amLeadCook && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void savePlanningToCloud(trip.id, () => {
-                            claimMeal(trip.id, m.id, { asCoCook: true });
-                          }).then(() => onTripUpdate?.());
-                        }}
-                        style={{
-                          border: `1px solid ${amCoCook ? '#2A5C8E' : T.border}`,
-                          borderRadius: 7,
-                          padding: '2px 8px',
-                          background: amCoCook ? '#E4EFF8' : T.bg,
-                          color: amCoCook ? '#2A5C8E' : T.textSub,
-                          fontSize: ts(10.5),
-                          fontWeight: 700,
-                          fontFamily: F,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {amCoCook ? '✓ Co-cook' : '+ Co-cook'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => startEdit(m)}
-                      style={{
-                        border: `1px solid ${T.border}`,
-                        borderRadius: 7,
-                        padding: '2px 8px',
-                        background: T.bg,
-                        color: T.textSub,
-                        fontSize: ts(10.5),
-                        fontWeight: 700,
-                        fontFamily: F,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {isEditing ? 'Editing…' : 'Edit meal'}
-                    </button>
-                  </div>
-                </div>
-                <RowActions
-                  itemName={m.name}
-                  onEdit={() => startEdit(m)}
-                  onDelete={() => void removeItem(m)}
-                />
-              </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function ShoppingTab({ trip, onTripUpdate }) {
   const [name, setName] = useState('');
   const [qty, setQty] = useState('');
@@ -1119,8 +621,20 @@ function ShoppingTab({ trip, onTripUpdate }) {
   const [sortMode, setSortMode] = useState('category'); // 'category' | 'meal' | 'alpha'
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const closeReview = useCallback(() => setReviewOpen(false), []);
+  const shoppingReview = mealShoppingChanges(trip);
   const items = trip.shoppingItems || [];
-  const meals = trip.meals || [];
+  const meals = useMemo(() => mealItems(trip).filter(meal => activeMealDays(trip, meal).length), [trip]);
+
+  function change(saveLocal) {
+    setNote(null);
+    try {
+      savePlanningLocally(trip.id, saveLocal, { onSaved: onTripUpdate, onSynced: onTripUpdate,
+        onError: error => setNote(`Saved on this device. ${error.message || 'Sync will retry.'}`) });
+      return true;
+    } catch (error) { setNote(error.message || 'Could not update shopping.'); return false; }
+  }
 
   const mealNamesByIngredient = useMemo(() => {
     const map = new Map();
@@ -1153,13 +667,14 @@ function ShoppingTab({ trip, onTripUpdate }) {
     setSaving(true);
     try {
       const payload = { name: name.trim(), qty };
-      await savePlanningToCloud(trip.id, () => {
+      const saved = change(() => {
         if (editingId) {
           updateShoppingItem(trip.id, editingId, payload);
         } else {
           addShoppingItem(trip.id, payload);
         }
       });
+      if (!saved) return;
       resetForm();
       onTripUpdate?.();
     } finally {
@@ -1169,30 +684,16 @@ function ShoppingTab({ trip, onTripUpdate }) {
 
   async function removeItem(item) {
     if (!confirmRemoveItem(item.name, 'shopping list')) return;
-    await savePlanningToCloud(trip.id, () => {
+    const saved = change(() => {
       removeShoppingItem(trip.id, item.id);
     });
+    if (!saved) return;
     if (editingId === item.id) resetForm();
     onTripUpdate?.();
   }
 
-  async function generate() {
-    if (saving) return;
-    setSaving(true);
-    try {
-      let added = 0;
-      await savePlanningToCloud(trip.id, () => {
-        added = generateShoppingList(trip.id);
-      });
-      setNote(added > 0 ? `Added ${added} item${added === 1 ? '' : 's'} from meals.` : 'No new ingredients found in meals.');
-      onTripUpdate?.();
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function toggle(item) {
-    await savePlanningToCloud(trip.id, () => {
+    change(() => {
       updateShoppingItem(trip.id, item.id, { checked: !item.checked });
     });
     onTripUpdate?.();
@@ -1283,6 +784,8 @@ function ShoppingTab({ trip, onTripUpdate }) {
 
   return (
     <div>
+      {(shoppingReview.changes.length>0 || shoppingReview.protectedItems.length>0) && <div className="meal-shopping-banner"><p>{shoppingReview.changes.length} meal-plan update{shoppingReview.changes.length===1?'':'s'} · {shoppingReview.protectedItems.length} quantities to check</p><button className="tr-mini-btn primary" type="button" onClick={()=>setReviewOpen(true)}>Review shopping updates</button></div>}
+      {reviewOpen && <MealShoppingReview trip={trip} onChange={change} onClose={closeReview} error={note} />}
       <Composer title={editingId ? 'Edit item' : 'Add item'} onCancel={editingId ? resetForm : null}>
         <div style={{ display: 'flex', gap: 8 }}>
           <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
@@ -1291,12 +794,7 @@ function ShoppingTab({ trip, onTripUpdate }) {
           <SaveButton onClick={() => void save()} busy={saving} label={editingId ? 'Update' : 'Save'} />
         </div>
         {!editingId && (
-          <div onClick={() => { if (!saving) void generate(); }}
-               style={{ marginTop: 8, height: 36, borderRadius: 10, border: `1px dashed ${T.accent}80`, background: T.accentLight,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                        fontSize: ts(11.5), fontWeight: 700, color: T.accent, gap: 6 }}>
-            <Ic d={ICONS.plus} size={14} color={T.accent} sw={2.2} /> Generate from meal ingredients
-          </div>
+          <button className="tr-text-btn" type="button" onClick={()=>setReviewOpen(true)}>Review meal ingredients</button>
         )}
         {note && <div style={{ fontSize: ts(10.5), color: T.textSub, marginTop: 6 }}>{note}</div>}
       </Composer>

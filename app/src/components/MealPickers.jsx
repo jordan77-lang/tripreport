@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Ic } from './Ic';
 import { SlotIcon } from './SlotIcon';
 import { ICONS } from '../tokens';
-import { MEAL_SLOTS, SLOT_LABEL } from '../lib/mealSlots';
+import { MEAL_SLOTS, SLOT_LABEL, normalizeMealSlot } from '../lib/mealSlots';
 import {
   INGREDIENT_CATEGORIES,
   classifyIngredientCategory,
@@ -157,7 +157,7 @@ export function SavedMealSheet({ savedMeals, selectedKey, onPick, onSaveEdit, on
       .map((slot) => ({
         slot,
         label: SLOT_LABEL[slot],
-        items: matches.filter((meal) => (MEAL_SLOTS.includes(meal.slot) ? meal.slot : 'dinner') === slot),
+        items: matches.filter((meal) => (MEAL_SLOTS.includes(normalizeMealSlot(meal.slot)) ? normalizeMealSlot(meal.slot) : 'dinner') === slot),
       }))
       .filter((group) => group.items.length > 0);
   }, [savedMeals, query]);
@@ -165,7 +165,7 @@ export function SavedMealSheet({ savedMeals, selectedKey, onPick, onSaveEdit, on
   function startEdit(meal) {
     setEditingKey(meal.nameKey);
     setEditName(meal.name || '');
-    setEditSlot(MEAL_SLOTS.includes(meal.slot) ? meal.slot : 'dinner');
+    setEditSlot(MEAL_SLOTS.includes(normalizeMealSlot(meal.slot)) ? normalizeMealSlot(meal.slot) : 'dinner');
     setEditIngredients((meal.ingredients || []).map((item) => item.name).join(', '));
   }
 

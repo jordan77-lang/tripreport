@@ -1,12 +1,16 @@
 // Ordered by when they typically happen in a day.
-export const MEAL_SLOTS = ['breakfast', 'lunch', 'happy-hour', 'dinner', 'dessert', 'snack'];
+export const MEAL_SLOTS = ['breakfast', 'lunch', 'happy-hour', 'dinner', 'dessert'];
+export const DAILY_MEAL_SLOTS = MEAL_SLOTS;
+// Older trip files and saved recipes used snack for the happy-hour period.
+export const normalizeMealSlot = (slot) => slot === 'snack' ? 'happy-hour' : slot;
+export const sameMealSlot = (a, b) => normalizeMealSlot(a) === normalizeMealSlot(b);
 export const SLOT_LABEL = {
   breakfast: 'Breakfast',
   lunch: 'Lunch',
   'happy-hour': 'Happy hour',
   dinner: 'Dinner',
   dessert: 'Dessert',
-  snack: 'Snack',
+  snack: 'Happy hour',
 };
 
 export const MAX_MEAL_DAYS = 14;
@@ -35,11 +39,11 @@ export function mealDayOptionLabel(trip, day) {
 }
 
 export function mealSlotLabel(slot) {
-  return SLOT_LABEL[slot] || 'Meal';
+  return SLOT_LABEL[normalizeMealSlot(slot)] || 'Meal';
 }
 
 export function mealSlotOrder(slot) {
-  const index = MEAL_SLOTS.indexOf(slot);
+  const index = MEAL_SLOTS.indexOf(normalizeMealSlot(slot));
   return index === -1 ? MEAL_SLOTS.length : index;
 }
 
@@ -61,5 +65,6 @@ export function mealDaysLabel(meal) {
 }
 
 export function mealCoversDay(meal, day) {
-  return day >= mealStartDay(meal) && day <= mealEndDay(meal);
+  return day >= mealStartDay(meal) && day <= mealEndDay(meal)
+    && !(meal?.excludedDays || []).includes(Number(day));
 }

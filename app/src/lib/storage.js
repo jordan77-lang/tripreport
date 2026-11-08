@@ -9,6 +9,8 @@ import { getSignedInUserId, getSignedInDisplayName, setPreferredDisplayName } fr
 import { defaultEventName } from './eventTypes';
 import { captureChanges, materialize } from './tripSync';
 import { canonicalParticipantId } from './tripParticipants';
+import { activeMealDays, isMealPeriod, mealItems, mealPeriod, mealPeriodId, mealShoppingChanges, mealWindowChanges, mealPeriodKey } from './mealPlanning';
+import { mealCoversDay, mealStartDay, mealEndDay, tripDayCount, MEAL_SLOTS, normalizeMealSlot, sameMealSlot } from './mealSlots';
 
 export function getContacts() {
   try {
@@ -1204,9 +1206,9 @@ export function confirmMyMealReady(tripId, mealId, ready = true) {
 export function addMeal(tripId, meal) {
   return mutateTrip(tripId, (trip, now) => {
     const full = {
-      id: crypto.randomUUID(),
+      id: meal.id || crypto.randomUUID(),
       dayIndex: Number.isFinite(meal.dayIndex) ? meal.dayIndex : 1,
-      slot: meal.slot || 'dinner', // breakfast | lunch | happy-hour | dinner | dessert | snack
+      slot: normalizeMealSlot(meal.slot || 'dinner'),
       endDayIndex: Number.isFinite(meal.endDayIndex) && meal.endDayIndex > (Number.isFinite(meal.dayIndex) ? meal.dayIndex : 1)
         ? meal.endDayIndex : null,
       name: (meal.name || '').trim() || 'Untitled meal',
@@ -1216,6 +1218,12 @@ export function addMeal(tripId, meal) {
       coCooks: Array.isArray(meal.coCooks) ? meal.coCooks : [],
       servings: Number.isFinite(meal.servings) && meal.servings > 0 ? meal.servings : null,
       ingredients: Array.isArray(meal.ingredients) ? meal.ingredients : [],
+      quantityMode: meal.quantityMode === 'daily' ? 'daily' : 'batch',
+      excludedDays: Array.isArray(meal.excludedDays) ? meal.excludedDays : [],
+      menuPending: Boolean(meal.menuPending),
+      purchasedBy: Array.isArray(meal.purchasedBy) ? meal.purchasedBy : [],
+      preppedBy: Array.isArray(meal.preppedBy) ? meal.preppedBy : [],
+      readyBy: Array.isArray(meal.readyBy) ? meal.readyBy : [],
       notes: meal.notes || '',
       createdBy: meal.createdBy || getCurrentUserId(),
       createdAt: now,
@@ -1223,12 +1231,19 @@ export function addMeal(tripId, meal) {
       syncState: 'pending',
     };
     trip.meals = [...(trip.meals || []), full];
+    if (meal.reopenPeriods) {
+      trip.meals = trip.meals.map(period => isMealPeriod(period) && sameMealSlot(period.slot, full.slot)
+        && mealCoversDay(full, period.dayIndex) && period.mode === 'on-your-own'
+        ? { ...period, mode: 'shared', reason: '', changedBy: getCurrentUserId(), changedAt: now, updatedAt: now }
+        : period);
+    }
     return full;
   });
 }
 
 export function updateMeal(tripId, id, patch) {
   const next = { ...patch };
+  if ('slot' in next) next.slot = normalizeMealSlot(next.slot);
   const existing = (getTrip(tripId)?.meals || []).find((m) => m.id === id);
   if ('assignedTo' in patch) {
     const before = existing?.assignedTo || null;
@@ -1242,6 +1257,9 @@ export function updateMeal(tripId, id, patch) {
     const allowed = canonicalIdList(trip, [merged.assignedTo, ...(Array.isArray(merged.coCooks) ? merged.coCooks : [])]);
     next.readyBy = startingReadyIds(trip, existing, canonicalIdList(trip, [existing.assignedTo, ...(Array.isArray(existing.coCooks) ? existing.coCooks : [])]))
       .filter((personId) => allowed.includes(personId));
+    for (const field of ['purchasedBy', 'preppedBy']) {
+      if (next[field] === undefined) next[field] = canonicalIdList(trip, existing[field] || []).filter(id => allowed.includes(id));
+    }
   }
   return updatePlanningItem(tripId, 'meals', id, next);
 }
@@ -1272,6 +1290,250 @@ export function claimMeal(tripId, mealId, { asCoCook = false, userId = null, lab
 
 export function removeMeal(tripId, id) {
   return removePlanningItem(tripId, 'meals', id);
+}
+
+export function removeMealOccurrence(tripId, id, day, scope = 'all') {
+  return mutateTrip(tripId, (trip, now) => {
+    if (!isTripMember(trip, getCurrentUserId())) throw new Error('Join this trip before deleting meals.');
+    const meal = mealItems(trip).find(item => item.id === id);
+    if (!meal) return false;
+    if (!['all','day'].includes(scope)) throw new Error('Choose which days to delete.');
+    if (scope === 'day') {
+      if (!mealCoversDay(meal, day)) throw new Error('This meal no longer covers that day.');
+      const remaining = Array.from({length:mealEndDay(meal)-mealStartDay(meal)+1},(_,i)=>mealStartDay(meal)+i)
+        .filter(other=>other!==day && mealCoversDay(meal,other));
+      if (remaining.length) {
+        trip.meals = trip.meals.map(item=>item.id===id ? {...item,excludedDays:[...new Set([...(item.excludedDays||[]),day])],updatedAt:now} : item);
+        return true;
+      }
+    }
+    trip.meals = trip.meals.filter(item=>item.id!==id);
+    return true;
+  });
+}
+
+/** Naming a claimed empty meal completes its existing record instead of adding a duplicate. */
+export function planMeal(tripId, draft, { newDish = false, preserveClaim = true } = {}) {
+  const trip = getTrip(tripId);
+  if (!trip || !isTripMember(trip,getCurrentUserId())) throw new Error('Join this trip before planning meals.');
+  const pending = !newDish && mealItems(trip).find(meal=>meal.menuPending && sameMealSlot(meal.slot,draft.slot) && mealCoversDay(meal,mealStartDay(draft)));
+  if (!pending) return addMeal(tripId,draft);
+  return mutateTrip(tripId,(latest,now)=>{
+    const current = mealItems(latest).find(meal=>meal.id===pending.id);
+    if (!current?.menuPending) throw new Error('This meal has already been planned. Open it to review the latest menu.');
+    const {reopenPeriods,...patch}=draft;
+    if (preserveClaim) {
+      delete patch.assignedTo; delete patch.assignedToLabel; delete patch.coCooks;
+    }
+    const updated={...current,...patch,id:current.id,slot:normalizeMealSlot(patch.slot||current.slot),menuPending:false,updatedAt:now,syncState:'pending'};
+    if (!preserveClaim) {
+      const cooks=canonicalIdList(latest,[updated.assignedTo,...(updated.coCooks||[])]);
+      for (const stage of ['readyBy','purchasedBy','preppedBy']) updated[stage]=canonicalIdList(latest,current[stage]||[]).filter(id=>cooks.includes(id));
+      if (updated.assignedTo!==current.assignedTo) updated.assignedBy=getCurrentUserId();
+    }
+    latest.meals=latest.meals.map(meal=>meal.id===updated.id ? updated : meal);
+    if (reopenPeriods) {
+      for (let day=mealStartDay(updated);day<=Math.min(366,mealEndDay(updated));day++) {
+        if (mealCoversDay(updated,day) && mealPeriod(latest,day,updated.slot)?.mode==='on-your-own') writeMealPeriod(latest,{day,slot:updated.slot,mode:'shared'},now);
+      }
+    }
+    return updated;
+  });
+}
+
+/** Explicit per-day choices preserve all dishes and assignments when a period is reopened. */
+export function setMealPeriods(tripId, days, slots, { mode = 'shared', reason = '' } = {}) {
+  return changeMealPeriods(tripId, days.flatMap(day => slots.map(slot => ({ day: Number(day), slot, mode, reason }))));
+}
+
+function writeMealPeriod(trip, choice, now) {
+  const { day, windowManaged = false } = choice;
+  const slot = normalizeMealSlot(choice.slot);
+  const id = mealPeriodId(day, slot);
+  const previous = mealPeriod(trip, day, slot);
+  const mode = choice.mode ?? previous?.mode ?? 'shared';
+  const reason = choice.reason ?? previous?.reason ?? '';
+  if (!Number.isInteger(day) || day < 1 || day > 366 || !MEAL_SLOTS.includes(slot) || !['shared', 'on-your-own'].includes(mode)) throw new Error('Choose a valid meal period.');
+  const next = { ...previous, id, kind: 'meal-period', name: 'Meal plan', dayIndex: day, slot,
+    mode, reason: String(reason).trim(), windowManaged, changedBy: getCurrentUserId(), changedAt: now,
+    createdAt: previous?.createdAt || now, updatedAt: now, syncState: 'pending' };
+  trip.meals = [...trip.meals.filter(m => m.id !== id), next];
+}
+
+export function changeMealPeriods(tripId, choices) {
+  return mutateTrip(tripId, (trip, now) => {
+    if (!isTripMember(trip, getCurrentUserId())) throw new Error('Join this trip before changing meals.');
+    for (const choice of choices) writeMealPeriod(trip, choice, now);
+    return trip;
+  });
+}
+
+export function setSharedMealWindow(tripId, first, last) {
+  return mutateTrip(tripId, (trip, now) => {
+    if (!isTripMember(trip, getCurrentUserId())) throw new Error('Join this trip before changing meals.');
+    const changes = mealWindowChanges(trip, first, last);
+    for (const choice of changes) writeMealPeriod(trip, choice, now);
+    const id = 'meal-window';
+    trip.meals = [...trip.meals.filter(m => m.id !== id), { id, kind: 'meal-window', name: 'Shared meal times', first, last, updatedAt: now }];
+    return changes.length;
+  });
+}
+
+export function saveMealTeam(tripId, name, cookIds) {
+  return mutateTrip(tripId, (trip, now) => {
+    const label = String(name || '').trim();
+    if (!isTripMember(trip, getCurrentUserId()) || !label || !cookIds.length) throw new Error('Name the cooking group and choose its members.');
+    const id = `meal-team:${label.toLowerCase()}`;
+    const team = { id, kind: 'meal-team', name: label, cookIds: canonicalIdList(trip, cookIds), updatedAt: now };
+    trip.meals = [...trip.meals.filter(m => m.id !== id), team];
+    return team;
+  });
+}
+
+/** Apply exact selections; never turn a sparse set of periods into a day/slot rectangle. */
+export function assignMealPeriods(tripId, periods, cookIds, { teamName = '' } = {}) {
+  return mutateTrip(tripId, (trip, now) => {
+    if (!isTripMember(trip, getCurrentUserId())) throw new Error('Join this trip before assigning meals.');
+    const ids = canonicalIdList(trip, cookIds);
+    if (!ids.length) throw new Error('Choose at least one cook.');
+    if (!periods.length) throw new Error('Choose at least one meal period.');
+    const selected = new Set(periods.map(mealPeriodKey));
+    const dishes = mealItems(trip).filter(meal => periods.some(p => sameMealSlot(p.slot, meal.slot) && mealCoversDay(meal, p.day)));
+    for (const meal of dishes) {
+      for (let day = mealStartDay(meal); day <= mealEndDay(meal); day++) {
+        if (mealCoversDay(meal, day) && !selected.has(mealPeriodKey({ day, slot: meal.slot }))) throw new Error(`${meal.name} repeats across days. Select every covered day, or edit that day's meal separately.`);
+      }
+    }
+    const assignment = { assignedTo: ids[0], assignedToLabel: participantNameForAssignment(trip, ids[0]), coCooks: ids.slice(1), assignedBy: getCurrentUserId() };
+    for (const meal of dishes) {
+      const keep = field => canonicalIdList(trip, meal[field] || []).filter(id => ids.includes(id));
+      Object.assign(meal, assignment, { readyBy: keep('readyBy'), purchasedBy: keep('purchasedBy'), preppedBy: keep('preppedBy'), updatedAt: now });
+    }
+    for (const period of periods) {
+      writeMealPeriod(trip, { ...period, mode: 'shared' }, now);
+      if (!dishes.some(m => sameMealSlot(m.slot, period.slot) && mealCoversDay(m, period.day))) {
+        trip.meals.push({ id: `meal-menu:${period.day}:${normalizeMealSlot(period.slot)}`, dayIndex: period.day, slot: normalizeMealSlot(period.slot),
+          name: 'Menu to be decided', menuPending: true, ingredients: [], ...assignment, createdBy: getCurrentUserId(), createdAt: now, updatedAt: now });
+      }
+    }
+    if (teamName.trim()) {
+      const id = `meal-team:${teamName.trim().toLowerCase()}`;
+      trip.meals = [...trip.meals.filter(m => m.id !== id), { id, kind: 'meal-team', name: teamName.trim(), cookIds: ids, updatedAt: now }];
+    }
+    return periods.length;
+  });
+}
+
+function participantNameForAssignment(trip, id) {
+  const member = (trip.collaborators || []).find(c => c.id === id || c.userId === id);
+  return trip.memberProfiles?.[id] || member?.name || member?.handle || (id === getCurrentUserId() ? getSignedInDisplayName() : '') || 'Crew';
+}
+
+export function repeatMealToPeriods(tripId, sourceId, periods, { useCooks = true, quantityMode = 'batch' } = {}) {
+  return mutateTrip(tripId, (trip, now) => {
+    if (!isTripMember(trip, getCurrentUserId())) throw new Error('Join this trip before repeating meals.');
+    const source = mealItems(trip).find(m => m.id === sourceId);
+    if (!source) throw new Error('Choose a meal to repeat.');
+    if (!periods.length) throw new Error('Choose at least one meal period.');
+    if (periods.some(p => mealItems(trip).some(m => sameMealSlot(m.slot, p.slot) && mealCoversDay(m, p.day)))) throw new Error('Choose empty meal periods to repeat into.');
+    for (const slot of [...new Set(periods.map(p => normalizeMealSlot(p.slot)))]) {
+      const days = [...new Set(periods.filter(p => sameMealSlot(p.slot, slot)).map(p => p.day))].sort((a,b) => a-b);
+      const gaps = Array.from({length:days.at(-1)-days[0]+1},(_,i)=>days[0]+i).filter(day=>!days.includes(day));
+        trip.meals.push({ ...source, id: crypto.randomUUID(), slot, dayIndex: days[0], endDayIndex: days.at(-1), excludedDays: gaps,
+          assignedTo: useCooks ? source.assignedTo : null, assignedToLabel: useCooks ? source.assignedToLabel : null, coCooks: useCooks ? source.coCooks || [] : [],
+          purchasedBy: [], preppedBy: [], readyBy: [], needsHelp: false, quantityMode, createdBy: getCurrentUserId(), createdAt: now, updatedAt: now });
+    }
+    for (const period of periods) writeMealPeriod(trip, { ...period, mode: 'shared' }, now);
+    return periods.length;
+  });
+}
+
+export function copyMealPlan(tripId, sourceTripId) {
+  const source = getTrip(sourceTripId);
+  if (!source || sourceTripId === tripId) throw new Error('Choose another trip to copy from.');
+  return mutateTrip(tripId, (trip, now) => {
+    if (!isTripMember(trip, getCurrentUserId())) throw new Error('Join this trip before copying meals.');
+    const dayCount = Math.min(366, tripDayCount(trip));
+    const targetMeals = trip.meals.slice();
+    let copied = 0;
+    for (const meal of mealItems(source).filter(m => !m.menuPending)) {
+      const end = Math.min(dayCount, mealEndDay(meal));
+      const days = activeMealDays(source,meal).filter(day=>day<=end && !targetMeals.some(m=>(isMealPeriod(m)&&m.mode==='on-your-own'&&m.dayIndex===day&&sameMealSlot(m.slot,meal.slot))||((!m.kind||m.kind==='dish')&&sameMealSlot(m.slot,meal.slot)&&mealCoversDay(m,day))));
+      if (!days.length) continue;
+      const excludedDays = Array.from({length:days.at(-1)-days[0]+1},(_,i)=>days[0]+i).filter(day=>!days.includes(day));
+      trip.meals.push({ ...meal, id: crypto.randomUUID(), slot:normalizeMealSlot(meal.slot), dayIndex:days[0],endDayIndex:days.at(-1),excludedDays, assignedTo: null, assignedToLabel: null, coCooks: [], readyBy: [], purchasedBy: [], preppedBy: [], needsHelp: false, createdBy: getCurrentUserId(), createdAt: now, updatedAt: now });
+      copied++;
+    }
+    return copied;
+  });
+}
+
+export function addMealComment(tripId, mealId, text) {
+  return mutateTrip(tripId, (trip, now) => {
+    const message = String(text || '').trim();
+    if (!isTripMember(trip, getCurrentUserId()) || !mealItems(trip).some(m => m.id === mealId)) throw new Error('Join this trip to discuss its meals.');
+    if (!message || message.length > 2000) throw new Error('Write a message of up to 2,000 characters.');
+    const comment = { id: crypto.randomUUID(), kind: 'meal-comment', name: 'Meal discussion', mealId, text: message,
+      authorId: getCurrentUserId(), createdAt: now, updatedAt: now };
+    trip.meals.push(comment);
+    return comment;
+  });
+}
+
+export function setMealReminder(tripId, mealId, remindAt) {
+  return mutateTrip(tripId, (trip, now) => {
+    if (!isTripMember(trip, getCurrentUserId()) || !mealItems(trip).some(m => m.id === mealId)) throw new Error('Choose a meal on this trip.');
+    if (!Number.isFinite(remindAt) || remindAt <= now) throw new Error('Choose a future reminder time.');
+    const id = `meal-reminder:${mealId}:${getCurrentUserId()}`;
+    const reminder = { id, kind: 'meal-reminder', name: 'Meal reminder', mealId, userId: getCurrentUserId(), remindAt, dismissedAt: null, updatedAt: now };
+    trip.meals = [...trip.meals.filter(m => m.id !== id), reminder];
+    return reminder;
+  });
+}
+
+export function dismissMealReminder(tripId, reminderId) {
+  return mutateTrip(tripId, (trip, now) => {
+    trip.meals = trip.meals.map(m => m.id === reminderId && m.kind === 'meal-reminder' && m.userId === getCurrentUserId() ? { ...m, dismissedAt: now } : m);
+  });
+}
+
+export function claimMealSlot(tripId, day, slot) {
+  slot = normalizeMealSlot(slot);
+  const trip = getTrip(tripId);
+  if (!trip || !isTripMember(trip, getCurrentUserId())) throw new Error('Join this trip before claiming meals.');
+  const existing = mealItems(trip).filter(m => sameMealSlot(m.slot, slot) && mealCoversDay(m, day));
+  if (existing.length) return claimMeal(tripId, existing[0].id, { asCoCook: Boolean(existing[0].assignedTo) });
+  return addMeal(tripId, { id: `meal-menu:${day}:${slot}`, dayIndex: day, slot,
+    name: 'Menu to be decided', menuPending: true, assignedTo: getCurrentUserId(),
+    assignedToLabel: getSignedInDisplayName() || 'Me' });
+}
+
+export function saveMealOccurrence(tripId, mealId, day, patch, scope = 'all') {
+  const trip = getTrip(tripId);
+  const meal = mealItems(trip).find(m => m.id === mealId);
+  if (!meal) throw new Error('That meal is no longer available.');
+  if (scope !== 'day' || mealEndDay(meal) === mealStartDay(meal)) return updateMeal(tripId, mealId, patch);
+  // One local write captures both halves, so a failed save cannot lose an occurrence.
+  return mutateTrip(tripId, (latest, now) => {
+    const original = latest.meals.find(m => m.id === mealId);
+    if (!mealCoversDay(original, day)) throw new Error('This meal no longer covers that day.');
+    const copy = { ...original, ...patch, id: crypto.randomUUID(), dayIndex: day, endDayIndex: null,
+      excludedDays: [], purchasedBy: [], preppedBy: [], readyBy: [], createdAt: now, updatedAt: now };
+    copy.slot = normalizeMealSlot(copy.slot);
+    latest.meals = latest.meals.map(m => m.id === mealId ? { ...m, excludedDays: [...new Set([...(m.excludedDays || []), day])], updatedAt: now } : m);
+    latest.meals.push(copy);
+    return copy;
+  });
+}
+
+export function confirmMealPrep(tripId, mealId, stage, ready) {
+  if (!['purchasedBy', 'preppedBy', 'readyBy'].includes(stage)) throw new Error('Choose a valid prep step.');
+  const trip = getTrip(tripId);
+  const meal = mealItems(trip).find(m => m.id === mealId);
+  const uid = canonicalParticipantId(trip, getCurrentUserId()) || getCurrentUserId();
+  if (!meal || ![meal.assignedTo, ...(meal.coCooks || [])].some(id => (canonicalParticipantId(trip, id) || id) === uid)) return null;
+  const current = canonicalIdList(trip, meal[stage] || []);
+  return updateMeal(tripId, mealId, { [stage]: ready ? [...new Set([...current, uid])] : current.filter(id => id !== uid) });
 }
 
 export function toggleEntryReaction(tripId, targetId, emoji, { kind = 'entry', userId = null } = {}) {
@@ -1365,7 +1627,7 @@ export function forkTripAsTemplate(sourceTripId, { name = null, startDate = '', 
       comments: [],
     });
   }
-  for (const meal of source.meals || []) {
+  for (const meal of mealItems(source)) {
     addMeal(forked.id, {
       dayIndex: meal.dayIndex || 1,
       endDayIndex: meal.endDayIndex || null,
@@ -1374,6 +1636,9 @@ export function forkTripAsTemplate(sourceTripId, { name = null, startDate = '', 
       servings: meal.servings || null,
       ingredients: Array.isArray(meal.ingredients) ? meal.ingredients.map((i) => ({ ...i })) : [],
       notes: meal.notes || '',
+      quantityMode: meal.quantityMode,
+      excludedDays: meal.excludedDays,
+      menuPending: meal.menuPending,
       assignedTo: null,
       assignedToLabel: null,
       coCooks: [],
@@ -1495,7 +1760,7 @@ export function addShoppingItem(tripId, item) {
 }
 
 export function updateShoppingItem(tripId, id, patch) {
-  return updatePlanningItem(tripId, 'shoppingItems', id, patch);
+  return updatePlanningItem(tripId, 'shoppingItems', id, { ...patch, ...('qty' in patch || 'name' in patch ? { manuallyEdited: true } : {}) });
 }
 
 export function removeShoppingItem(tripId, id) {
@@ -1504,38 +1769,21 @@ export function removeShoppingItem(tripId, id) {
 
 // Generate shopping items from meal ingredients (and optional "to buy" gear).
 // Skips names already present in the shopping list (case-insensitive).
-export function generateShoppingList(tripId) {
+export function generateShoppingList(tripId, expectedRevision = null) {
   return mutateTrip(tripId, (trip, now) => {
-    const existing = new Set((trip.shoppingItems || []).map((s) => (s.name || '').trim().toLowerCase()));
-    const additions = [];
-
-    for (const meal of trip.meals || []) {
-      for (const ing of meal.ingredients || []) {
-        const name = (ing?.name || '').trim();
-        if (!name) continue;
-        const key = name.toLowerCase();
-        if (existing.has(key)) continue;
-        existing.add(key);
-        additions.push({
-          id: crypto.randomUUID(),
-          name,
-          qty: ing.qty || '',
-          category: 'food',
-          source: 'meal',
-          sourceId: meal.id,
-          checked: false,
-          addedBy: getCurrentUserId(),
-          createdAt: now,
-          updatedAt: now,
-          syncState: 'pending',
-        });
+    const review = mealShoppingChanges(trip);
+    if (expectedRevision && review.revision !== expectedRevision) throw new Error('The meal plan or shopping list changed. Review the latest updates before applying them.');
+    let added = 0;
+    for (const { type, row, id } of review.changes) {
+      if (type === 'remove') trip.shoppingItems = trip.shoppingItems.filter(item => item.id !== id);
+      else if (type === 'update') trip.shoppingItems = trip.shoppingItems.map(item => item.id === id ? { ...item, ...row, updatedAt: now, syncState: 'pending' } : item);
+      else {
+        trip.shoppingItems.push({ ...row, id: crypto.randomUUID(), category: 'food', source: 'meal', sourceId: row.sourceMealIds[0],
+          checked: false, addedBy: getCurrentUserId(), createdAt: now, updatedAt: now, syncState: 'pending' });
+        added++;
       }
     }
-
-    if (additions.length) {
-      trip.shoppingItems = [...(trip.shoppingItems || []), ...additions];
-    }
-    return additions.length;
+    return added;
   });
 }
 
